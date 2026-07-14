@@ -8,11 +8,11 @@ export PATH="$HOME/.local/bin:$PATH"
 echo "Fixing .venv volume ownership..."
 sudo chown -R vscode:vscode /workspace/.venv
 
-echo "Syncing dependencies (dev + diarize with CPU torch)..."
+echo "Syncing dependencies (dev + full CPU ML stack: diarize, align, local)..."
 cd /workspace
-uv sync --group dev --extra diarize --extra cpu --reinstall-package tolka
+uv sync --group dev --extra diarize --extra align --extra local --extra cpu --reinstall-package tolka
 
 echo ""
 echo "Ready. Try:"
 echo "  uv run pytest"
-echo "  TOLKA_API_TOKENS=dev TOLKA_FAKE_ENGINE=1 uv run uvicorn tolka.main:create_app --factory --host 0.0.0.0"
+echo "  TOLKA_API_TOKENS=dev TOLKA_ENGINE=fake uv run uvicorn tolka.main:create_app --factory --host 0.0.0.0"

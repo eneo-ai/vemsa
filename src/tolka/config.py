@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -17,10 +17,17 @@ class Settings(BaseSettings):
         default=None, validation_alias=AliasChoices("TOLKA_HF_TOKEN", "HF_TOKEN")
     )
 
+    # auto: hybrid when a whisper endpoint is configured, local otherwise.
+    # local: in-process easytranscriber (whisper + forced alignment on this machine).
+    # hybrid: remote whisper text + local easyaligner forced alignment.
+    # remote: remote whisper only, provider timestamps as-is.
+    engine: Literal["auto", "local", "hybrid", "remote", "fake"] = "auto"
+
     whisper_api_base: str = ""
     whisper_api_key: str | None = None
     whisper_timeout_s: float = 3600.0
     default_model: str = "KBLab/kb-whisper-large"
+    emissions_model: str = "KBLab/wav2vec2-large-voxrex-swedish"
     diarization_model: str = "pyannote/speaker-diarization-3.1"
 
     model_cache_dir: Path = Path("data/models")
@@ -39,7 +46,11 @@ class Settings(BaseSettings):
 
     preload_models: bool = False
     allow_private_urls: bool = False
-    fake_engine: bool = False
+
+    def resolve_engine(self) -> str:
+        if self.engine != "auto":
+            return self.engine
+        return "hybrid" if self.whisper_api_base else "local"
 
     @field_validator("api_tokens", mode="before")
     @classmethod

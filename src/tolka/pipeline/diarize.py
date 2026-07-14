@@ -98,6 +98,21 @@ def assign_speakers_to_segments(segments: list[Segment], turns: list[Turn]) -> l
     return labelled
 
 
+def resolve_segments(
+    words: list[Word], plain_segments: list[Segment], turns: list[Turn] | None
+) -> list[Segment]:
+    """Best segment construction for the available inputs: word-level speaker merge
+    when words exist, segment-level merge otherwise; without diarization (turns=None),
+    provider segments verbatim or gap-grouped words."""
+    if turns is not None:
+        if words:
+            return assign_speakers(words, turns)
+        return assign_speakers_to_segments(plain_segments, turns)
+    if plain_segments:
+        return plain_segments
+    return segments_without_speakers(words)
+
+
 def segments_without_speakers(words: list[Word], *, gap_split_s: float = 1.0) -> list[Segment]:
     if not words:
         return []

@@ -79,7 +79,7 @@ def settings(tmp_path: Path) -> Settings:
         model_cache_dir=tmp_path / "models",
         purge_interval_s=3600.0,
         allow_private_urls=True,
-        fake_engine=True,
+        engine="fake",
     )
 
 

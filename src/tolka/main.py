@@ -18,11 +18,21 @@ logger = logging.getLogger(__name__)
 
 
 def _build_engine(settings: Settings) -> TranscriptionEngine:
-    if settings.fake_engine:
-        logger.warning("TOLKA_FAKE_ENGINE is enabled — returning canned transcripts")
+    engine = settings.resolve_engine()
+    logger.info("transcription engine: %s (TOLKA_ENGINE=%s)", engine, settings.engine)
+    if engine == "fake":
+        logger.warning("fake engine is enabled — returning canned transcripts")
         from tolka.pipeline.fake import CannedEngine
 
         return CannedEngine()
+    if engine == "local":
+        from tolka.pipeline.transcribe import EasyTranscriberEngine
+
+        return EasyTranscriberEngine(settings)
+    if engine == "hybrid":
+        from tolka.pipeline.hybrid import HybridEngine
+
+        return HybridEngine(settings)
     from tolka.pipeline.whisper_api import OpenAIWhisperEngine
 
     return OpenAIWhisperEngine(settings)

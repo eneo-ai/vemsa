@@ -1,9 +1,9 @@
-"""Transcription engine backed by a remote OpenAI-compatible /audio/transcriptions
-endpoint (e.g. speaches / faster-whisper-server / vLLM hosting KBLab/kb-whisper-large).
+"""Remote transcription via an OpenAI-compatible /audio/transcriptions endpoint
+(e.g. speaches / faster-whisper-server / vLLM hosting KBLab/kb-whisper-large).
 
-Word-level timestamps are requested; when the serving stack only returns segments,
-speaker assignment degrades gracefully to segment granularity. Diarization always
-runs locally via pyannote."""
+OpenAIWhisperEngine trusts the provider's timestamps (TOLKA_ENGINE=remote); the hybrid
+engine reuses request_transcription/parse_verbose_json from here and force-aligns the
+returned text locally instead. Diarization always runs locally via pyannote."""
 
 import logging
 from pathlib import Path
@@ -13,15 +13,41 @@ import httpx
 
 from tolka.config import Settings
 from tolka.jobs.models import Segment, TranscriptionResult, Word
-from tolka.pipeline.diarize import (
-    Diarizer,
-    assign_speakers,
-    assign_speakers_to_segments,
-    segments_without_speakers,
-)
+from tolka.pipeline.diarize import Diarizer, resolve_segments
 from tolka.pipeline.render import render_text
 
 logger = logging.getLogger(__name__)
+
+
+def request_transcription(
+    settings: Settings, audio_path: Path, *, language: str, model: str
+) -> dict[str, Any]:
+    """Blocking POST to the whisper endpoint; verbose_json with word+segment granularity."""
+    if not settings.whisper_api_base:
+        raise RuntimeError(
+            "TOLKA_WHISPER_API_BASE is required (OpenAI-compatible base URL, e.g."
+            " http://whisper-host:8000/v1)"
+        )
+    data: dict[str, Any] = {
+        "model": model,
+        "response_format": "verbose_json",
+        "timestamp_granularities[]": ["word", "segment"],
+    }
+    if language != "auto":
+        data["language"] = language
+    headers = {}
+    if settings.whisper_api_key:
+        headers["Authorization"] = f"Bearer {settings.whisper_api_key}"
+
+    url = f"{settings.whisper_api_base.rstrip('/')}/audio/transcriptions"
+    with (
+        audio_path.open("rb") as audio,
+        httpx.Client(timeout=settings.whisper_timeout_s, headers=headers) as client,
+    ):
+        response = client.post(url, data=data, files={"file": (audio_path.name, audio)})
+    if response.status_code != 200:
+        raise RuntimeError(f"whisper API returned {response.status_code}: {response.text[:500]}")
+    return response.json()
 
 
 def parse_verbose_json(payload: dict[str, Any]) -> tuple[list[Word], list[Segment]]:
@@ -50,8 +76,22 @@ def parse_verbose_json(payload: dict[str, Any]) -> tuple[list[Word], list[Segmen
     return words, segments
 
 
+def build_result(
+    payload: dict[str, Any], segments: list[Segment], *, model: str, language: str
+) -> TranscriptionResult:
+    duration = float(payload.get("duration") or 0.0) or (segments[-1].end if segments else 0.0)
+    detected = payload.get("language") or (language if language != "auto" else "unknown")
+    return TranscriptionResult(
+        language=str(detected),
+        duration_seconds=duration,
+        model=model,
+        text=render_text(segments),
+        segments=segments,
+    )
+
+
 class OpenAIWhisperEngine:
-    """Blocking engine calling the remote whisper endpoint; runs in a worker thread."""
+    """Remote whisper, provider timestamps as-is; runs in a worker thread."""
 
     def __init__(self, settings: Settings, diarizer: Diarizer | None = None) -> None:
         if not settings.whisper_api_base:
@@ -65,59 +105,16 @@ class OpenAIWhisperEngine:
     def transcribe(
         self, audio_path: Path, *, language: str, model: str, diarize: bool
     ) -> TranscriptionResult:
-        payload = self._request_transcription(audio_path, language=language, model=model)
+        payload = request_transcription(self._settings, audio_path, language=language, model=model)
         words, plain_segments = parse_verbose_json(payload)
         if not words and not plain_segments:
             raise RuntimeError("whisper API returned neither words nor segments")
+        if diarize and not words:
+            logger.info("no word timestamps from whisper API; merging speakers per segment")
 
-        if diarize:
-            turns = self._diarizer.diarize(audio_path)
-            if words:
-                segments = assign_speakers(words, turns)
-            else:
-                logger.info("no word timestamps from whisper API; merging speakers per segment")
-                segments = assign_speakers_to_segments(plain_segments, turns)
-        elif plain_segments:
-            segments = plain_segments
-        else:
-            segments = segments_without_speakers(words)
-
-        duration = float(payload.get("duration") or 0.0) or (segments[-1].end if segments else 0.0)
-        detected = payload.get("language") or (language if language != "auto" else "unknown")
-        return TranscriptionResult(
-            language=str(detected),
-            duration_seconds=duration,
-            model=model,
-            text=render_text(segments),
-            segments=segments,
-        )
+        turns = self._diarizer.diarize(audio_path) if diarize else None
+        segments = resolve_segments(words, plain_segments, turns)
+        return build_result(payload, segments, model=model, language=language)
 
     def warm_up(self) -> None:
         self._diarizer.load()
-
-    def _request_transcription(
-        self, audio_path: Path, *, language: str, model: str
-    ) -> dict[str, Any]:
-        settings = self._settings
-        data: dict[str, Any] = {
-            "model": model,
-            "response_format": "verbose_json",
-            "timestamp_granularities[]": ["word", "segment"],
-        }
-        if language != "auto":
-            data["language"] = language
-        headers = {}
-        if settings.whisper_api_key:
-            headers["Authorization"] = f"Bearer {settings.whisper_api_key}"
-
-        url = f"{settings.whisper_api_base.rstrip('/')}/audio/transcriptions"
-        with (
-            audio_path.open("rb") as audio,
-            httpx.Client(timeout=settings.whisper_timeout_s, headers=headers) as client,
-        ):
-            response = client.post(url, data=data, files={"file": (audio_path.name, audio)})
-        if response.status_code != 200:
-            raise RuntimeError(
-                f"whisper API returned {response.status_code}: {response.text[:500]}"
-            )
-        return response.json()

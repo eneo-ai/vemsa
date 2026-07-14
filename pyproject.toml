@@ -20,6 +20,12 @@ dependencies = [
 diarize = [
     "pyannote-audio>=3.3.1,<4",
 ]
+align = [
+    "easyaligner>=0,<1",
+]
+local = [
+    "easytranscriber==0.3.0",
+]
 cpu = [
     "torch>=2.7,<2.9",
     "torchaudio",

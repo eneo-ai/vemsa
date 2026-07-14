@@ -1,4 +1,4 @@
-"""Canned-output engine for local smoke runs (TOLKA_FAKE_ENGINE=1) — never for production."""
+"""Canned-output engine for local smoke runs (TOLKA_ENGINE=fake) — never for production."""
 
 import time
 from pathlib import Path
