@@ -1,7 +1,7 @@
 [project]
 name = "tolka"
 version = "0.1.0"
-description = "Transcription and speaker-diarization service wrapping kb-labb/easytranscriber"
+description = "Transcription and speaker-diarization service: OpenAI-compatible whisper provider + local pyannote diarization"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "AGPL-3.0-or-later"
@@ -17,8 +17,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-ml = [
-    "easytranscriber==0.3.0",
+diarize = [
     "pyannote-audio>=3.3.1,<4",
 ]
 cpu = [

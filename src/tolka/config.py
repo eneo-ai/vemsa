@@ -17,8 +17,10 @@ class Settings(BaseSettings):
         default=None, validation_alias=AliasChoices("TOLKA_HF_TOKEN", "HF_TOKEN")
     )
 
+    whisper_api_base: str = ""
+    whisper_api_key: str | None = None
+    whisper_timeout_s: float = 3600.0
     default_model: str = "KBLab/kb-whisper-large"
-    emissions_model: str = "KBLab/wav2vec2-large-voxrex-swedish"
     diarization_model: str = "pyannote/speaker-diarization-3.1"
 
     model_cache_dir: Path = Path("data/models")

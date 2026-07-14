@@ -1,9 +1,11 @@
 # Tolka
 
 Tolka (Swedish: *to interpret*) is a standalone transcription and speaker-diarization service.
-It wraps [kb-labb/easytranscriber](https://github.com/kb-labb/easytranscriber) for high-quality
-Swedish speech-to-text with word-level timestamps (VAD → Whisper → forced alignment), and adds
-speaker diarization via [pyannote](https://github.com/pyannote/pyannote-audio) on top.
+Whisper inference (e.g. [KBLab/kb-whisper-large](https://huggingface.co/KBLab/kb-whisper-large))
+runs on a **remote OpenAI-compatible endpoint** (`/v1/audio/transcriptions`) that you host
+separately; tolka orchestrates jobs, adds **speaker diarization locally** via
+[pyannote](https://github.com/pyannote/pyannote-audio), merges speakers onto the returned
+timestamps, and renders speaker-labelled transcripts.
 
 It exposes two front doors over one job engine:
 
@@ -12,6 +14,19 @@ It exposes two front doors over one job engine:
   `submit_transcription`, and `get_transcription` tools
 
 The service is platform-agnostic: any client that can speak HTTP (or MCP) can use it.
+
+## How transcription works
+
+1. Audio arrives (signed URL or multipart upload) and is queued; one job runs at a time.
+2. The audio is sent to your whisper endpoint with `response_format=verbose_json` and
+   `timestamp_granularities[]=word,segment`.
+3. pyannote diarization runs locally on the same audio.
+4. Speakers are assigned to words by maximal temporal overlap and grouped into segments.
+   If your serving stack returns no word timestamps, assignment degrades gracefully to
+   whole-segment granularity.
+
+Tested serving stacks that return word timestamps include speaches (formerly
+faster-whisper-server) and vLLM's audio API — anything OpenAI-compatible works.
 
 ## Job API
 
@@ -59,14 +74,17 @@ All settings via environment variables with the `TOLKA_` prefix (see `src/tolka/
 | Variable | Default | Description |
 | --- | --- | --- |
 | `TOLKA_API_TOKENS` | *(required)* | Comma-separated bearer tokens |
+| `TOLKA_WHISPER_API_BASE` | *(required)* | OpenAI-compatible base URL, e.g. `http://whisper-host:8000/v1` |
+| `TOLKA_WHISPER_API_KEY` | – | Bearer token for the whisper endpoint |
+| `TOLKA_WHISPER_TIMEOUT_S` | 3600 | Per-request timeout against the whisper endpoint |
+| `TOLKA_DEFAULT_MODEL` | `KBLab/kb-whisper-large` | Model name passed to the whisper endpoint |
 | `TOLKA_HF_TOKEN` | – | Hugging Face token (pyannote models are gated) |
-| `TOLKA_DEFAULT_MODEL` | `KBLab/kb-whisper-large` | Whisper model |
-| `TOLKA_MODEL_CACHE_DIR` | `./data/models` | Model cache (mount a volume) |
+| `TOLKA_MODEL_CACHE_DIR` | `./data/models` | pyannote model cache (mount a volume) |
 | `TOLKA_WORK_DIR` | `./data/work` | Temp audio storage |
 | `TOLKA_DB_PATH` | `./data/tolka.sqlite3` | SQLite job store |
 | `TOLKA_MAX_AUDIO_BYTES` | 2 GiB | Upload/download size limit |
 | `TOLKA_RETENTION_HOURS` | 72 | Result retention before purge |
-| `TOLKA_PRELOAD_MODELS` | `false` | Load models at startup instead of first job |
+| `TOLKA_PRELOAD_MODELS` | `false` | Load the diarization pipeline at startup |
 | `TOLKA_ALLOW_PRIVATE_URLS` | `false` | Allow `source_url` to resolve to private networks |
 | `TOLKA_FAKE_ENGINE` | `false` | Use a canned-output engine (dev/smoke only) |
 
@@ -76,50 +94,50 @@ diarization stage to download them.
 
 ## Development
 
-Requires [uv](https://docs.astral.sh/uv/). The ML stack (torch, easytranscriber, pyannote) is
-behind extras so unit tests run without it:
+Requires [uv](https://docs.astral.sh/uv/). The diarization stack (torch + pyannote) is behind
+extras so unit tests run without it:
 
 ```bash
-uv sync --group dev                          # API + engine tests, no torch
+uv sync --group dev                               # all tests, no torch
 uv run pytest
 uv run ruff format --check . && uv run ruff check .
 
-uv sync --group dev --extra ml --extra cpu   # full stack, CPU wheels (dev/devcontainer)
-uv sync --frozen --no-dev --extra ml --extra gpu  # prod, CUDA 12.8 wheels
+uv sync --group dev --extra diarize --extra cpu   # with diarization, CPU wheels (devcontainer)
+uv sync --frozen --no-dev --extra diarize --extra gpu  # prod, CUDA 12.8 wheels
 ```
 
-Always pair `--extra ml` with exactly one of `--extra cpu` / `--extra gpu` — the extras route
-torch to the right package index and are mutually exclusive.
+Always pair `--extra diarize` with exactly one of `--extra cpu` / `--extra gpu` — the extras
+route torch to the right package index and are mutually exclusive.
 
-Run a local server against the fake engine (no ML stack needed):
+Run a local server against the fake engine (no ML stack, no whisper endpoint needed):
 
 ```bash
 TOLKA_API_TOKENS=dev TOLKA_FAKE_ENGINE=1 uv run uvicorn tolka.main:create_app --factory
 ```
 
 A devcontainer is included (`.devcontainer/`): reopen in container to get Python 3.11, ffmpeg,
-uv, and the CPU ML stack pre-installed.
+uv, and the CPU diarization stack pre-installed.
 
 ## Docker
 
 ```bash
-docker compose up --build     # GPU (requires nvidia container toolkit)
-docker build --build-arg TORCH_VARIANT=cpu -t tolka:cpu .   # CPU image
+docker compose up --build                                   # GPU diarization
+docker build --build-arg TORCH_VARIANT=cpu -t tolka:cpu .   # CPU-only diarization
 ```
 
-The compose file mounts named volumes for the model cache (`/models`) and job data (`/data`),
-and reserves one NVIDIA GPU. Set `TOLKA_API_TOKENS` and `HF_TOKEN` in the environment.
+The image is plain `python:3.12-slim` — torch's pip wheels bundle their CUDA libraries, so GPU
+use only needs the NVIDIA driver and container toolkit on the host. The compose file mounts
+named volumes for the pyannote model cache (`/models`) and job data (`/data`), and reserves one
+GPU. Set `TOLKA_API_TOKENS`, `TOLKA_WHISPER_API_BASE`, and `HF_TOKEN` in the environment.
 
 ## Status
 
-- ✅ Job engine, REST API, MCP facade, speaker-merge, renderer — tested on CPU without GPU
-- ⏳ GPU verification of the real easytranscriber pipeline (Swedish sample end-to-end)
-- ⏳ Swedish forced-alignment tokenizer/emissions model selection
-  (`KBLab/wav2vec2-large-voxrex-swedish` is the candidate)
-
-Search the code for `GPU-VERIFY` to find the spots that need validation on a GPU box.
+- ✅ Job engine, REST API, MCP facade, whisper-provider engine, speaker-merge (word- and
+  segment-level), renderer — tested without the torch stack
+- ⏳ End-to-end verification against the production whisper endpoint (word-timestamp support
+  of the serving stack determines merge granularity)
+- ⏳ pyannote diarization verification on a GPU box (`GPU-VERIFY` markers in code)
 
 ## License
 
-AGPL-3.0-or-later, © Sundsvalls Kommun. Wraps MIT-licensed
-[easytranscriber](https://github.com/kb-labb/easytranscriber) (KBLab).
+AGPL-3.0-or-later, © Sundsvalls Kommun.

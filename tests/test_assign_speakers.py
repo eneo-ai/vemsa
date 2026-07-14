@@ -1,5 +1,10 @@
-from tolka.jobs.models import Word
-from tolka.pipeline.diarize import Turn, assign_speakers, segments_without_speakers
+from tolka.jobs.models import Segment, Word
+from tolka.pipeline.diarize import (
+    Turn,
+    assign_speakers,
+    assign_speakers_to_segments,
+    segments_without_speakers,
+)
 
 
 def word(text: str, start: float, end: float) -> Word:
@@ -70,3 +75,27 @@ def test_segments_without_speakers_splits_on_gap():
 def test_empty_words():
     assert assign_speakers([], [Turn(0.0, 1.0, "SPEAKER_00")]) == []
     assert segments_without_speakers([]) == []
+
+
+def plain_segment(start: float, end: float, text: str) -> Segment:
+    return Segment(start=start, end=end, text=text, words=[])
+
+
+def test_segment_level_assignment_picks_max_overlap():
+    turns = [Turn(0.0, 1.5, "SPEAKER_00"), Turn(1.5, 5.0, "SPEAKER_01")]
+    segments = [plain_segment(0.0, 1.4, "a"), plain_segment(1.4, 3.0, "b")]
+    labelled = assign_speakers_to_segments(segments, turns)
+    assert [s.speaker for s in labelled] == ["SPEAKER_00", "SPEAKER_01"]
+    assert [s.text for s in labelled] == ["a", "b"]
+
+
+def test_segment_level_assignment_gap_inherits_previous():
+    turns = [Turn(0.0, 1.0, "SPEAKER_00")]
+    segments = [plain_segment(0.0, 0.9, "a"), plain_segment(5.0, 6.0, "b")]
+    labelled = assign_speakers_to_segments(segments, turns)
+    assert [s.speaker for s in labelled] == ["SPEAKER_00", "SPEAKER_00"]
+
+
+def test_segment_level_assignment_without_turns_is_unchanged():
+    segments = [plain_segment(0.0, 1.0, "a")]
+    assert assign_speakers_to_segments(segments, []) == segments

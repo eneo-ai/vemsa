@@ -23,10 +23,9 @@ def _build_engine(settings: Settings) -> TranscriptionEngine:
         from tolka.pipeline.fake import CannedEngine
 
         return CannedEngine()
-    # Imported lazily: pulls in the torch stack, which is only installed with the ml extra.
-    from tolka.pipeline.transcribe import EasyTranscriberEngine
+    from tolka.pipeline.whisper_api import OpenAIWhisperEngine
 
-    return EasyTranscriberEngine(settings)
+    return OpenAIWhisperEngine(settings)
 
 
 def create_app(settings: Settings | None = None, engine: TranscriptionEngine | None = None):

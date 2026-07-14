@@ -29,7 +29,7 @@ def _overlap(word: Word, turn: Turn) -> float:
     return max(0.0, min(word.end, turn.end) - max(word.start, turn.start))
 
 
-def _nearest_turn(word: Word, turns: list[Turn]) -> Turn:
+def _nearest_turn(word: Word | Segment, turns: list[Turn]) -> Turn:
     midpoint = (word.start + word.end) / 2
     return min(turns, key=lambda turn: abs((turn.start + turn.end) / 2 - midpoint))
 
@@ -71,6 +71,31 @@ def assign_speakers(
     turns = sorted(turns, key=lambda turn: turn.start)
     labels = _label_words(words, turns)
     return _group_labelled(words, labels, gap_split_s)
+
+
+def assign_speakers_to_segments(segments: list[Segment], turns: list[Turn]) -> list[Segment]:
+    """Coarse fallback when only segment-level timestamps are available: each whole
+    segment gets the speaker of the maximally overlapping diarization turn (a speaker
+    change inside one whisper segment is lost at this granularity)."""
+    if not segments or not turns:
+        return segments
+    ordered_turns = sorted(turns, key=lambda turn: turn.start)
+    labelled: list[Segment] = []
+    previous: str | None = None
+    for segment in segments:
+        best: str | None = None
+        best_overlap = 0.0
+        for turn in ordered_turns:
+            overlap = max(0.0, min(segment.end, turn.end) - max(segment.start, turn.start))
+            if overlap > best_overlap:
+                best_overlap = overlap
+                best = turn.speaker
+        if best is None:
+            fallback = _nearest_turn(segment, ordered_turns).speaker
+            best = previous if previous is not None else fallback
+        labelled.append(segment.model_copy(update={"speaker": best}))
+        previous = best
+    return labelled
 
 
 def segments_without_speakers(words: list[Word], *, gap_split_s: float = 1.0) -> list[Segment]:

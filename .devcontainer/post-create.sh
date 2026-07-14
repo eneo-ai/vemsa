@@ -8,9 +8,9 @@ export PATH="$HOME/.local/bin:$PATH"
 echo "Fixing .venv volume ownership..."
 sudo chown -R vscode:vscode /workspace/.venv
 
-echo "Syncing dependencies (dev + ml with CPU torch)..."
+echo "Syncing dependencies (dev + diarize with CPU torch)..."
 cd /workspace
-uv sync --group dev --extra ml --extra cpu --reinstall-package tolka
+uv sync --group dev --extra diarize --extra cpu --reinstall-package tolka
 
 echo ""
 echo "Ready. Try:"
