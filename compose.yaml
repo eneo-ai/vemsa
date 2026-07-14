@@ -1,0 +1,25 @@
+services:
+  tolka:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      TOLKA_API_TOKENS: ${TOLKA_API_TOKENS:?set TOLKA_API_TOKENS}
+      HF_TOKEN: ${HF_TOKEN:-}
+      TOLKA_RETENTION_HOURS: ${TOLKA_RETENTION_HOURS:-72}
+      TOLKA_PRELOAD_MODELS: ${TOLKA_PRELOAD_MODELS:-false}
+    volumes:
+      - models:/models
+      - data:/data
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  models:
+  data:
