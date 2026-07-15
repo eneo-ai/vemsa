@@ -16,6 +16,10 @@ dependencies = [
     "aiosqlite>=0.20",
 ]
 
+[project.urls]
+Repository = "https://github.com/eneo-ai/tolka"
+Issues = "https://github.com/eneo-ai/tolka/issues"
+
 [project.optional-dependencies]
 diarize = [
     "pyannote-audio>=3.3.1,<4",

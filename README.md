@@ -154,6 +154,21 @@ environment.
   guarded by a runtime fallback — validate against a real installation
 - ⏳ pyannote diarization verification (HF gating, `GPU-VERIFY` markers in code)
 
+## Acknowledgements
+
+Tolka builds on the excellent work of [KBLab](https://kb-labb.github.io/) at the National
+Library of Sweden:
+
+- [easytranscriber](https://github.com/kb-labb/easytranscriber) — the transcription toolkit
+  that powers the `local` engine and inspired Tolka's pipeline design
+- [easyaligner](https://github.com/kb-labb/easyaligner) — CTC forced alignment used for
+  word-precise timestamps in the `hybrid` engine
+- [kb-whisper](https://huggingface.co/KBLab/kb-whisper-large) and
+  [wav2vec2-large-voxrex-swedish](https://huggingface.co/KBLab/wav2vec2-large-voxrex-swedish) —
+  the default Swedish speech models
+
+Speaker diarization is provided by [pyannote-audio](https://github.com/pyannote/pyannote-audio).
+
 ## License
 
 AGPL-3.0-or-later, © Sundsvalls Kommun.
