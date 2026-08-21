@@ -1,12 +1,11 @@
-import asyncio
-import ipaddress
-import socket
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 from uuid import uuid4
 
 import httpx
 from starlette.datastructures import UploadFile
+
+from tolka.security import ForbiddenUrlError, validate_outbound_url
 
 _CHUNK_SIZE = 1024 * 1024
 _MAX_REDIRECTS = 5
@@ -15,24 +14,6 @@ _REDIRECT_CODES = {301, 302, 303, 307, 308}
 
 class AudioTooLargeError(Exception):
     pass
-
-
-class ForbiddenUrlError(Exception):
-    pass
-
-
-async def _assert_public_host(host: str | None) -> None:
-    if not host:
-        raise ForbiddenUrlError("URL has no host")
-    loop = asyncio.get_running_loop()
-    try:
-        infos = await loop.getaddrinfo(host, None, type=socket.SOCK_STREAM)
-    except socket.gaierror as exc:
-        raise ForbiddenUrlError(f"cannot resolve host {host!r}") from exc
-    for info in infos:
-        address = ipaddress.ip_address(info[4][0])
-        if not address.is_global:
-            raise ForbiddenUrlError(f"host {host!r} resolves to non-public address {address}")
 
 
 def _dest_path(dest_dir: Path, name_hint: str | None) -> Path:
@@ -64,6 +45,7 @@ async def fetch_url(
     max_bytes: int,
     timeout_s: float,
     allow_private: bool = False,
+    allowed_hosts: tuple[str, ...] = (),
 ) -> Path:
     """Stream a remote audio file to dest_dir, enforcing scheme, host, and size limits.
 
@@ -71,11 +53,12 @@ async def fetch_url(
     """
     async with httpx.AsyncClient(follow_redirects=False, timeout=timeout_s) as client:
         for _ in range(_MAX_REDIRECTS + 1):
+            await validate_outbound_url(
+                url,
+                allow_private=allow_private,
+                allowed_hosts=allowed_hosts,
+            )
             parsed = urlparse(url)
-            if parsed.scheme not in ("http", "https"):
-                raise ForbiddenUrlError(f"unsupported URL scheme {parsed.scheme!r}")
-            if not allow_private:
-                await _assert_public_host(parsed.hostname)
 
             request = client.build_request("GET", url)
             response = await client.send(request, stream=True)

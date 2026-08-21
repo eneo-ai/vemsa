@@ -9,15 +9,20 @@ _bearer = HTTPBearer(auto_error=False)
 def require_token(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
-) -> None:
-    tokens: list[str] = request.app.state.deps.settings.api_tokens
-    if not tokens:
+) -> str:
+    token_clients: dict[str, str] = request.app.state.deps.settings.token_clients
+    if not token_clients:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="no API tokens configured")
-    if credentials is None or not any(
-        secrets.compare_digest(credentials.credentials, token) for token in tokens
-    ):
+    client_id = None
+    if credentials is not None:
+        for token, candidate_client_id in token_clients.items():
+            if secrets.compare_digest(credentials.credentials, token):
+                client_id = candidate_client_id
+    if client_id is None:
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED,
             detail="invalid or missing bearer token",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    request.state.client_id = client_id
+    return client_id

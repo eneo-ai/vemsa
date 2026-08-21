@@ -1,10 +1,13 @@
+import hashlib
+import re
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 GIB = 1024**3
+_CLIENT_ID = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$")
 
 
 class Settings(BaseSettings):
@@ -13,6 +16,9 @@ class Settings(BaseSettings):
     # NoDecode: parsed from a comma-separated env value by the validator below,
     # not pydantic-settings' default JSON decoding
     api_tokens: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    environment: Literal["development", "test", "production"] = "development"
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    log_format: Literal["json", "text"] = "json"
     hf_token: str | None = Field(
         default=None, validation_alias=AliasChoices("TOLKA_HF_TOKEN", "HF_TOKEN")
     )
@@ -33,12 +39,21 @@ class Settings(BaseSettings):
     model_cache_dir: Path = Path("data/models")
     work_dir: Path = Path("data/work")
     db_path: Path = Path("data/tolka.sqlite3")
+    database_url: str | None = None
 
     max_audio_bytes: int = 2 * GIB
     fetch_timeout_s: float = 600.0
     retention_hours: float = 72.0
     purge_interval_s: float = 900.0
     webhook_timeout_s: float = 30.0
+    webhook_poll_interval_s: float = 1.0
+    webhook_max_attempts: int = 8
+    queue_poll_interval_s: float = 1.0
+    job_lease_s: float = 120.0
+    lease_heartbeat_s: float = 30.0
+    shutdown_grace_s: float = 30.0
+    run_worker: bool = True
+    worker_stale_s: float = 90.0
 
     mcp_max_audio_bytes: int = GIB
     mcp_sync_timeout_s: float = 900.0
@@ -46,15 +61,73 @@ class Settings(BaseSettings):
 
     preload_models: bool = False
     allow_private_urls: bool = False
+    source_allowed_hosts: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    webhook_allowed_hosts: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    allow_insecure_webhooks: bool = False
+    webhook_signing_secret: str | None = None
+    max_queued_jobs: int = 100
+    max_queued_jobs_per_client: int = 10
+
+    @property
+    def token_clients(self) -> dict[str, str]:
+        """Map bearer tokens to stable client identities.
+
+        Named credentials use ``client_id=token``. Bare tokens remain supported for
+        development and are assigned a non-secret fingerprint as their client id.
+        """
+        credentials: dict[str, str] = {}
+        for value in self.api_tokens:
+            client_id, separator, token = value.partition("=")
+            if separator:
+                credentials[token] = client_id
+            else:
+                fingerprint = hashlib.sha256(value.encode()).hexdigest()[:12]
+                credentials[value] = f"token-{fingerprint}"
+        return credentials
 
     def resolve_engine(self) -> str:
         if self.engine != "auto":
             return self.engine
         return "hybrid" if self.whisper_api_base else "local"
 
-    @field_validator("api_tokens", mode="before")
+    @field_validator("api_tokens", "source_allowed_hosts", "webhook_allowed_hosts", mode="before")
     @classmethod
     def _split_tokens(cls, value: object) -> object:
         if isinstance(value, str):
             return [token.strip() for token in value.split(",") if token.strip()]
         return value
+
+    @model_validator(mode="after")
+    def _validate_production_settings(self) -> "Settings":
+        for value in self.api_tokens:
+            client_id, separator, token = value.partition("=")
+            if separator and (not _CLIENT_ID.fullmatch(client_id) or not token):
+                raise ValueError(
+                    "named API credentials must use client_id=token with a valid client id"
+                )
+        if self.environment == "production":
+            if not self.api_tokens:
+                raise ValueError("TOLKA_API_TOKENS is required in production")
+            if any("=" not in value for value in self.api_tokens):
+                raise ValueError("production API credentials must be named using client_id=token")
+            if self.engine == "fake":
+                raise ValueError("the fake transcription engine is not allowed in production")
+        if self.job_lease_s <= self.lease_heartbeat_s * 2:
+            raise ValueError("job_lease_s must be more than twice lease_heartbeat_s")
+        for name in (
+            "queue_poll_interval_s",
+            "webhook_poll_interval_s",
+            "lease_heartbeat_s",
+            "shutdown_grace_s",
+            "worker_stale_s",
+            "retention_hours",
+        ):
+            if getattr(self, name) <= 0:
+                raise ValueError(f"{name} must be greater than zero")
+        if self.max_queued_jobs <= 0 or self.max_queued_jobs_per_client <= 0:
+            raise ValueError("queue limits must be greater than zero")
+        if self.max_queued_jobs_per_client > self.max_queued_jobs:
+            raise ValueError("max_queued_jobs_per_client cannot exceed max_queued_jobs")
+        if self.webhook_max_attempts <= 0:
+            raise ValueError("webhook_max_attempts must be greater than zero")
+        return self

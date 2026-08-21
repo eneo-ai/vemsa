@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 
 from tolka.config import Settings
 from tolka.jobs.queue import JobQueue
-from tolka.jobs.store import SqliteJobStore
+from tolka.jobs.store import JobStore
 from tolka.pipeline.base import TranscriptionEngine
 
 
@@ -12,11 +12,11 @@ class AppDeps:
 
     settings: Settings
     engine: TranscriptionEngine | None = None
-    store: SqliteJobStore | None = None
+    store: JobStore | None = None
     queue: JobQueue | None = field(default=None)
 
     @property
-    def ready_store(self) -> SqliteJobStore:
+    def ready_store(self) -> JobStore:
         assert self.store is not None, "app lifespan has not run"
         return self.store
 

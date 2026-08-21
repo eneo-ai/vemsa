@@ -93,7 +93,8 @@ async def test_unknown_job_is_404(settings: Settings):
 async def test_result_before_completion_is_409(settings: Settings):
     async with api_client(settings) as (client, app):
         # insert a queued job directly, without waking the worker
-        job = new_job(JobRequest(source_url="https://example.org/x.mp3"))
+        client_id = next(iter(settings.token_clients.values()))
+        job = new_job(JobRequest(source_url="https://example.org/x.mp3"), client_id=client_id)
         await app.state.deps.store.create(job)
 
         response = await client.get(f"/v1/jobs/{job.id}/result", headers=AUTH)
@@ -137,4 +138,4 @@ async def test_healthz_needs_no_auth(settings: Settings):
     async with api_client(settings) as (client, _):
         response = await client.get("/healthz")
         assert response.status_code == 200
-        assert response.json()["status"] == "ok"
+        assert response.json()["status"] == "ready"

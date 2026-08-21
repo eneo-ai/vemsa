@@ -34,6 +34,27 @@ async def test_fetch_rejects_non_http_scheme(tmp_path: Path):
         await fetch_url("ftp://example.org/a.mp3", dest_dir=tmp_path, max_bytes=10, timeout_s=5)
 
 
+async def test_fetch_rejects_url_credentials(tmp_path: Path):
+    with pytest.raises(ForbiddenUrlError, match="user information"):
+        await fetch_url(
+            "https://user:secret@example.org/audio.mp3",
+            dest_dir=tmp_path,
+            max_bytes=100,
+            timeout_s=1,
+        )
+
+
+async def test_fetch_enforces_host_allowlist(tmp_path: Path):
+    with pytest.raises(ForbiddenUrlError, match="allowlist"):
+        await fetch_url(
+            "https://example.org/audio.mp3",
+            dest_dir=tmp_path,
+            max_bytes=100,
+            timeout_s=1,
+            allowed_hosts=("media.example.org",),
+        )
+
+
 async def test_fetch_rejects_private_host(tmp_path: Path):
     for url in ("http://127.0.0.1/a.mp3", "http://192.168.1.10/a.mp3", "http://localhost/a.mp3"):
         with pytest.raises(ForbiddenUrlError):

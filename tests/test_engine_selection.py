@@ -1,7 +1,7 @@
 import pytest
 
 from tolka.config import Settings
-from tolka.main import _build_engine
+from tolka.pipeline.factory import build_engine
 from tolka.pipeline.fake import CannedEngine
 from tolka.pipeline.hybrid import HybridEngine
 from tolka.pipeline.transcribe import EasyTranscriberEngine
@@ -26,19 +26,19 @@ def test_build_engine_returns_expected_classes(settings: Settings):
     settings.whisper_api_base = "http://whisper.local/v1"
 
     settings.engine = "fake"
-    assert isinstance(_build_engine(settings), CannedEngine)
+    assert isinstance(build_engine(settings), CannedEngine)
     settings.engine = "local"
-    assert isinstance(_build_engine(settings), EasyTranscriberEngine)
+    assert isinstance(build_engine(settings), EasyTranscriberEngine)
     settings.engine = "hybrid"
-    assert isinstance(_build_engine(settings), HybridEngine)
+    assert isinstance(build_engine(settings), HybridEngine)
     settings.engine = "remote"
-    assert isinstance(_build_engine(settings), OpenAIWhisperEngine)
+    assert isinstance(build_engine(settings), OpenAIWhisperEngine)
 
 
 def test_auto_without_endpoint_builds_local_engine(settings: Settings):
     settings.engine = "auto"
     settings.whisper_api_base = ""
-    assert isinstance(_build_engine(settings), EasyTranscriberEngine)
+    assert isinstance(build_engine(settings), EasyTranscriberEngine)
 
 
 @pytest.mark.parametrize("engine_cls", [HybridEngine, OpenAIWhisperEngine])

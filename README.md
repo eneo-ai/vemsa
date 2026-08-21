@@ -13,6 +13,10 @@ It exposes two front doors over one job engine:
 - **MCP facade** — streamable-HTTP MCP server at `/mcp` with `transcribe_audio`,
   `submit_transcription`, and `get_transcription` tools
 
+FastMCP is only the adapter that implements the MCP protocol. It lets MCP-capable AI
+assistants call Tolka as tools; it does not transcribe audio or maintain a separate queue.
+REST and MCP create and read the same jobs.
+
 The service is platform-agnostic: any client that can speak HTTP (or MCP) can use it.
 
 ## Engine tiers
@@ -72,9 +76,12 @@ Poll `GET /v1/jobs/{id}` until `status` is `completed`, then fetch `GET /v1/jobs
 on completion. Results are retained for `TOLKA_RETENTION_HOURS` and then purged; source audio is
 deleted as soon as the job finishes.
 
-Auth is a static bearer token. `TOLKA_API_TOKENS` takes a comma-separated list so tokens can be
-rotated without downtime. The same tokens authorize the MCP endpoint. (Static bearer suits
-server-to-server use; public MCP clients increasingly expect OAuth — out of scope for v1.)
+Auth is fail-closed static bearer authentication intended for internal server-to-server use.
+`TOLKA_API_TOKENS` takes comma-separated `client_id=token` credentials in production, for
+example `eneo=first-secret,automation=second-secret`. Jobs are owned by that client identity;
+one client cannot read another client's status or transcript. The same credentials authorize
+REST and MCP. Put internet-facing deployments behind an identity-aware gateway; interactive
+MCP OAuth remains outside the v1 service boundary.
 
 ## Configuration
 
@@ -82,7 +89,8 @@ All settings via environment variables with the `TOLKA_` prefix (see `src/tolka/
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `TOLKA_API_TOKENS` | *(required)* | Comma-separated bearer tokens |
+| `TOLKA_API_TOKENS` | *(required in production)* | Comma-separated `client_id=token` credentials |
+| `TOLKA_ENVIRONMENT` | `development` | `development` / `test` / `production`; production requires named credentials and rejects the fake engine |
 | `TOLKA_ENGINE` | `auto` | `auto` / `local` / `hybrid` / `remote` / `fake` (see Engine tiers) |
 | `TOLKA_WHISPER_API_BASE` | – | OpenAI-compatible base URL, e.g. `http://whisper-host:8000/v1` (required for hybrid/remote) |
 | `TOLKA_WHISPER_API_KEY` | – | Bearer token for the whisper endpoint |
@@ -93,10 +101,18 @@ All settings via environment variables with the `TOLKA_` prefix (see `src/tolka/
 | `TOLKA_MODEL_CACHE_DIR` | `./data/models` | Model cache (mount a volume) |
 | `TOLKA_WORK_DIR` | `./data/work` | Temp audio storage |
 | `TOLKA_DB_PATH` | `./data/tolka.sqlite3` | SQLite job store |
+| `TOLKA_DATABASE_URL` | – | PostgreSQL URL; when set, PostgreSQL replaces SQLite |
 | `TOLKA_MAX_AUDIO_BYTES` | 2 GiB | Upload/download size limit |
 | `TOLKA_RETENTION_HOURS` | 72 | Result retention before purge |
 | `TOLKA_PRELOAD_MODELS` | `false` | Load ML pipelines at startup instead of first job |
 | `TOLKA_ALLOW_PRIVATE_URLS` | `false` | Allow `source_url` to resolve to private networks |
+| `TOLKA_SOURCE_ALLOWED_HOSTS` | – | Optional comma-separated source hostname allowlist |
+| `TOLKA_WEBHOOK_ALLOWED_HOSTS` | – | Optional comma-separated webhook hostname allowlist |
+| `TOLKA_WEBHOOK_SIGNING_SECRET` | – | HMAC-SHA256 secret for signed webhook delivery |
+| `TOLKA_MAX_QUEUED_JOBS` | `100` | Global active-job admission limit |
+| `TOLKA_MAX_QUEUED_JOBS_PER_CLIENT` | `10` | Per-client active-job admission limit |
+| `TOLKA_RUN_WORKER` | `true` | Run a worker in this process; production separates API and worker |
+| `TOLKA_LOG_FORMAT` | `json` | Structured `json` or human-readable `text` logs |
 
 `HF_TOKEN` is also honored for the Hugging Face hub. You must accept the pyannote model licenses
 on Hugging Face (`pyannote/speaker-diarization-3.1` and `pyannote/segmentation-3.0`) for the
@@ -133,21 +149,34 @@ uv, and the full CPU ML stack pre-installed.
 ## Docker
 
 ```bash
-docker compose up --build                                        # all engine tiers, GPU
+# Production topology: PostgreSQL + API + GPU worker
+export POSTGRES_PASSWORD='replace-with-a-random-secret'
+export TOLKA_API_TOKENS='operator=replace-with-a-random-token'
+docker compose up --build
+
 docker build --build-arg TORCH_VARIANT=cpu -t tolka:cpu .        # CPU-only ML
 docker build --build-arg ML_EXTRAS="diarize align" -t tolka .    # hybrid/remote only (smaller)
 ```
 
-The image is plain `python:3.12-slim` — torch's pip wheels bundle their CUDA libraries, so GPU
-use only needs the NVIDIA driver and container toolkit on the host. The compose file mounts
-named volumes for the model cache (`/models`) and job data (`/data`), and reserves one GPU.
-Set `TOLKA_API_TOKENS` (and `TOLKA_WHISPER_API_BASE` + `HF_TOKEN` as applicable) in the
-environment.
+Compose runs the API and GPU worker separately. PostgreSQL owns jobs, leases, worker
+heartbeats, and the durable webhook outbox; the containers share `/data` for temporary audio
+on one Docker host. Set `TOLKA_PORT` if host port 8000 is already occupied. Multi-node workers
+will require object storage instead of this shared local volume.
+
+Operational endpoints:
+
+- `GET /livez` — process liveness
+- `GET /readyz` (and compatibility alias `/healthz`) — database and worker readiness
+- `GET /metrics` — Prometheus metrics; requires the same bearer authentication
+
+See [`docs/PRODUCTION.md`](docs/PRODUCTION.md) for security, webhooks, backups, and rollout.
 
 ## Status
 
 - ✅ Job engine, REST API, MCP facade, engine selection, remote whisper client, speaker-merge
   (word- and segment-level), renderer — tested without the torch stack
+- ✅ PostgreSQL job leasing, per-client ownership, queue admission limits, durable signed
+  webhooks, structured logs, metrics, and split API/worker deployment
 - ⏳ `local` engine (easytranscriber) verification on a GPU box: Swedish sample end-to-end,
   auto-detect language, Swedish alignment tokenizer
 - ⏳ `hybrid` engine: easyaligner invocation is best-effort against the documented API and

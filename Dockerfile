@@ -7,7 +7,7 @@
 ARG TORCH_VARIANT=gpu
 ARG ML_EXTRAS="diarize align local"
 
-FROM ghcr.io/astral-sh/uv:latest AS uvbin
+FROM ghcr.io/astral-sh/uv:0.8.20 AS uvbin
 
 FROM python:3.12-slim-bookworm
 ARG TORCH_VARIANT
@@ -43,4 +43,6 @@ RUN mkdir -p /models /data && chown -R 1000:1000 /models /data /app
 USER 1000:1000
 
 EXPOSE 8000
-CMD ["uvicorn", "tolka.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=5 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/readyz', timeout=3)"
+CMD ["uvicorn", "tolka.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]

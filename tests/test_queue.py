@@ -106,6 +106,24 @@ async def test_webhook_delivered_on_completion(
 
 
 @respx.mock
+async def test_webhook_is_signed_when_secret_is_configured(
+    store: SqliteJobStore, settings: Settings, tmp_path: Path
+):
+    settings.webhook_signing_secret = "signing-secret"
+    route = respx.post("https://hooks.example.org/done").mock(return_value=Response(200))
+    job, _ = upload_job(tmp_path, webhook_url="https://hooks.example.org/done")
+    await store.create(job)
+
+    async with running_queue(store, FakeEngine(), settings) as queue:
+        queue.notify()
+        await wait_for_status(store, job.id, JobStatus.COMPLETED)
+
+    request = route.calls.last.request
+    assert request.headers["X-Tolka-Timestamp"]
+    assert request.headers["X-Tolka-Signature-256"].startswith("sha256=")
+
+
+@respx.mock
 async def test_webhook_failure_does_not_fail_job(
     store: SqliteJobStore, settings: Settings, tmp_path: Path
 ):
@@ -121,12 +139,12 @@ async def test_webhook_failure_does_not_fail_job(
     assert completed.status == JobStatus.COMPLETED
 
 
-async def test_startup_requeues_stuck_running_jobs(
+async def test_expired_worker_lease_is_reclaimed(
     store: SqliteJobStore, settings: Settings, tmp_path: Path
 ):
     job, _ = upload_job(tmp_path)
     await store.create(job)
-    claimed = await store.claim_next_queued()
+    claimed = await store.claim_next_queued(lease_for_s=-1)
     assert claimed is not None and claimed.status == JobStatus.RUNNING
 
     async with running_queue(store, FakeEngine(), settings):

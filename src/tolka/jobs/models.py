@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Literal
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, HttpUrl
@@ -47,18 +47,33 @@ class JobRequest(BaseModel):
 
 class Job(BaseModel):
     id: str
+    client_id: str = "legacy"
     status: JobStatus
     created_at: datetime
     updated_at: datetime
     request: JobRequest
     audio_path: str | None = None
     error: str | None = None
+    attempt: int = 0
+    lease_owner: str | None = None
+    lease_expires_at: datetime | None = None
 
 
-def new_job(request: JobRequest, audio_path: str | None = None) -> Job:
+class WebhookOutboxEvent(BaseModel):
+    id: str
+    job_id: str
+    url: str
+    payload: dict[str, Any]
+    attempt: int
+
+
+def new_job(
+    request: JobRequest, audio_path: str | None = None, *, client_id: str = "legacy"
+) -> Job:
     now = datetime.now(UTC)
     return Job(
         id=uuid4().hex,
+        client_id=client_id,
         status=JobStatus.QUEUED,
         created_at=now,
         updated_at=now,

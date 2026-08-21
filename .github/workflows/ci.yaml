@@ -8,6 +8,22 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_DB: tolka_test
+          POSTGRES_USER: tolka
+          POSTGRES_PASSWORD: tolka-test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tolka -d tolka_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TOLKA_TEST_POSTGRES_URL: postgresql://tolka:tolka-test@localhost:5432/tolka_test
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5

@@ -71,13 +71,14 @@ async def test_fail_stores_error(store: SqliteJobStore):
     assert await store.get_result(job.id) is None
 
 
-async def test_requeue_stuck(store: SqliteJobStore):
+async def test_expired_lease_is_reclaimed(store: SqliteJobStore):
     await store.create(job_at(0))
-    await store.claim_next_queued()
+    first = await store.claim_next_queued(worker_id="worker-one", lease_for_s=-1)
 
-    assert await store.requeue_stuck() == 1
-    assert await store.count_queued() == 1
-    assert await store.requeue_stuck() == 0
+    second = await store.claim_next_queued(worker_id="worker-two")
+    assert first is not None and first.attempt == 1
+    assert second is not None and second.attempt == 2
+    assert second.lease_owner == "worker-two"
 
 
 async def test_purge_removes_only_old_terminal_jobs(store: SqliteJobStore):

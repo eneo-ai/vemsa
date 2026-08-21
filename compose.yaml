@@ -1,20 +1,82 @@
+x-tolka-environment: &tolka-environment
+  TOLKA_ENVIRONMENT: production
+  TOLKA_API_TOKENS: ${TOLKA_API_TOKENS:?set named credentials as client_id=token}
+  TOLKA_DATABASE_URL: postgresql://tolka:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres/tolka
+  TOLKA_ENGINE: ${TOLKA_ENGINE:-auto}
+  TOLKA_WHISPER_API_BASE: ${TOLKA_WHISPER_API_BASE:-}
+  TOLKA_WHISPER_API_KEY: ${TOLKA_WHISPER_API_KEY:-}
+  HF_TOKEN: ${HF_TOKEN:-}
+  TOLKA_RETENTION_HOURS: ${TOLKA_RETENTION_HOURS:-72}
+  TOLKA_PRELOAD_MODELS: ${TOLKA_PRELOAD_MODELS:-true}
+  TOLKA_WEBHOOK_SIGNING_SECRET: ${TOLKA_WEBHOOK_SIGNING_SECRET:-}
+  TOLKA_SHUTDOWN_GRACE_S: ${TOLKA_SHUTDOWN_GRACE_S:-540}
+
+x-tolka-security: &tolka-security
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  read_only: true
+  tmpfs:
+    - /tmp:size=1g,mode=1777
+  logging:
+    driver: json-file
+    options:
+      max-size: 20m
+      max-file: "5"
+
 services:
-  tolka:
+  api:
+    <<: *tolka-security
     build: .
+    command:
+      - uvicorn
+      - tolka.main:create_app
+      - --factory
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --no-access-log
     ports:
-      - "8000:8000"
+      - "127.0.0.1:${TOLKA_PORT:-8000}:8000"
     environment:
-      TOLKA_API_TOKENS: ${TOLKA_API_TOKENS:?set TOLKA_API_TOKENS}
-      TOLKA_ENGINE: ${TOLKA_ENGINE:-auto}
-      TOLKA_WHISPER_API_BASE: ${TOLKA_WHISPER_API_BASE:-}
-      TOLKA_WHISPER_API_KEY: ${TOLKA_WHISPER_API_KEY:-}
-      HF_TOKEN: ${HF_TOKEN:-}
-      TOLKA_RETENTION_HOURS: ${TOLKA_RETENTION_HOURS:-72}
-      TOLKA_PRELOAD_MODELS: ${TOLKA_PRELOAD_MODELS:-false}
+      <<: *tolka-environment
+      TOLKA_RUN_WORKER: "false"
+    volumes:
+      - data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      worker:
+        condition: service_started
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/readyz', timeout=3)"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  worker:
+    <<: *tolka-security
+    build: .
+    command: ["tolka-worker"]
+    environment:
+      <<: *tolka-environment
     volumes:
       - models:/models
       - data:/data
-    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    stop_grace_period: ${TOLKA_STOP_GRACE_PERIOD:-10m}
+    healthcheck:
+      disable: true
     deploy:
       resources:
         reservations:
@@ -23,6 +85,29 @@ services:
               count: 1
               capabilities: [gpu]
 
+  postgres:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: tolka
+      POSTGRES_USER: tolka
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tolka -d tolka"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+
 volumes:
   models:
   data:
+  postgres-data:
