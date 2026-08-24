@@ -7,6 +7,9 @@ x-tolka-environment: &tolka-environment
   TOLKA_WHISPER_API_KEY: ${TOLKA_WHISPER_API_KEY:-}
   HF_TOKEN: ${HF_TOKEN:-}
   TOLKA_RETENTION_HOURS: ${TOLKA_RETENTION_HOURS:-72}
+  TOLKA_MAX_AUDIO_BYTES: ${TOLKA_MAX_AUDIO_BYTES:-2147483648}
+  TOLKA_MAX_QUEUED_JOBS: ${TOLKA_MAX_QUEUED_JOBS:-100}
+  TOLKA_MAX_QUEUED_JOBS_PER_CLIENT: ${TOLKA_MAX_QUEUED_JOBS_PER_CLIENT:-10}
   TOLKA_PRELOAD_MODELS: ${TOLKA_PRELOAD_MODELS:-true}
   TOLKA_WEBHOOK_SIGNING_SECRET: ${TOLKA_WEBHOOK_SIGNING_SECRET:-}
   TOLKA_SHUTDOWN_GRACE_S: ${TOLKA_SHUTDOWN_GRACE_S:-540}
@@ -40,7 +43,10 @@ services:
       - "8000"
       - --no-access-log
     ports:
-      - "127.0.0.1:${TOLKA_PORT:-8000}:8000"
+      # Loopback-only by default; consumers on the same host (or an ingress) connect via
+      # 127.0.0.1. Set TOLKA_BIND to a private interface (or 0.0.0.0 behind a firewall)
+      # when a consumer such as eneo runs off-host or inside another Docker network.
+      - "${TOLKA_BIND:-127.0.0.1}:${TOLKA_PORT:-8000}:8000"
     environment:
       <<: *tolka-environment
       TOLKA_RUN_WORKER: "false"

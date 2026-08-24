@@ -30,6 +30,38 @@ credentials, not an interactive OAuth implementation. Keep the service on a priv
 or behind an identity-aware API gateway. TLS terminates at that ingress. Never log tokens,
 transcripts, complete source URLs, or webhook payloads.
 
+## Consumer integrations (eneo)
+
+Eneo integrates Tolka as the engine for its flow `transcribe_only` steps: it uploads the
+original audio as multipart to `POST /v1/jobs` (`diarize=true`, `language` from flow config),
+polls `GET /v1/jobs/{id}` every ~5s from a dedicated worker with a 3300s deadline, and passes
+`result.text` verbatim into the flow output. Deployment checklist:
+
+1. **Credential**: provision a named token, `TOLKA_API_TOKENS=eneo=<long-random-value>`;
+   eneo stores it as `FLOW_TRANSCRIPTION_SERVICE_API_KEY`.
+2. **Reachability**: the Compose file publishes the API on loopback only. Set `TOLKA_BIND`
+   to a private interface reachable by eneo's flow execution worker, or use
+   `compose.eneo.yaml` to attach the API container to a shared Docker network. For local
+   development against eneo's devcontainer, `TOLKA_BIND=0.0.0.0` makes the port reachable
+   via `host.docker.internal` (loopback-published ports are not).
+3. **Admission control**: all eneo tenants share the one `eneo` client id, so
+   `TOLKA_MAX_QUEUED_JOBS_PER_CLIENT` (default 10) bounds eneo's total concurrent
+   submissions across tenants. Eneo runs up to 4 concurrent flow runs per tenant; size the
+   per-client limit (and `TOLKA_MAX_QUEUED_JOBS`) for the expected multi-tenant fan-in.
+   Eneo treats the pre-body 429 as retryable.
+4. **Upload cap**: `TOLKA_MAX_AUDIO_BYTES` (default 2 GiB) binds on the original compressed
+   file eneo sends; keep it at or above eneo's maximum audio upload size.
+5. **Retention**: the 72-hour default is ample; eneo fetches results within the run (≤1h).
+6. **Latency**: characterize worst-case job latency for the deployment's engine tier, GPU,
+   and maximum file size against eneo's 3300s poll deadline. Note that a job which crashes
+   the worker is re-leased without an attempt cap, so pathological inputs can exceed any
+   deadline; eneo's poll deadline is its backstop.
+
+The response contract eneo depends on (multipart part name `file`, the status enum, the
+`TranscriptionResult` shape, and the rendered `[HH:MM:SS - HH:MM:SS] SPEAKER_00:` line
+format of `text`) is change-controlled: shape changes must move in lockstep with eneo's
+`RemoteTranscriptionClient` and its contract tests.
+
 ## Outbound network policy
 
 Tolka rejects URL user information, non-HTTP schemes, private addresses by default, and an
