@@ -14,5 +14,5 @@ uv sync --group dev --extra diarize --extra align --extra local --extra cpu --re
 
 echo ""
 echo "Ready. Try:"
-echo "  uv run pytest"
-echo "  TOLKA_API_TOKENS=dev TOLKA_ENGINE=fake uv run uvicorn tolka.main:create_app --factory --host 0.0.0.0"
+echo "  uv run pytest   # includes postgres store tests against the compose postgres"
+echo "  uv run start    # API + in-process worker: postgres database, fake engine, token 'dev'"

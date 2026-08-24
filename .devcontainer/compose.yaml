@@ -1,0 +1,35 @@
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: sleep infinity
+    volumes:
+      - ..:/workspace:cached
+      - tolka-venv:/workspace/.venv
+    environment:
+      # Separate database so the TRUNCATE in the postgres store tests
+      # cannot touch dev jobs in the main `tolka` database.
+      TOLKA_TEST_POSTGRES_URL: postgresql://tolka:tolka@postgres/tolka_test
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_DB: tolka
+      POSTGRES_USER: tolka
+      POSTGRES_PASSWORD: tolka
+    volumes:
+      - tolka-postgres-data:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tolka -d tolka"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  tolka-venv:
+  tolka-postgres-data:

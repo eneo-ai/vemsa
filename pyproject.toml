@@ -24,6 +24,7 @@ Issues = "https://github.com/eneo-ai/tolka/issues"
 
 [project.scripts]
 tolka-worker = "tolka.worker:start"
+start = "tolka.dev:main"
 
 [project.optional-dependencies]
 diarize = [
