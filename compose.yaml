@@ -36,6 +36,9 @@ x-tolka-security: &tolka-security
 services:
   api:
     <<: *tolka-security
+    # published variants: ghcr.io/eneo-ai/tolka:<tag> (CUDA) and <tag>-cpu;
+    # default behavior still builds from source — see docs/PRODUCTION.md
+    image: ${TOLKA_IMAGE:-ghcr.io/eneo-ai/tolka:latest}
     build: .
     command:
       - uvicorn
@@ -74,6 +77,7 @@ services:
 
   worker:
     <<: *tolka-security
+    image: ${TOLKA_IMAGE:-ghcr.io/eneo-ai/tolka:latest}
     build: .
     command: ["tolka-worker"]
     environment:

@@ -158,6 +158,18 @@ docker build --build-arg TORCH_VARIANT=cpu -t tolka:cpu .        # CPU-only ML
 docker build --build-arg ML_EXTRAS="diarize align" -t tolka .    # hybrid/remote only (smaller)
 ```
 
+Prebuilt images are published to GHCR on every `main` push and release tag — `latest` /
+`vX.Y.Z` with CUDA torch (amd64) and a `-cpu` twin of every tag (amd64 + arm64):
+
+```bash
+docker pull ghcr.io/eneo-ai/tolka:latest         # NVIDIA GPU hosts
+docker pull ghcr.io/eneo-ai/tolka:latest-cpu     # CPU-only hosts (incl. Apple silicon)
+TOLKA_IMAGE=ghcr.io/eneo-ai/tolka:latest docker compose up --no-build
+```
+
+See `docs/PRODUCTION.md` (“Container images”) for choosing GPU vs CPU, host requirements,
+and digest pinning.
+
 Compose runs the API and GPU worker separately. PostgreSQL owns jobs, leases, worker
 heartbeats, and the durable webhook outbox; the containers share `/data` for temporary audio
 on one Docker host. Set `TOLKA_PORT` if host port 8000 is already occupied. Multi-node workers

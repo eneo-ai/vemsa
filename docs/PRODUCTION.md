@@ -17,6 +17,62 @@ Audio files live on the shared `/data` Docker volume and are deleted after a ter
 That limits the supplied Compose deployment to one Docker host. Use private object storage
 before scheduling workers on multiple machines.
 
+## Container images
+
+CI publishes images to `ghcr.io/eneo-ai/tolka` on every push to `main` and on `v*` release
+tags (`.github/workflows/docker.yaml`). One image serves both the `api` and `worker`
+services; two flavors are built:
+
+| Flavor | Tags | Torch | Platforms | For |
+| --- | --- | --- | --- | --- |
+| GPU (default) | `latest`, `main`, `vX.Y.Z`, `X.Y`, `sha-<commit>` | CUDA 12.8 wheels | amd64 | hosts with an NVIDIA GPU (the `local`/`hybrid` engines, fast diarization) |
+| CPU | same tags with `-cpu` suffix (`latest-cpu`, …) | CPU wheels | amd64, arm64 | GPU-less hosts, `remote` engine deployments, Apple-silicon servers |
+
+Both flavors bake in every ML extra (`diarize align local`), so `TOLKA_ENGINE` alone decides
+behavior at runtime. Slimmer builds (e.g. `ML_EXTRAS="diarize"` for remote-only) are a local
+`docker build --build-arg` away but are not published.
+
+### GPU or CPU?
+
+The GPU image only *uses* a GPU when the host provides one: it needs the NVIDIA driver and
+`nvidia-container-toolkit` on the host, plus the device reservation already present on the
+`worker` service in `compose.yaml`. Torch wheels bundle CUDA/cuDNN, so no CUDA base image or
+host CUDA install is required.
+
+For a CPU-only deployment, use the `-cpu` image and drop the GPU reservation with an
+override file:
+
+```yaml
+# compose.cpu.yaml — !reset (Compose v2.24+) removes the merged-in GPU reservation;
+# a plain empty mapping would merge and keep it
+services:
+  worker:
+    deploy: !reset {}
+```
+
+```bash
+TOLKA_IMAGE=ghcr.io/eneo-ai/tolka:latest-cpu \
+  docker compose -f compose.yaml -f compose.cpu.yaml up --no-build
+```
+
+Expect CPU diarization at roughly real time and plan job deadlines accordingly; the
+`remote` engine tier keeps transcription itself fast by offloading whisper.
+
+### Selecting an image
+
+`compose.yaml` names `${TOLKA_IMAGE:-ghcr.io/eneo-ai/tolka:latest}` on both services while
+keeping `build: .`, so the default `docker compose up --build` workflow still builds from
+source. To run a published image instead:
+
+```bash
+export TOLKA_IMAGE=ghcr.io/eneo-ai/tolka:v0.1.0        # or @sha256:… (preferred, see below)
+docker compose pull api worker
+docker compose up --no-build
+```
+
+Per the release gate, pin the deployed image by digest in the target environment rather
+than by mutable tag.
+
 ## Authentication and exposure
 
 Production credentials must be named:
