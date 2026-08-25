@@ -6,6 +6,7 @@ engine reuses request_transcription/parse_verbose_json from here and force-align
 returned text locally instead. Diarization always runs locally via pyannote."""
 
 import logging
+import time
 from pathlib import Path
 from typing import Any
 
@@ -35,11 +36,26 @@ def request_transcription(
     }
     if language != "auto":
         data["language"] = language
+    elif settings.whisper_auto_language:
+        data["language"] = settings.whisper_auto_language
+    for item in settings.whisper_extra_form:
+        key, _, value = item.partition("=")
+        data[key] = value
     headers = {}
     if settings.whisper_api_key:
         headers["Authorization"] = f"Bearer {settings.whisper_api_key}"
 
     url = f"{settings.whisper_api_base.rstrip('/')}/audio/transcriptions"
+    logger.info(
+        "provider transcription requested",
+        extra={
+            "event": "provider.request",
+            "provider": url,
+            "model": model,
+            "audio_bytes": audio_path.stat().st_size,
+        },
+    )
+    started = time.perf_counter()
     with (
         audio_path.open("rb") as audio,
         httpx.Client(timeout=settings.whisper_timeout_s, headers=headers) as client,
@@ -47,7 +63,19 @@ def request_transcription(
         response = client.post(url, data=data, files={"file": (audio_path.name, audio)})
     if response.status_code != 200:
         raise RuntimeError(f"whisper API returned {response.status_code}: {response.text[:500]}")
-    return response.json()
+    payload = response.json()
+    logger.info(
+        "provider transcription received",
+        extra={
+            "event": "provider.response",
+            "provider": url,
+            "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+            "audio_seconds": payload.get("duration"),
+            "segments": len(payload.get("segments") or []),
+            "words": len(payload.get("words") or []),
+        },
+    )
+    return payload
 
 
 def parse_verbose_json(payload: dict[str, Any]) -> tuple[list[Word], list[Segment]]:

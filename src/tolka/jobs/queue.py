@@ -14,7 +14,13 @@ import httpx
 from tolka.config import Settings
 from tolka.jobs.models import Job, WebhookOutboxEvent
 from tolka.jobs.store import JobStore
-from tolka.observability import JOB_DURATION, JOBS_FINISHED, QUEUE_DEPTH, WEBHOOK_DELIVERIES
+from tolka.observability import (
+    JOB_DURATION,
+    JOBS_FINISHED,
+    QUEUE_DEPTH,
+    WEBHOOK_DELIVERIES,
+    job_id_var,
+)
 from tolka.pipeline.base import TranscriptionEngine
 from tolka.pipeline.fetch import fetch_url
 from tolka.security import ForbiddenUrlError, validate_outbound_url
@@ -95,6 +101,13 @@ class JobQueue:
             QUEUE_DEPTH.set(await self._store.count_queued())
 
     async def _run_job(self, job: Job) -> None:
+        token = job_id_var.set(job.id)
+        try:
+            await self._process_job(job)
+        finally:
+            job_id_var.reset(token)
+
+    async def _process_job(self, job: Job) -> None:
         logger.info("job %s started", job.id)
         started = time.perf_counter()
         audio_path = Path(job.audio_path) if job.audio_path else None

@@ -1,6 +1,7 @@
 import json
 import logging
 import time
+import warnings
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import Any
@@ -10,6 +11,20 @@ from fastapi import Request
 from prometheus_client import Counter, Gauge, Histogram
 
 request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
+# set by the worker around job processing so every pipeline log line carries the
+# job id, including logs from code that never sees the Job (provider client, diarizer)
+job_id_var: ContextVar[str | None] = ContextVar("job_id", default=None)
+
+# third-party loggers that flood INFO/DEBUG with framework internals
+_NOISY_LOGGERS = (
+    "matplotlib",
+    "fontTools",
+    "speechbrain",
+    "pytorch_lightning",
+    "lightning.pytorch",
+    "urllib3",
+    "filelock",
+)
 
 HTTP_REQUESTS = Counter("tolka_http_requests_total", "HTTP requests", ("method", "route", "status"))
 HTTP_DURATION = Histogram(
@@ -38,6 +53,8 @@ class JsonFormatter(logging.Formatter):
         }
         if request_id := request_id_var.get():
             payload["request_id"] = request_id
+        if job_id := job_id_var.get():
+            payload.setdefault("job_id", job_id)
         for key, value in record.__dict__.items():
             if key not in _STANDARD_LOG_RECORD_FIELDS and key not in {"message", "asctime"}:
                 payload[key] = value
@@ -53,6 +70,15 @@ def configure_logging(level: str, log_format: str) -> None:
     else:
         handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
     logging.basicConfig(level=level, handlers=[handler], force=True)
+    # emit warnings.warn() through the configured formatter instead of raw stderr
+    logging.captureWarnings(True)
+    # known upstream noise: pyannote and speechbrain both probe the deprecated
+    # torchaudio backend API on import; nothing actionable on our side
+    warnings.filterwarnings(
+        "ignore", message=r".*list_audio_backends has been deprecated.*"
+    )
+    for name in _NOISY_LOGGERS:
+        logging.getLogger(name).setLevel(logging.WARNING)
 
 
 async def request_observability_middleware(request: Request, call_next):

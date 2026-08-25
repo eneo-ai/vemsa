@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     whisper_api_base: str = ""
     whisper_api_key: str | None = None
     whisper_timeout_s: float = 3600.0
+    # extra key=value form fields for the transcription request, comma-separated —
+    # for provider-specific switches (e.g. Berget AI needs align=true for word timestamps)
+    whisper_extra_form: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    # language to send when a job requests "auto", for providers that require an
+    # explicit language (e.g. GDM); empty omits the field so the provider auto-detects
+    whisper_auto_language: str = ""
     default_model: str = "KBLab/kb-whisper-large"
     emissions_model: str = "KBLab/wav2vec2-large-voxrex-swedish"
     diarization_model: str = "pyannote/speaker-diarization-3.1"
@@ -90,7 +96,13 @@ class Settings(BaseSettings):
             return self.engine
         return "hybrid" if self.whisper_api_base else "local"
 
-    @field_validator("api_tokens", "source_allowed_hosts", "webhook_allowed_hosts", mode="before")
+    @field_validator(
+        "api_tokens",
+        "source_allowed_hosts",
+        "webhook_allowed_hosts",
+        "whisper_extra_form",
+        mode="before",
+    )
     @classmethod
     def _split_tokens(cls, value: object) -> object:
         if isinstance(value, str):
@@ -105,6 +117,10 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "named API credentials must use client_id=token with a valid client id"
                 )
+        for value in self.whisper_extra_form:
+            key, separator, _ = value.partition("=")
+            if not separator or not key:
+                raise ValueError("whisper_extra_form entries must use key=value")
         if self.environment == "production":
             if not self.api_tokens:
                 raise ValueError("TOLKA_API_TOKENS is required in production")

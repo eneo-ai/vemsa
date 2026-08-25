@@ -20,6 +20,9 @@ class DevSettings(Settings):
     api_tokens: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["dev"])
     engine: Literal["auto", "local", "hybrid", "remote", "fake"] = "fake"
     database_url: str | None = "postgresql://tolka:tolka@postgres/tolka"
+    # download/load ML models during startup (mirrors production compose) so the
+    # first job never pays the cold cost and gating problems fail loudly at boot
+    preload_models: bool = True
 
 
 def create_dev_app():

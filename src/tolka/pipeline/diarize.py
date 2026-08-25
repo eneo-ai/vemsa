@@ -6,6 +6,7 @@ too but is only imported/constructed when the ML extra is installed.
 
 import logging
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -136,7 +137,18 @@ class Diarizer:
             import torch
             from pyannote.audio import Pipeline
 
+            # torch >= 2.6 defaults torch.load to weights_only=True; the official
+            # pyannote checkpoints pickle these classes, so allowlist them rather
+            # than disabling the safety check wholesale
+            from pyannote.audio.core.task import Problem, Resolution, Specifications
+            from torch.torch_version import TorchVersion
+
+            torch.serialization.add_safe_globals(
+                [TorchVersion, Specifications, Problem, Resolution]
+            )
+
             logger.info("loading diarization pipeline %s", self._settings.diarization_model)
+            load_started = time.perf_counter()
             pipeline = Pipeline.from_pretrained(
                 self._settings.diarization_model,
                 use_auth_token=self._settings.hf_token,
@@ -150,16 +162,36 @@ class Diarizer:
             if torch.cuda.is_available():
                 pipeline.to(torch.device("cuda"))
             self._pipeline = pipeline
+            logger.info(
+                "diarization pipeline loaded",
+                extra={
+                    "event": "diarize.loaded",
+                    "duration_ms": round((time.perf_counter() - load_started) * 1000, 2),
+                    "device": "cuda" if torch.cuda.is_available() else "cpu",
+                },
+            )
 
     def diarize(self, audio_path: Path) -> list[Turn]:
         self.load()
+        logger.info("diarization started", extra={"event": "diarize.start"})
+        started = time.perf_counter()
         # GPU-VERIFY(milestone-2): tune against real output; consider min_speakers /
         # max_speakers passthrough as API parameters in a later version.
         annotation = self._pipeline(str(audio_path))
-        return [
+        turns = [
             Turn(start=segment.start, end=segment.end, speaker=str(label))
             for segment, _, label in annotation.itertracks(yield_label=True)
         ]
+        logger.info(
+            "diarization completed",
+            extra={
+                "event": "diarize.done",
+                "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+                "turns": len(turns),
+                "speakers": len({turn.speaker for turn in turns}),
+            },
+        )
+        return turns
 
 
 def _group_labelled(

@@ -94,6 +94,30 @@ def test_word_level_diarized_transcription(whisper_settings: Settings, audio_fil
 
 
 @respx.mock
+def test_auto_language_fallback_is_sent(whisper_settings: Settings, audio_file: Path):
+    whisper_settings.whisper_auto_language = "sv"
+    route = respx.post(ENDPOINT).mock(return_value=Response(200, json=WORD_PAYLOAD))
+    engine = OpenAIWhisperEngine(whisper_settings, diarizer=FakeDiarizer())
+
+    engine.transcribe(audio_file, language="auto", model="kb-whisper", diarize=False)
+
+    body = route.calls.last.request.read()
+    assert b'name="language"' in body and b"sv" in body
+
+
+@respx.mock
+def test_extra_form_fields_are_sent(whisper_settings: Settings, audio_file: Path):
+    whisper_settings.whisper_extra_form = ["align=true"]
+    route = respx.post(ENDPOINT).mock(return_value=Response(200, json=WORD_PAYLOAD))
+    engine = OpenAIWhisperEngine(whisper_settings, diarizer=FakeDiarizer())
+
+    engine.transcribe(audio_file, language="sv", model="kb-whisper", diarize=False)
+
+    body = route.calls.last.request.read()
+    assert b'name="align"' in body and b"true" in body
+
+
+@respx.mock
 def test_segment_only_fallback_assigns_speakers_per_segment(
     whisper_settings: Settings, audio_file: Path
 ):
