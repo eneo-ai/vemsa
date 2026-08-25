@@ -74,9 +74,7 @@ def configure_logging(level: str, log_format: str) -> None:
     logging.captureWarnings(True)
     # known upstream noise: pyannote and speechbrain both probe the deprecated
     # torchaudio backend API on import; nothing actionable on our side
-    warnings.filterwarnings(
-        "ignore", message=r".*list_audio_backends has been deprecated.*"
-    )
+    warnings.filterwarnings("ignore", message=r".*list_audio_backends has been deprecated.*")
     for name in _NOISY_LOGGERS:
         logging.getLogger(name).setLevel(logging.WARNING)
 
