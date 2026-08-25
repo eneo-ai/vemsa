@@ -28,18 +28,56 @@ The service is platform-agnostic: any client that can speak HTTP (or MCP) can us
 | `local` | in-process ([easytranscriber](https://github.com/kb-labb/easytranscriber)) | CTC forced alignment (best) | `local`, `diarize` | this box has a GPU, no external whisper |
 | `hybrid` | remote endpoint | local CTC forced alignment via [easyaligner](https://github.com/kb-labb/easyaligner) of the remote transcript (WhisperX-style) | `align`, `diarize` | offload heavy whisper, keep precise timestamps — alignment needs only a wav2vec2-sized model |
 | `remote` | remote endpoint | provider's own (quality varies by serving stack) | `diarize` | lightest footprint, provider timestamps good enough |
+| `diarize` | none — transcripts come from the caller | caller's words, or local forced alignment of caller segments | `diarize` (+ `align` for forced alignment) | the consumer transcribes with its own models; Tolka adds only speaker labels |
 | `fake` | none | canned | – | dev/smoke |
 
-`auto` picks `hybrid` when `TOLKA_WHISPER_API_BASE` is set, otherwise `local`. The hybrid
-engine also degrades at runtime: if the alignment stack is missing or alignment fails, it
-falls back to the provider's timestamps rather than failing the job.
+`auto` picks `hybrid` when `TOLKA_WHISPER_API_BASE` is set, otherwise `local`.
 
 In every tier, pyannote diarization runs locally and speakers are merged onto the timestamps
-by maximal temporal overlap (word-level when words exist, whole-segment otherwise).
+by maximal temporal overlap (word-level when words exist, whole-segment otherwise). Requests
+may pass `num_speakers`, or `min_speakers`/`max_speakers`, as a clustering prior — pyannote
+tends to over-split without one.
 
 The remote endpoint is called with `response_format=verbose_json` and
 `timestamp_granularities[]=word,segment`; anything OpenAI-compatible works (speaches,
 faster-whisper-server, vLLM's audio API, ...).
+
+## Word timestamps: trust and the fallback hierarchy
+
+Diarization quality is word-timestamp quality: speakers are attached to whatever timeline
+the words carry. Tolka therefore ranks its word sources and degrades one rung at a time,
+never failing a job because a better rung was unavailable. Every result reports the rung
+that produced it in the `alignment` field:
+
+| `alignment` | Word source | Precision |
+| --- | --- | --- |
+| `forced` | local CTC forced alignment of the transcript against the audio | word-precise (best) |
+| `provider_words` | word timestamps from the whisper provider or the caller | word-precise **if** the provider measured honestly |
+| `segment_split` | no words; segments spanning several speaker turns were split at the turn boundaries, slicing text by time proportion (snapped to punctuation/whitespace) | approximate — cuts can land a word or two off |
+| `segment_only` | no words; each whole segment got its maximal-overlap speaker | speaker changes inside a segment are lost |
+
+Two guards decide which rung a job lands on:
+
+- **Plausibility gate.** Provider/caller word timelines are only trusted when they show a
+  humanly possible speaking rate (≤ 4.5 words/s, pauses over 1 s excluded). Some serving
+  stacks derive timestamps from decoder heuristics and emit compressed timelines (observed
+  in the wild: ~7 words/s with a 19.5 s hole); merging speakers against such a timeline puts
+  every turn in the wrong place, so implausible words are discarded — but only when segments
+  exist as fallback material. Callers therefore should always send segments alongside words.
+- **Window trust.** Forced alignment normally uses the segments' start/end as anchors. When
+  the words were rejected, the accompanying segment windows come from the same broken
+  timeline (and segment windows can be implausibly compressed on their own), so the full
+  transcript is aligned against the whole audio in one window instead.
+
+Who wins when several sources are available differs by task, deliberately:
+
+- **`task=transcribe`, hybrid tier**: forced alignment wins over provider words
+  (WhisperX-style) — the provider's transcript text is kept, its timeline replaced.
+- **`task=diarize`**: plausible caller-supplied words win — the caller has already vetted
+  them; alignment runs only when words are absent or rejected.
+
+Fallbacks are logged (`alignment=forced words=<n>`, or `alignment=segment_only
+reason=<...>`), so the worker log always answers "did alignment run, and if not, why".
 
 ## Job API
 
@@ -64,6 +102,7 @@ Poll `GET /v1/jobs/{id}` until `status` is `completed`, then fetch `GET /v1/jobs
   "language": "sv",
   "duration_seconds": 3612.4,
   "model": "KBLab/kb-whisper-large",
+  "alignment": "forced",
   "text": "[00:00:12 - 00:00:15] SPEAKER_00: ...",
   "segments": [
     {"start": 12.3, "end": 15.1, "speaker": "SPEAKER_00", "text": "...",
@@ -89,11 +128,17 @@ curl -X POST http://localhost:8000/v1/jobs \
   -F 'words=[{"word":"hej","start":0.0,"end":0.4},{"word":"då","start":2.1,"end":2.3}]'
 ```
 
-Timestamps are absolute seconds from the start of the uploaded audio. Word-level timestamps
-give word-precise speaker changes; `segments` alone (each `{"start","end","text"}`) fall back
-to whole-segment labelling. The transcript is capped at `TOLKA_MAX_TRANSCRIPT_BYTES`
-(default 8 MiB). `model` is echoed into the result and defaults to `"external"` so the result
-never claims one of Tolka's models transcribed.
+Timestamps are absolute seconds from the start of the uploaded audio. Plausible word-level
+timestamps give word-precise speaker changes directly. `segments` alone (each
+`{"start","end","text"}` — a single segment covering the whole file is fine) are
+force-aligned against the audio first when the `align` extra is installed
+(`TOLKA_DIARIZE_FORCE_ALIGN`, default on), recovering word-precise speaker changes from a
+plain transcript; without alignment they degrade to `segment_split`/`segment_only` as
+described in the fallback hierarchy above. The transcript is capped at
+`TOLKA_MAX_TRANSCRIPT_BYTES` (default 8 MiB). `model` is echoed into the result and defaults
+to `"external"` so the result never claims one of Tolka's models transcribed. Speaker-count
+priors (`num_speakers`, or `min_speakers`/`max_speakers`, all ≥ 1) are accepted on both
+tasks, multipart or JSON.
 
 Every engine tier accepts both tasks — one full deployment serves transcription and
 diarize-only jobs side by side, and each request chooses. Optionally,
@@ -116,12 +161,13 @@ All settings via environment variables with the `TOLKA_` prefix (see `src/tolka/
 | --- | --- | --- |
 | `TOLKA_API_TOKENS` | *(required in production)* | Comma-separated `client_id=token` credentials |
 | `TOLKA_ENVIRONMENT` | `development` | `development` / `test` / `production`; production requires named credentials and rejects the fake engine |
-| `TOLKA_ENGINE` | `auto` | `auto` / `local` / `hybrid` / `remote` / `fake` (see Engine tiers) |
+| `TOLKA_ENGINE` | `auto` | `auto` / `local` / `hybrid` / `remote` / `diarize` / `fake` (see Engine tiers) |
 | `TOLKA_WHISPER_API_BASE` | – | OpenAI-compatible base URL, e.g. `http://whisper-host:8000/v1` (required for hybrid/remote) |
 | `TOLKA_WHISPER_API_KEY` | – | Bearer token for the whisper endpoint |
 | `TOLKA_WHISPER_TIMEOUT_S` | 3600 | Per-request timeout against the whisper endpoint |
 | `TOLKA_DEFAULT_MODEL` | `KBLab/kb-whisper-large` | Whisper model (name passed to the endpoint, or loaded locally) |
-| `TOLKA_EMISSIONS_MODEL` | `KBLab/wav2vec2-large-voxrex-swedish` | CTC model for forced alignment (local/hybrid) |
+| `TOLKA_EMISSIONS_MODEL` | `KBLab/wav2vec2-large-voxrex-swedish` | CTC model for forced alignment (local/hybrid, and diarize-task alignment) |
+| `TOLKA_DIARIZE_FORCE_ALIGN` | `true` | Force-align segment-only `task=diarize` transcripts when the `align` extra is installed |
 | `TOLKA_HF_TOKEN` | – | Hugging Face token (pyannote models are gated) |
 | `TOLKA_MODEL_CACHE_DIR` | `./data/models` | Model cache (mount a volume) |
 | `TOLKA_WORK_DIR` | `./data/work` | Temp audio storage |
@@ -211,14 +257,18 @@ See [`docs/PRODUCTION.md`](docs/PRODUCTION.md) for security, webhooks, backups, 
 ## Status
 
 - ✅ Job engine, REST API, MCP facade, engine selection, remote whisper client, speaker-merge
-  (word- and segment-level), renderer — tested without the torch stack
+  (word- and segment-level, proportional splitting), plausibility gating, renderer — tested
+  without the torch stack
 - ✅ PostgreSQL job leasing, per-client ownership, queue admission limits, durable signed
   webhooks, structured logs, metrics, and split API/worker deployment
-- ⏳ `local` engine (easytranscriber) verification on a GPU box: Swedish sample end-to-end,
-  auto-detect language, Swedish alignment tokenizer
-- ⏳ `hybrid` engine: easyaligner invocation is best-effort against the documented API and
-  guarded by a runtime fallback — validate against a real installation
-- ⏳ pyannote diarization verification (HF gating, `GPU-VERIFY` markers in code)
+- ✅ Forced alignment (easyaligner: silero VAD + wav2vec2 CTC) and pyannote diarization with
+  speaker bounds, verified end to end on CPU in the devcontainer — a whole-file Swedish
+  segment came back word-precise with correct alternating speakers (`alignment: "forced"`)
+- ⏳ `local` engine (easytranscriber whisper) verification on a GPU box: Swedish sample
+  end-to-end, auto-detect language
+- ⏳ CUDA runs of alignment and diarization (verified on CPU only); non-Swedish alignment
+  quality — the single emissions model is Swedish, so `en` jobs align against a Swedish
+  acoustic model
 
 ## Acknowledgements
 
@@ -228,7 +278,7 @@ Library of Sweden:
 - [easytranscriber](https://github.com/kb-labb/easytranscriber) — the transcription toolkit
   that powers the `local` engine and inspired Tolka's pipeline design
 - [easyaligner](https://github.com/kb-labb/easyaligner) — CTC forced alignment used for
-  word-precise timestamps in the `hybrid` engine
+  word-precise timestamps in the `hybrid` engine and for `task=diarize` transcripts
 - [kb-whisper](https://huggingface.co/KBLab/kb-whisper-large) and
   [wav2vec2-large-voxrex-swedish](https://huggingface.co/KBLab/wav2vec2-large-voxrex-swedish) —
   the default Swedish speech models
