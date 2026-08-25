@@ -17,6 +17,8 @@ recordings use submit_transcription and poll get_transcription with the returned
 
 
 def build_mcp(deps: AppDeps) -> FastMCP:
+    """MCP tools are transcribe-only by design; task=diarize (caller-supplied
+    transcripts) is REST-only — see the Job API section of the README."""
     token_clients = deps.settings.token_clients
     if not token_clients:
         raise ValueError("TOLKA_API_TOKENS must be configured before MCP can start")

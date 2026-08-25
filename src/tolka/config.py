@@ -27,7 +27,8 @@ class Settings(BaseSettings):
     # local: in-process easytranscriber (whisper + forced alignment on this machine).
     # hybrid: remote whisper text + local easyaligner forced alignment.
     # remote: remote whisper only, provider timestamps as-is.
-    engine: Literal["auto", "local", "hybrid", "remote", "fake"] = "auto"
+    # diarize: no ASR at all; only task=diarize jobs (caller-supplied transcripts).
+    engine: Literal["auto", "local", "hybrid", "remote", "diarize", "fake"] = "auto"
 
     whisper_api_base: str = ""
     whisper_api_key: str | None = None
@@ -48,6 +49,8 @@ class Settings(BaseSettings):
     database_url: str | None = None
 
     max_audio_bytes: int = 2 * GIB
+    # task=diarize: cap on the serialized words/segments a caller may attach
+    max_transcript_bytes: int = 8 * 1024 * 1024
     fetch_timeout_s: float = 600.0
     retention_hours: float = 72.0
     purge_interval_s: float = 900.0
@@ -128,6 +131,8 @@ class Settings(BaseSettings):
                 raise ValueError("production API credentials must be named using client_id=token")
             if self.engine == "fake":
                 raise ValueError("the fake transcription engine is not allowed in production")
+            if self.engine == "diarize" and not self.hf_token:
+                raise ValueError("the diarize tier requires HF_TOKEN for the gated pyannote models")
         if self.job_lease_s <= self.lease_heartbeat_s * 2:
             raise ValueError("job_lease_s must be more than twice lease_heartbeat_s")
         for name in (
@@ -140,6 +145,8 @@ class Settings(BaseSettings):
         ):
             if getattr(self, name) <= 0:
                 raise ValueError(f"{name} must be greater than zero")
+        if self.max_transcript_bytes <= 0:
+            raise ValueError("max_transcript_bytes must be greater than zero")
         if self.max_queued_jobs <= 0 or self.max_queued_jobs_per_client <= 0:
             raise ValueError("queue limits must be greater than zero")
         if self.max_queued_jobs_per_client > self.max_queued_jobs:

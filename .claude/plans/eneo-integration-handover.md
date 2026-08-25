@@ -33,4 +33,14 @@ Eneo (adjacent repo) is integrating Tolka as the transcription engine for its fl
 - Status enum `queued|running|completed|failed`; result via `GET /v1/jobs/{id}/result` (409 pre-completion, 404 cross-client/unknown).
 - `TranscriptionResult{language, duration_seconds, model, text, segments[{start,end,speaker,text,words[]}]}`; `text` is the rendered speaker-labeled transcript — **eneo passes it verbatim into flow output**, so the `[HH:MM:SS - HH:MM:SS] SPEAKER_00:` line format is user-visible contract.
 - Job errors are sanitized (`ExcType: processing failed`) — eneo expects no diagnostic detail.
+- Diarize-only jobs (added after v1): `task=diarize` on `POST /v1/jobs` with a caller-supplied
+  transcript (`words` and/or `segments` as JSON; multipart parts or JSON body fields).
+  Timestamps are absolute seconds from the start of the uploaded audio; 0 <= start <= end
+  is validated. Transcript size is capped by `TOLKA_MAX_TRANSCRIPT_BYTES` (default 8 MiB,
+  413 over it). The result is the same `TranscriptionResult` shape; `model` is echoed from
+  the request and defaults to `"external"`. `TOLKA_ENGINE=diarize` deployments reject
+  `task=transcribe` with 422. `diarize=false` with `task=diarize` is a 422.
+  Version-skew hazard: a pre-task Tolka deployment silently ignores the unknown fields and
+  runs the job as a plain transcription — clients should assert `result.model == "external"`
+  (or their echoed model) before trusting a diarize-only result.
 - If any of these change shape, eneo's `RemoteTranscriptionClient` (and its contract tests) must move in lockstep.

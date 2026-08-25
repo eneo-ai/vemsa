@@ -3,9 +3,13 @@ from enum import StrEnum
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, model_validator
 
 Language = Literal["sv", "en", "auto"]
+# transcribe: run the engine end to end. diarize: the caller supplies the transcript
+# (word timestamps in seconds from the start of the audio); Tolka adds speaker labels.
+JobTask = Literal["transcribe", "diarize"]
+EXTERNAL_MODEL = "external"
 
 
 class JobStatus(StrEnum):
@@ -26,7 +30,7 @@ class Segment(BaseModel):
     end: float
     speaker: str | None = None
     text: str
-    words: list[Word]
+    words: list[Word] = Field(default_factory=list)
 
 
 class TranscriptionResult(BaseModel):
@@ -38,11 +42,41 @@ class TranscriptionResult(BaseModel):
 
 
 class JobRequest(BaseModel):
+    task: JobTask = "transcribe"
     source_url: HttpUrl | None = None
     language: Language = "auto"
     model: str | None = None
     diarize: bool = True
     webhook_url: HttpUrl | None = None
+    # task=diarize only: the externally produced transcript to label. Word-level
+    # timestamps give word-precise speaker changes; segments alone fall back to
+    # whole-segment labelling.
+    words: list[Word] | None = None
+    segments: list[Segment] | None = None
+
+    @model_validator(mode="after")
+    def _validate_task(self) -> "JobRequest":
+        if self.task == "transcribe":
+            if self.words is not None or self.segments is not None:
+                raise ValueError("words and segments are only accepted for task=diarize")
+            return self
+        if not self.words and not self.segments:
+            raise ValueError("task=diarize requires a non-empty words or segments list")
+        if not self.diarize:
+            raise ValueError("task=diarize cannot set diarize=false")
+        spans = [(word.start, word.end) for word in self.words or []] + [
+            (segment.start, segment.end) for segment in self.segments or []
+        ]
+        for start, end in spans:
+            if start < 0 or end < start:
+                raise ValueError("transcript timestamps must satisfy 0 <= start <= end")
+        return self
+
+    def transcript_bytes(self) -> int:
+        """Serialized size of the supplied transcript, for the admission size cap."""
+        if self.words is None and self.segments is None:
+            return 0
+        return len(self.model_dump_json(include={"words", "segments"}).encode())
 
 
 class Job(BaseModel):

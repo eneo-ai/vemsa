@@ -5,6 +5,7 @@ too but is only imported/constructed when the ML extra is installed.
 """
 
 import logging
+import subprocess
 import threading
 import time
 from dataclasses import dataclass
@@ -121,6 +122,42 @@ def segments_without_speakers(words: list[Word], *, gap_split_s: float = 1.0) ->
     return _group_labelled(words, [None] * len(words), gap_split_s)
 
 
+def _decodable_audio(audio_path: Path) -> tuple[Path, bool]:
+    """Path pyannote's soundfile backend can read, plus whether it is a temp file.
+
+    libsndfile covers wav/flac/ogg/mp3 but not e.g. m4a/aac; the ingest contract is
+    "any ffmpeg-decodable format", so fall back to an ffmpeg transcode next to the
+    original (16 kHz mono wav — what the pipeline resamples to anyway)."""
+    try:
+        import soundfile
+
+        soundfile.info(str(audio_path))
+        return audio_path, False
+    except Exception:
+        pass
+    converted = audio_path.with_name(audio_path.name + ".diarize.wav")
+    logger.info("transcoding audio for diarization", extra={"event": "diarize.transcode"})
+    completed = subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-nostdin",
+            "-i",
+            str(audio_path),
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            str(converted),
+        ],
+        capture_output=True,
+    )
+    if completed.returncode != 0:
+        converted.unlink(missing_ok=True)
+        raise RuntimeError(f"ffmpeg could not decode the audio (exit {completed.returncode})")
+    return converted, True
+
+
 class Diarizer:
     """pyannote speaker diarization; models are HF-gated (accept the licenses for
     pyannote/speaker-diarization-3.1 and pyannote/segmentation-3.0, provide HF_TOKEN)."""
@@ -175,9 +212,14 @@ class Diarizer:
         self.load()
         logger.info("diarization started", extra={"event": "diarize.start"})
         started = time.perf_counter()
-        # GPU-VERIFY(milestone-2): tune against real output; consider min_speakers /
-        # max_speakers passthrough as API parameters in a later version.
-        annotation = self._pipeline(str(audio_path))
+        decodable, is_temp = _decodable_audio(audio_path)
+        try:
+            # GPU-VERIFY(milestone-2): tune against real output; consider min_speakers /
+            # max_speakers passthrough as API parameters in a later version.
+            annotation = self._pipeline(str(decodable))
+        finally:
+            if is_temp:
+                decodable.unlink(missing_ok=True)
         turns = [
             Turn(start=segment.start, end=segment.end, speaker=str(label))
             for segment, _, label in annotation.itertracks(yield_label=True)

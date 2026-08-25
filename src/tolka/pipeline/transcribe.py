@@ -13,8 +13,9 @@ from pathlib import Path
 from typing import Any
 
 from tolka.config import Settings
-from tolka.jobs.models import TranscriptionResult, Word
+from tolka.jobs.models import Segment, TranscriptionResult, Word
 from tolka.pipeline.diarize import Diarizer, assign_speakers, segments_without_speakers
+from tolka.pipeline.label import audio_duration, label_speakers
 from tolka.pipeline.render import render_text
 
 logger = logging.getLogger(__name__)
@@ -76,7 +77,7 @@ class EasyTranscriberEngine:
             )
 
         words = words_from_alignments(aligned[0])
-        duration = self._audio_duration(audio_path, words)
+        duration = audio_duration(audio_path, fallback=words[-1].end if words else 0.0)
 
         if diarize:
             turns = self._diarizer.diarize(audio_path)
@@ -94,18 +95,26 @@ class EasyTranscriberEngine:
             segments=segments,
         )
 
+    def label_speakers(
+        self,
+        audio_path: Path,
+        *,
+        words: list[Word],
+        segments: list[Segment],
+        language: str,
+        model: str,
+    ) -> TranscriptionResult:
+        return label_speakers(
+            self._diarizer,
+            audio_path,
+            words=words,
+            segments=segments,
+            language=language,
+            model=model,
+        )
+
     def warm_up(self) -> None:
         logger.info("warming up diarization pipeline")
         self._diarizer.load()
         # GPU-VERIFY(milestone-2): also pre-download the whisper + emissions models
         # (first pipeline() call does it today, making the first job slow).
-
-    @staticmethod
-    def _audio_duration(audio_path: Path, words: list[Word]) -> float:
-        try:
-            import soundfile
-
-            info = soundfile.info(str(audio_path))
-            return float(info.frames) / info.samplerate
-        except Exception:
-            return words[-1].end if words else 0.0

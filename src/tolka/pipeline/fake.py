@@ -4,6 +4,7 @@ import time
 from pathlib import Path
 
 from tolka.jobs.models import Segment, TranscriptionResult, Word
+from tolka.pipeline.diarize import resolve_segments
 from tolka.pipeline.render import render_text
 
 
@@ -36,6 +37,32 @@ class CannedEngine:
             model=model,
             text=render_text([segment]),
             segments=[segment],
+        )
+
+    def label_speakers(
+        self,
+        audio_path: Path,
+        *,
+        words: list[Word],
+        segments: list[Segment],
+        language: str,
+        model: str,
+    ) -> TranscriptionResult:
+        """Alternate SPEAKER_00/SPEAKER_01 per segment so consumers can test labelling."""
+        if self._delay_s:
+            time.sleep(self._delay_s)
+        plain = [segment.model_copy(update={"speaker": None}) for segment in segments]
+        grouped = resolve_segments(words, plain, None)
+        labelled = [
+            segment.model_copy(update={"speaker": f"SPEAKER_{index % 2:02d}"})
+            for index, segment in enumerate(grouped)
+        ]
+        return TranscriptionResult(
+            language=language if language != "auto" else "unknown",
+            duration_seconds=max((segment.end for segment in labelled), default=0.0),
+            model=model,
+            text=render_text(labelled),
+            segments=labelled,
         )
 
     def warm_up(self) -> None:

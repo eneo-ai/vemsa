@@ -86,6 +86,21 @@ credentials, not an interactive OAuth implementation. Keep the service on a priv
 or behind an identity-aware API gateway. TLS terminates at that ingress. Never log tokens,
 transcripts, complete source URLs, or webhook payloads.
 
+## Diarize-only jobs and the optional diarize tier
+
+Every engine tier serves both job kinds: `task=transcribe` runs the full engine and
+`task=diarize` labels speakers on a caller-supplied transcript, chosen per request. The
+expected topology is one full deployment where the consumer's request says what it wants.
+
+`TOLKA_ENGINE=diarize` is an optional lockdown for a deployment that should never
+transcribe: no ASR engine is constructed, `TOLKA_WHISPER_API_BASE` is not
+required, and `task=transcribe` submissions are rejected at admission with 422. The tier
+requires `HF_TOKEN` in production (gated pyannote models). Sizing: pyannote runs at roughly
+real time on CPU — fine for short recordings; use a GPU host when fan-in or recording length
+makes that untenable. Caller transcripts ride in `jobs.request_json`, so the retention purge
+and the "never log transcripts" rule now cover request payloads as well as results;
+`TOLKA_MAX_TRANSCRIPT_BYTES` (default 8 MiB) caps the accepted transcript size.
+
 ## Consumer integrations (eneo)
 
 Eneo integrates Tolka as the engine for its flow `transcribe_only` steps: it uploads the

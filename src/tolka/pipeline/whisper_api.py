@@ -15,6 +15,7 @@ import httpx
 from tolka.config import Settings
 from tolka.jobs.models import Segment, TranscriptionResult, Word
 from tolka.pipeline.diarize import Diarizer, resolve_segments
+from tolka.pipeline.label import label_speakers
 from tolka.pipeline.render import render_text
 
 logger = logging.getLogger(__name__)
@@ -143,6 +144,24 @@ class OpenAIWhisperEngine:
         turns = self._diarizer.diarize(audio_path) if diarize else None
         segments = resolve_segments(words, plain_segments, turns)
         return build_result(payload, segments, model=model, language=language)
+
+    def label_speakers(
+        self,
+        audio_path: Path,
+        *,
+        words: list[Word],
+        segments: list[Segment],
+        language: str,
+        model: str,
+    ) -> TranscriptionResult:
+        return label_speakers(
+            self._diarizer,
+            audio_path,
+            words=words,
+            segments=segments,
+            language=language,
+            model=model,
+        )
 
     def warm_up(self) -> None:
         self._diarizer.load()

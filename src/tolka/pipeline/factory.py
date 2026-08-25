@@ -25,6 +25,10 @@ def build_engine(settings: Settings) -> TranscriptionEngine:
         from tolka.pipeline.hybrid import HybridEngine
 
         return HybridEngine(settings)
+    if engine == "diarize":
+        from tolka.pipeline.diarize_only import DiarizeOnlyEngine
+
+        return DiarizeOnlyEngine(settings)
     from tolka.pipeline.whisper_api import OpenAIWhisperEngine
 
     return OpenAIWhisperEngine(settings)

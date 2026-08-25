@@ -12,7 +12,7 @@ from uuid import uuid4
 import httpx
 
 from tolka.config import Settings
-from tolka.jobs.models import Job, WebhookOutboxEvent
+from tolka.jobs.models import EXTERNAL_MODEL, Job, WebhookOutboxEvent
 from tolka.jobs.store import JobStore
 from tolka.observability import (
     JOB_DURATION,
@@ -128,13 +128,24 @@ class JobQueue:
             heartbeat = asyncio.create_task(
                 self._heartbeat_lease(job.id), name=f"tolka-lease-{job.id}"
             )
-            result = await asyncio.to_thread(
-                self._engine.transcribe,
-                audio_path,
-                language=job.request.language,
-                model=job.request.model or self._settings.default_model,
-                diarize=job.request.diarize,
-            )
+            if job.request.task == "diarize":
+                result = await asyncio.to_thread(
+                    self._engine.label_speakers,
+                    audio_path,
+                    words=job.request.words or [],
+                    segments=job.request.segments or [],
+                    language=job.request.language,
+                    # The result must never claim Tolka's default model ran.
+                    model=job.request.model or EXTERNAL_MODEL,
+                )
+            else:
+                result = await asyncio.to_thread(
+                    self._engine.transcribe,
+                    audio_path,
+                    language=job.request.language,
+                    model=job.request.model or self._settings.default_model,
+                    diarize=job.request.diarize,
+                )
             committed = await self._store.finish(
                 job.id,
                 result,
@@ -145,10 +156,12 @@ class JobQueue:
                 logger.warning("job %s result discarded after worker lease was lost", job.id)
                 return
             delete_audio = True
-            JOBS_FINISHED.labels("completed", self._settings.resolve_engine()).inc()
-            JOB_DURATION.labels("completed", self._settings.resolve_engine()).observe(
-                time.perf_counter() - started
-            )
+            JOBS_FINISHED.labels(
+                "completed", self._settings.resolve_engine(), job.request.task
+            ).inc()
+            JOB_DURATION.labels(
+                "completed", self._settings.resolve_engine(), job.request.task
+            ).observe(time.perf_counter() - started)
             logger.info(
                 "job completed",
                 extra={
@@ -157,6 +170,7 @@ class JobQueue:
                     "client_id": job.client_id,
                     "attempt": job.attempt,
                     "engine": self._settings.resolve_engine(),
+                    "task": job.request.task,
                     "duration_ms": round((time.perf_counter() - started) * 1000, 2),
                 },
             )
@@ -173,6 +187,7 @@ class JobQueue:
                     "client_id": job.client_id,
                     "attempt": job.attempt,
                     "engine": self._settings.resolve_engine(),
+                    "task": job.request.task,
                     "error_type": type(exc).__name__,
                 },
             )
@@ -187,10 +202,10 @@ class JobQueue:
                 logger.warning("job %s failure discarded after worker lease was lost", job.id)
                 return
             delete_audio = True
-            JOBS_FINISHED.labels("failed", self._settings.resolve_engine()).inc()
-            JOB_DURATION.labels("failed", self._settings.resolve_engine()).observe(
-                time.perf_counter() - started
-            )
+            JOBS_FINISHED.labels("failed", self._settings.resolve_engine(), job.request.task).inc()
+            JOB_DURATION.labels(
+                "failed", self._settings.resolve_engine(), job.request.task
+            ).observe(time.perf_counter() - started)
             self._webhook_wakeup.set()
         finally:
             if heartbeat is not None:

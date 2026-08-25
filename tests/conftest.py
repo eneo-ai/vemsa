@@ -55,6 +55,28 @@ class FakeEngine:
         )
         return make_result(diarize)
 
+    def label_speakers(
+        self,
+        audio_path: Path,
+        *,
+        words: list[Word],
+        segments: list[Segment],
+        language: str,
+        model: str,
+    ) -> TranscriptionResult:
+        self.calls.append(
+            {
+                "task": "diarize",
+                "audio_path": audio_path,
+                "words": words,
+                "segments": segments,
+                "language": language,
+                "model": model,
+            }
+        )
+        result = make_result(True)
+        return result.model_copy(update={"model": model})
+
     def warm_up(self) -> None:
         pass
 
@@ -62,6 +84,17 @@ class FakeEngine:
 class FailingEngine:
     def transcribe(
         self, audio_path: Path, *, language: str, model: str, diarize: bool
+    ) -> TranscriptionResult:
+        raise RuntimeError("pipeline exploded")
+
+    def label_speakers(
+        self,
+        audio_path: Path,
+        *,
+        words: list[Word],
+        segments: list[Segment],
+        language: str,
+        model: str,
     ) -> TranscriptionResult:
         raise RuntimeError("pipeline exploded")
 

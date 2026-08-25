@@ -31,9 +31,11 @@ HTTP_DURATION = Histogram(
     "tolka_http_request_duration_seconds", "HTTP request duration", ("method", "route")
 )
 JOBS_SUBMITTED = Counter("tolka_jobs_submitted_total", "Submitted jobs", ("source_type",))
-JOBS_FINISHED = Counter("tolka_jobs_finished_total", "Terminal jobs", ("status", "engine"))
+JOBS_FINISHED = Counter("tolka_jobs_finished_total", "Terminal jobs", ("status", "engine", "task"))
 JOB_DURATION = Histogram(
-    "tolka_job_processing_seconds", "End-to-end worker processing time", ("status", "engine")
+    "tolka_job_processing_seconds",
+    "End-to-end worker processing time",
+    ("status", "engine", "task"),
 )
 QUEUE_DEPTH = Gauge("tolka_queue_depth", "Currently queued jobs")
 WEBHOOK_DELIVERIES = Counter(

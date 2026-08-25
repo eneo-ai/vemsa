@@ -76,6 +76,31 @@ Poll `GET /v1/jobs/{id}` until `status` is `completed`, then fetch `GET /v1/jobs
 on completion. Results are retained for `TOLKA_RETENTION_HOURS` and then purged; source audio is
 deleted as soon as the job finishes.
 
+### Diarize-only jobs (`task=diarize`)
+
+When the transcript is produced elsewhere, Tolka can add only the speaker labels: upload the
+audio plus the transcript as JSON (`words`, `segments`, or both), and get back the same
+`TranscriptionResult` shape with speakers merged in.
+
+```bash
+curl -X POST http://localhost:8000/v1/jobs \
+  -H "Authorization: Bearer $TOKEN" \
+  -F file=@meeting.mp3 -F task=diarize -F language=sv \
+  -F 'words=[{"word":"hej","start":0.0,"end":0.4},{"word":"då","start":2.1,"end":2.3}]'
+```
+
+Timestamps are absolute seconds from the start of the uploaded audio. Word-level timestamps
+give word-precise speaker changes; `segments` alone (each `{"start","end","text"}`) fall back
+to whole-segment labelling. The transcript is capped at `TOLKA_MAX_TRANSCRIPT_BYTES`
+(default 8 MiB). `model` is echoed into the result and defaults to `"external"` so the result
+never claims one of Tolka's models transcribed.
+
+Every engine tier accepts both tasks — one full deployment serves transcription and
+diarize-only jobs side by side, and each request chooses. Optionally,
+`TOLKA_ENGINE=diarize` locks a deployment down to diarize-only: no whisper endpoint needed,
+and `task=transcribe` submissions are rejected with 422. The MCP tools remain
+transcribe-only.
+
 Auth is fail-closed static bearer authentication intended for internal server-to-server use.
 `TOLKA_API_TOKENS` takes comma-separated `client_id=token` credentials in production, for
 example `eneo=first-secret,automation=second-secret`. Jobs are owned by that client identity;
