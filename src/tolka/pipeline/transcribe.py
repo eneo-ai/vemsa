@@ -13,9 +13,15 @@ from pathlib import Path
 from typing import Any
 
 from tolka.config import Settings
-from tolka.jobs.models import Segment, TranscriptionResult, Word
-from tolka.pipeline.diarize import Diarizer, assign_speakers, segments_without_speakers
-from tolka.pipeline.label import audio_duration, label_speakers
+from tolka.jobs.models import Segment, SpeakerBounds, TranscriptionResult, Word
+from tolka.pipeline.align import build_segment_aligner
+from tolka.pipeline.diarize import (
+    Diarizer,
+    assign_speakers,
+    audio_duration,
+    segments_without_speakers,
+)
+from tolka.pipeline.label import label_speakers
 from tolka.pipeline.render import render_text
 
 logger = logging.getLogger(__name__)
@@ -48,9 +54,16 @@ class EasyTranscriberEngine:
         self._settings = settings
         self._lock = threading.Lock()
         self._diarizer = Diarizer(settings)
+        self._segment_aligner = build_segment_aligner(settings)
 
     def transcribe(
-        self, audio_path: Path, *, language: str, model: str, diarize: bool
+        self,
+        audio_path: Path,
+        *,
+        language: str,
+        model: str,
+        diarize: bool,
+        speakers: SpeakerBounds | None = None,
     ) -> TranscriptionResult:
         from easytranscriber.pipelines import pipeline
 
@@ -80,7 +93,7 @@ class EasyTranscriberEngine:
         duration = audio_duration(audio_path, fallback=words[-1].end if words else 0.0)
 
         if diarize:
-            turns = self._diarizer.diarize(audio_path)
+            turns = self._diarizer.diarize(audio_path, speakers=speakers)
             segments = assign_speakers(words, turns)
         else:
             segments = segments_without_speakers(words)
@@ -93,6 +106,8 @@ class EasyTranscriberEngine:
             model=model,
             text=render_text(segments),
             segments=segments,
+            # easytranscriber's word timestamps come from its own forced alignment
+            alignment="forced",
         )
 
     def label_speakers(
@@ -103,6 +118,7 @@ class EasyTranscriberEngine:
         segments: list[Segment],
         language: str,
         model: str,
+        speakers: SpeakerBounds | None = None,
     ) -> TranscriptionResult:
         return label_speakers(
             self._diarizer,
@@ -111,6 +127,8 @@ class EasyTranscriberEngine:
             segments=segments,
             language=language,
             model=model,
+            aligner=self._segment_aligner,
+            speakers=speakers,
         )
 
     def warm_up(self) -> None:

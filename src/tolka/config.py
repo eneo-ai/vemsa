@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     default_model: str = "KBLab/kb-whisper-large"
     emissions_model: str = "KBLab/wav2vec2-large-voxrex-swedish"
     diarization_model: str = "pyannote/speaker-diarization-3.1"
+    # task=diarize with segments but no words: force-align the text locally for
+    # word-precise speaker changes (requires the `align` extra; falls back to
+    # segment-level labelling when unavailable or when alignment fails)
+    diarize_force_align: bool = True
 
     model_cache_dir: Path = Path("data/models")
     work_dir: Path = Path("data/work")

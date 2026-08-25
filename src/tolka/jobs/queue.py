@@ -137,6 +137,7 @@ class JobQueue:
                     language=job.request.language,
                     # The result must never claim Tolka's default model ran.
                     model=job.request.model or EXTERNAL_MODEL,
+                    speakers=job.request.speaker_bounds(),
                 )
             else:
                 result = await asyncio.to_thread(
@@ -145,6 +146,7 @@ class JobQueue:
                     language=job.request.language,
                     model=job.request.model or self._settings.default_model,
                     diarize=job.request.diarize,
+                    speakers=job.request.speaker_bounds(),
                 )
             committed = await self._store.finish(
                 job.id,

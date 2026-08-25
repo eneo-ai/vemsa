@@ -33,12 +33,30 @@ class Segment(BaseModel):
     words: list[Word] = Field(default_factory=list)
 
 
+# How the word timestamps behind the speaker labels were obtained, best to worst:
+# the caller/provider supplied words, Tolka force-aligned the text locally, segments
+# were split proportionally at turn boundaries, or whole segments were labelled.
+Alignment = Literal["provider_words", "forced", "segment_split", "segment_only"]
+
+
 class TranscriptionResult(BaseModel):
     language: str
     duration_seconds: float
     model: str
     text: str
     segments: list[Segment]
+    alignment: Alignment | None = None
+
+
+class SpeakerBounds(BaseModel):
+    """Speaker-count prior for diarization, passed through to pyannote."""
+
+    num_speakers: int | None = None
+    min_speakers: int | None = None
+    max_speakers: int | None = None
+
+    def pipeline_kwargs(self) -> dict[str, int]:
+        return {key: value for key, value in self.model_dump().items() if value is not None}
 
 
 class JobRequest(BaseModel):
@@ -53,9 +71,26 @@ class JobRequest(BaseModel):
     # whole-segment labelling.
     words: list[Word] | None = None
     segments: list[Segment] | None = None
+    # Speaker-count prior for diarization: exact count, or an expected range.
+    # num_speakers excludes the other two.
+    num_speakers: int | None = Field(default=None, ge=1)
+    min_speakers: int | None = Field(default=None, ge=1)
+    max_speakers: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
     def _validate_task(self) -> "JobRequest":
+        if self.num_speakers is not None and (
+            self.min_speakers is not None or self.max_speakers is not None
+        ):
+            raise ValueError("num_speakers excludes min_speakers and max_speakers")
+        if (
+            self.min_speakers is not None
+            and self.max_speakers is not None
+            and self.min_speakers > self.max_speakers
+        ):
+            raise ValueError("min_speakers cannot exceed max_speakers")
+        if not self.diarize and self.speaker_bounds() is not None:
+            raise ValueError("speaker bounds require diarize=true")
         if self.task == "transcribe":
             if self.words is not None or self.segments is not None:
                 raise ValueError("words and segments are only accepted for task=diarize")
@@ -71,6 +106,15 @@ class JobRequest(BaseModel):
             if start < 0 or end < start:
                 raise ValueError("transcript timestamps must satisfy 0 <= start <= end")
         return self
+
+    def speaker_bounds(self) -> SpeakerBounds | None:
+        if self.num_speakers is None and self.min_speakers is None and self.max_speakers is None:
+            return None
+        return SpeakerBounds(
+            num_speakers=self.num_speakers,
+            min_speakers=self.min_speakers,
+            max_speakers=self.max_speakers,
+        )
 
     def transcript_bytes(self) -> int:
         """Serialized size of the supplied transcript, for the admission size cap."""

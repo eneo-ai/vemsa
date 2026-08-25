@@ -46,9 +46,11 @@ class FakeDiarizer:
     def __init__(self, turns=TURNS):
         self.turns = turns
         self.calls: list[Path] = []
+        self.speaker_bounds: list[object] = []
 
-    def diarize(self, audio_path: Path):
+    def diarize(self, audio_path: Path, *, speakers=None):
         self.calls.append(audio_path)
+        self.speaker_bounds.append(speakers)
         return self.turns
 
     def load(self):

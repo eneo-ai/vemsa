@@ -11,11 +11,13 @@ from httpx import Response
 
 from conftest import FakeEngine
 from tolka.config import Settings
-from tolka.jobs.models import Segment, Word
+from tolka.jobs.models import Segment, SpeakerBounds, Word
 from tolka.main import create_app
+from tolka.pipeline import align
 from tolka.pipeline.diarize import Turn
+from tolka.pipeline.diarize_only import DiarizeOnlyEngine
 from tolka.pipeline.fake import CannedEngine
-from tolka.pipeline.label import label_speakers
+from tolka.pipeline.label import label_speakers, words_plausible
 from tolka.pipeline.whisper_api import OpenAIWhisperEngine
 
 AUTH = {"Authorization": "Bearer secret-token"}
@@ -154,9 +156,11 @@ async def test_fake_engine_alternates_speakers(tmp_path: Path):
 class FakeDiarizer:
     def __init__(self) -> None:
         self.calls: list[Path] = []
+        self.speaker_bounds: list[object] = []
 
-    def diarize(self, audio_path: Path) -> list[Turn]:
+    def diarize(self, audio_path: Path, *, speakers=None) -> list[Turn]:
         self.calls.append(audio_path)
+        self.speaker_bounds.append(speakers)
         return [Turn(0.0, 1.5, "SPEAKER_00"), Turn(1.9, 2.7, "SPEAKER_01")]
 
     def load(self) -> None:
@@ -190,3 +194,259 @@ def test_label_speakers_reuses_the_engine_diarizer(settings: Settings, tmp_path:
         audio, words=[Word(**w) for w in WORDS], segments=[], language="sv", model="external"
     )
     assert diarizer.calls == [audio]
+
+
+SEGMENT_ONLY = [Segment(start=0.0, end=2.7, text="hej och tack")]
+
+
+def fake_aligner(audio_path: Path, segments: list[Segment], language: str) -> list[Word]:
+    return [Word(**w) for w in WORDS]
+
+
+def test_segments_only_are_force_aligned_into_word_level_splits(tmp_path: Path):
+    # one input segment spans both diarization turns; aligned words split it in two
+    result = label_speakers(
+        FakeDiarizer(),
+        tmp_path / "a.wav",
+        words=[],
+        segments=SEGMENT_ONLY,
+        language="sv",
+        model="kb-whisper-large",
+        aligner=fake_aligner,
+    )
+    assert result.alignment == "forced"
+    assert [(s.speaker, s.text) for s in result.segments] == [
+        ("SPEAKER_00", "hej och"),
+        ("SPEAKER_01", "tack"),
+    ]
+    assert result.model == "kb-whisper-large"
+
+
+def test_whole_file_segment_is_force_aligned(tmp_path: Path):
+    # Eneo rejecting a bad provider timeline sends one segment covering the whole
+    # file; the aligner recovers word timestamps and the merge splits per speaker
+    class LongDiarizer(FakeDiarizer):
+        def diarize(self, audio_path: Path, *, speakers=None) -> list[Turn]:
+            return [Turn(0.0, 30.0, "SPEAKER_00"), Turn(30.0, 65.0, "SPEAKER_01")]
+
+    def whole_file_aligner(audio_path: Path, segments: list[Segment], language: str) -> list[Word]:
+        assert [(s.start, s.end) for s in segments] == [(0.0, 65.0)]
+        return [
+            Word(word="hej", start=1.0, end=1.4),
+            Word(word="där", start=2.0, end=2.3),
+            Word(word="tack", start=40.0, end=40.4),
+            Word(word="hej", start=41.0, end=41.2),
+        ]
+
+    result = label_speakers(
+        LongDiarizer(),
+        tmp_path / "a.wav",
+        words=[],
+        segments=[Segment(start=0.0, end=65.0, text="hej där tack hej")],
+        language="sv",
+        model="kb-whisper-large",
+        aligner=whole_file_aligner,
+    )
+    assert result.alignment == "forced"
+    assert [(s.speaker, s.text) for s in result.segments] == [
+        ("SPEAKER_00", "hej där"),
+        ("SPEAKER_01", "tack hej"),
+    ]
+
+
+def test_alignment_failure_falls_back_to_segment_merge(tmp_path: Path):
+    def broken_aligner(audio_path: Path, segments: list[Segment], language: str) -> list[Word]:
+        raise RuntimeError("no tokenizer for this language")
+
+    result = label_speakers(
+        FakeDiarizer(),
+        tmp_path / "a.wav",
+        words=[],
+        segments=SEGMENT_ONLY,
+        language="sv",
+        model="external",
+        aligner=broken_aligner,
+    )
+    assert result.alignment == "segment_only"
+    assert [s.speaker for s in result.segments] == ["SPEAKER_00"]
+
+
+def test_caller_words_win_over_the_aligner(tmp_path: Path):
+    def exploding_aligner(audio_path: Path, segments: list[Segment], language: str) -> list[Word]:
+        raise AssertionError("aligner must not run when words are supplied")
+
+    result = label_speakers(
+        FakeDiarizer(),
+        tmp_path / "a.wav",
+        words=[Word(**w) for w in WORDS],
+        segments=SEGMENT_ONLY,
+        language="sv",
+        model="external",
+        aligner=exploding_aligner,
+    )
+    assert result.alignment == "provider_words"
+
+
+def test_segment_split_is_reported_in_alignment(tmp_path: Path):
+    # no words, no aligner, and the merge splits the segment at the turn boundary
+    class TwoTurnDiarizer(FakeDiarizer):
+        def diarize(self, audio_path: Path, *, speakers=None) -> list[Turn]:
+            return [Turn(0.0, 6.0, "SPEAKER_00"), Turn(6.0, 10.0, "SPEAKER_01")]
+
+    result = label_speakers(
+        TwoTurnDiarizer(),
+        tmp_path / "a.wav",
+        words=[],
+        segments=[Segment(start=0.0, end=10.0, text="ett två tre fyra fem sex")],
+        language="sv",
+        model="external",
+    )
+    assert result.alignment == "segment_split"
+    assert [s.speaker for s in result.segments] == ["SPEAKER_00", "SPEAKER_01"]
+
+
+def compressed_words(count: int = 30, spacing: float = 0.1) -> list[Word]:
+    """A decoder-heuristic timeline: ~10 words/s, humanly impossible."""
+    return [
+        Word(word=f"w{i}", start=i * spacing, end=i * spacing + spacing * 0.8) for i in range(count)
+    ]
+
+
+def test_words_plausible():
+    # a normal ~2 words/s timeline passes
+    normal = [Word(word=f"w{i}", start=i * 0.5, end=i * 0.5 + 0.3) for i in range(20)]
+    assert words_plausible(normal)
+    # a compressed timeline is rejected
+    assert not words_plausible(compressed_words())
+    # a long pause is excluded from speaking time, not used to mask compression
+    with_pause = normal[:10] + [
+        Word(word=f"p{i}", start=60.0 + i * 0.5, end=60.0 + i * 0.5 + 0.3) for i in range(10)
+    ]
+    assert words_plausible(with_pause)
+    masked = compressed_words(30) + [Word(word="slut", start=60.0, end=60.3)]
+    assert not words_plausible(masked)
+    # too few words to judge: accepted
+    assert words_plausible([Word(word="hej", start=0.0, end=0.1)])
+
+
+def test_implausible_caller_words_are_discarded_for_alignment(tmp_path: Path):
+    # the segment windows come from the same rejected timeline, so the aligner
+    # must receive one whole-audio window, not the suspect windows
+    received: list[list[Segment]] = []
+
+    def recording_aligner(audio_path: Path, segments: list[Segment], language: str) -> list[Word]:
+        received.append(segments)
+        return [Word(**w) for w in WORDS]
+
+    result = label_speakers(
+        FakeDiarizer(),
+        tmp_path / "a.wav",
+        words=compressed_words(),
+        segments=SEGMENT_ONLY,
+        language="sv",
+        model="external",
+        aligner=recording_aligner,
+    )
+    assert result.alignment == "forced"
+    assert len(received[0]) == 1
+    assert received[0][0].start == 0.0
+    assert received[0][0].text == "hej och tack"
+
+
+def test_implausible_segment_windows_align_as_one_window(tmp_path: Path):
+    # segments-only input whose windows imply an impossible speaking rate: the
+    # provider timeline is bad even without words, so the windows are untrusted
+    received: list[list[Segment]] = []
+
+    def recording_aligner(audio_path: Path, segments: list[Segment], language: str) -> list[Word]:
+        received.append(segments)
+        return [Word(**w) for w in WORDS]
+
+    compressed_segments = [
+        Segment(start=0.0, end=1.0, text="ett två tre fyra fem sex sju åtta nio tio")
+    ]
+    result = label_speakers(
+        FakeDiarizer(),
+        tmp_path / "a.wav",
+        words=[],
+        segments=compressed_segments,
+        language="sv",
+        model="external",
+        aligner=recording_aligner,
+    )
+    assert result.alignment == "forced"
+    assert len(received[0]) == 1
+    assert received[0][0].text == "ett två tre fyra fem sex sju åtta nio tio"
+
+
+def test_implausible_words_without_segments_are_still_used(tmp_path: Path):
+    # nothing better exists: keep the words rather than returning nothing
+    result = label_speakers(
+        FakeDiarizer(),
+        tmp_path / "a.wav",
+        words=compressed_words(),
+        segments=[],
+        language="sv",
+        model="external",
+    )
+    assert result.alignment == "provider_words"
+
+
+def test_build_segment_aligner_respects_the_config_gate(settings: Settings, monkeypatch):
+    monkeypatch.setattr(align, "alignment_available", lambda: True)
+    assert align.build_segment_aligner(settings) is not None
+    settings.diarize_force_align = False
+    assert align.build_segment_aligner(settings) is None
+    settings.diarize_force_align = True
+    monkeypatch.setattr(align, "alignment_available", lambda: False)
+    assert align.build_segment_aligner(settings) is None
+
+
+def test_diarize_only_engine_aligns_and_passes_speaker_bounds(settings: Settings, tmp_path: Path):
+    diarizer = FakeDiarizer()
+    engine = DiarizeOnlyEngine(settings, diarizer=diarizer)
+    engine._segment_aligner = fake_aligner
+    bounds = SpeakerBounds(max_speakers=2)
+    result = engine.label_speakers(
+        tmp_path / "a.wav",
+        words=[],
+        segments=SEGMENT_ONLY,
+        language="sv",
+        model="external",
+        speakers=bounds,
+    )
+    assert result.alignment == "forced"
+    assert len(result.segments) == 2
+    assert diarizer.speaker_bounds == [bounds]
+
+
+async def test_speaker_bounds_reach_the_engine_from_both_tasks(settings: Settings):
+    engine = FakeEngine()
+    async with api_client(settings, engine) as (client, _):
+        response = await submit(
+            client, task="diarize", language="sv", words=json.dumps(WORDS), max_speakers="3"
+        )
+        assert response.status_code == 202
+        await poll_until(client, response.json()["job_id"], "completed")
+        response = await submit(client, language="sv", num_speakers="2")
+        assert response.status_code == 202
+        await poll_until(client, response.json()["job_id"], "completed")
+
+    assert engine.calls[0]["speakers"] == SpeakerBounds(max_speakers=3)
+    assert engine.calls[1]["speakers"] == SpeakerBounds(num_speakers=2)
+
+
+async def test_speaker_bounds_validation(settings: Settings):
+    async with api_client(settings) as (client, _):
+        # num_speakers excludes min/max
+        response = await submit(client, num_speakers="2", max_speakers="3")
+        assert response.status_code == 422
+        # inverted range
+        response = await submit(client, min_speakers="4", max_speakers="2")
+        assert response.status_code == 422
+        # below 1
+        response = await submit(client, num_speakers="0")
+        assert response.status_code == 422
+        # bounds without diarization make no sense
+        response = await submit(client, diarize="false", max_speakers="3")
+        assert response.status_code == 422

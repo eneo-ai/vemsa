@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from tolka.jobs.models import Segment, Word
+from tolka.jobs.models import Segment, SpeakerBounds, Word
 
 if TYPE_CHECKING:
     from tolka.config import Settings
@@ -75,29 +75,163 @@ def assign_speakers(
     return _group_labelled(words, labels, gap_split_s)
 
 
-def assign_speakers_to_segments(segments: list[Segment], turns: list[Turn]) -> list[Segment]:
+def assign_speakers_to_segments(
+    segments: list[Segment],
+    turns: list[Turn],
+    *,
+    split_threshold: float = 0.25,
+    min_split_duration_s: float = 2.0,
+    min_split_words: int = 4,
+    punctuation_snap_chars: int = 12,
+) -> list[Segment]:
     """Coarse fallback when only segment-level timestamps are available: each whole
-    segment gets the speaker of the maximally overlapping diarization turn (a speaker
-    change inside one whisper segment is lost at this granularity)."""
+    segment gets the speaker with the maximal total turn overlap. A segment whose
+    minority speakers cover at least split_threshold of its overlapped time is
+    instead split at the turn boundaries, slicing the text by time proportion
+    (snapped to a word boundary, preferring sentence punctuation). Speech rate is
+    not uniform, so a cut can land a word or two off — still far better than losing
+    the speaker change entirely. Word-level input never reaches this path."""
     if not segments or not turns:
         return segments
     ordered_turns = sorted(turns, key=lambda turn: turn.start)
     labelled: list[Segment] = []
     previous: str | None = None
+    split_count = 0
     for segment in segments:
-        best: str | None = None
-        best_overlap = 0.0
-        for turn in ordered_turns:
-            overlap = max(0.0, min(segment.end, turn.end) - max(segment.start, turn.start))
-            if overlap > best_overlap:
-                best_overlap = overlap
-                best = turn.speaker
-        if best is None:
+        shares = _speaker_shares(segment, ordered_turns)
+        if not shares:
             fallback = _nearest_turn(segment, ordered_turns).speaker
             best = previous if previous is not None else fallback
-        labelled.append(segment.model_copy(update={"speaker": best}))
-        previous = best
+            labelled.append(segment.model_copy(update={"speaker": best}))
+            previous = best
+            continue
+        majority = max(shares, key=lambda speaker: shares[speaker])
+        splittable = (
+            shares[majority] < (1 - split_threshold) * sum(shares.values())
+            and segment.end - segment.start >= min_split_duration_s
+            and len(segment.text.split()) >= min_split_words
+        )
+        pieces = (
+            _split_segment(segment, ordered_turns, shares, punctuation_snap_chars)
+            if splittable
+            else []
+        )
+        if len(pieces) > 1:
+            split_count += 1
+            labelled.extend(pieces)
+            previous = pieces[-1].speaker
+        else:
+            labelled.append(segment.model_copy(update={"speaker": majority}))
+            previous = majority
+    if split_count:
+        logger.info(
+            "split %d segment(s) at speaker turns by time proportion",
+            split_count,
+            extra={"event": "diarize.segment_split", "segments": split_count},
+        )
     return labelled
+
+
+def _speaker_shares(segment: Segment, turns: list[Turn]) -> dict[str, float]:
+    """Total overlap duration per speaker across all turns touching the segment."""
+    shares: dict[str, float] = {}
+    for turn in turns:
+        overlap = max(0.0, min(segment.end, turn.end) - max(segment.start, turn.start))
+        if overlap > 0.0:
+            shares[turn.speaker] = shares.get(turn.speaker, 0.0) + overlap
+    return shares
+
+
+def _speaker_spans(
+    segment: Segment, turns: list[Turn], shares: dict[str, float]
+) -> list[tuple[float, float, str]]:
+    """The segment partitioned into one span per contiguous speaker stretch.
+
+    Overlapping turns are flattened to the speaker with the larger overall share;
+    silence between turns joins the preceding span (the leading gap joins the
+    following one), so span boundaries sit exactly at speaker changes."""
+    bounds = {segment.start, segment.end}
+    for turn in turns:
+        if turn.end > segment.start and turn.start < segment.end:
+            bounds.add(max(turn.start, segment.start))
+            bounds.add(min(turn.end, segment.end))
+    ordered = sorted(bounds)
+    spans: list[list] = []
+    for start, end in zip(ordered, ordered[1:], strict=False):
+        midpoint = (start + end) / 2
+        covering = [turn.speaker for turn in turns if turn.start < midpoint < turn.end]
+        speaker = max(covering, key=lambda name: shares[name]) if covering else None
+        spans.append([start, end, speaker])
+    for index, span in enumerate(spans):
+        if span[2] is None:
+            following = next((other[2] for other in spans[index:] if other[2]), None)
+            span[2] = spans[index - 1][2] if index > 0 else following
+    merged: list[list] = []
+    for start, end, speaker in spans:
+        if merged and merged[-1][2] == speaker:
+            merged[-1][1] = end
+        else:
+            merged.append([start, end, speaker])
+    return [(start, end, speaker) for start, end, speaker in merged if speaker is not None]
+
+
+def _snap_offset(text: str, offset: int, punctuation_window: int) -> int | None:
+    """Nearest word boundary to a character offset: a cut just after sentence
+    punctuation within the window wins, else the nearest whitespace; None when the
+    text has no boundary at all."""
+    punctuation = [
+        index + 1
+        for index, char in enumerate(text[:-1])
+        if char in ".?!" and text[index + 1].isspace()
+    ]
+    nearest_punctuation = min(punctuation, key=lambda pos: abs(pos - offset), default=None)
+    if nearest_punctuation is not None and abs(nearest_punctuation - offset) <= punctuation_window:
+        return nearest_punctuation
+    spaces = [index for index, char in enumerate(text) if char.isspace()]
+    return min(spaces, key=lambda pos: abs(pos - offset), default=None)
+
+
+def _split_segment(
+    segment: Segment, turns: list[Turn], shares: dict[str, float], punctuation_window: int
+) -> list[Segment]:
+    """One piece per within-segment speaker stretch, text sliced by time proportion.
+
+    Returns [] when no valid split remains (a single stretch, or every cut snapped
+    onto the text edges), leaving the caller on the whole-segment path."""
+    spans = _speaker_spans(segment, turns, shares)
+    if len(spans) < 2:
+        return []
+    text = segment.text
+    duration = segment.end - segment.start
+    boundaries: list[tuple[float, int]] = [(segment.start, 0)]
+    for span_start, _span_end, _speaker in spans[1:]:
+        raw = round(len(text) * (span_start - segment.start) / duration)
+        snapped = _snap_offset(text, raw, punctuation_window)
+        if snapped is not None and boundaries[-1][1] < snapped < len(text):
+            boundaries.append((span_start, snapped))
+    boundaries.append((segment.end, len(text)))
+
+    pieces: list[Segment] = []
+    for (start, offset_start), (end, offset_end) in zip(boundaries, boundaries[1:], strict=False):
+        piece_text = text[offset_start:offset_end].strip()
+        if not piece_text:
+            continue
+        speaker = _dominant_speaker(spans, start, end)
+        if pieces and pieces[-1].speaker == speaker:
+            pieces[-1] = pieces[-1].model_copy(
+                update={"end": end, "text": f"{pieces[-1].text} {piece_text}"}
+            )
+        else:
+            pieces.append(Segment(start=start, end=end, speaker=speaker, text=piece_text))
+    return pieces if len(pieces) > 1 else []
+
+
+def _dominant_speaker(spans: list[tuple[float, float, str]], start: float, end: float) -> str:
+    totals: dict[str, float] = {}
+    for span_start, span_end, speaker in spans:
+        overlap = max(0.0, min(end, span_end) - max(start, span_start))
+        totals[speaker] = totals.get(speaker, 0.0) + overlap
+    return max(totals, key=lambda name: totals[name])
 
 
 def resolve_segments(
@@ -120,6 +254,38 @@ def segments_without_speakers(words: list[Word], *, gap_split_s: float = 1.0) ->
         return []
     words = sorted(words, key=lambda word: word.start)
     return _group_labelled(words, [None] * len(words), gap_split_s)
+
+
+def audio_duration(audio_path: Path, *, fallback: float) -> float:
+    """Decoded length of the audio, or ``fallback`` when it cannot be read.
+
+    soundfile first (cheap, no subprocess), then ffprobe for the formats libsndfile
+    cannot open (e.g. m4a) — the duration feeds consumers' usage accounting."""
+    try:
+        import soundfile
+
+        info = soundfile.info(str(audio_path))
+        return float(info.frames) / info.samplerate
+    except Exception:
+        pass
+    try:
+        completed = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "csv=p=0",
+                str(audio_path),
+            ],
+            capture_output=True,
+            timeout=60,
+        )
+        return float(completed.stdout.strip())
+    except Exception:
+        return fallback
 
 
 def _decodable_audio(audio_path: Path) -> tuple[Path, bool]:
@@ -208,15 +374,16 @@ class Diarizer:
                 },
             )
 
-    def diarize(self, audio_path: Path) -> list[Turn]:
+    def diarize(self, audio_path: Path, *, speakers: SpeakerBounds | None = None) -> list[Turn]:
         self.load()
-        logger.info("diarization started", extra={"event": "diarize.start"})
+        bounds = speakers.pipeline_kwargs() if speakers else {}
+        logger.info("diarization started", extra={"event": "diarize.start", **bounds})
         started = time.perf_counter()
         decodable, is_temp = _decodable_audio(audio_path)
         try:
-            # GPU-VERIFY(milestone-2): tune against real output; consider min_speakers /
-            # max_speakers passthrough as API parameters in a later version.
-            annotation = self._pipeline(str(decodable))
+            # GPU-VERIFY(milestone-2): tune against real output. pyannote over-splits
+            # without a prior; callers can bound it via num/min/max_speakers.
+            annotation = self._pipeline(str(decodable), **bounds)
         finally:
             if is_temp:
                 decodable.unlink(missing_ok=True)

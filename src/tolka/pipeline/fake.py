@@ -3,7 +3,7 @@
 import time
 from pathlib import Path
 
-from tolka.jobs.models import Segment, TranscriptionResult, Word
+from tolka.jobs.models import Segment, SpeakerBounds, TranscriptionResult, Word
 from tolka.pipeline.diarize import resolve_segments
 from tolka.pipeline.render import render_text
 
@@ -13,7 +13,13 @@ class CannedEngine:
         self._delay_s = delay_s
 
     def transcribe(
-        self, audio_path: Path, *, language: str, model: str, diarize: bool
+        self,
+        audio_path: Path,
+        *,
+        language: str,
+        model: str,
+        diarize: bool,
+        speakers: SpeakerBounds | None = None,
     ) -> TranscriptionResult:
         if self._delay_s:
             time.sleep(self._delay_s)
@@ -47,6 +53,7 @@ class CannedEngine:
         segments: list[Segment],
         language: str,
         model: str,
+        speakers: SpeakerBounds | None = None,
     ) -> TranscriptionResult:
         """Alternate SPEAKER_00/SPEAKER_01 per segment so consumers can test labelling."""
         if self._delay_s:

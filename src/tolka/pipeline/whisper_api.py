@@ -13,9 +13,10 @@ from typing import Any
 import httpx
 
 from tolka.config import Settings
-from tolka.jobs.models import Segment, TranscriptionResult, Word
+from tolka.jobs.models import Alignment, Segment, SpeakerBounds, TranscriptionResult, Word
+from tolka.pipeline.align import build_segment_aligner
 from tolka.pipeline.diarize import Diarizer, resolve_segments
-from tolka.pipeline.label import label_speakers
+from tolka.pipeline.label import label_speakers, segment_merge_alignment, words_plausible
 from tolka.pipeline.render import render_text
 
 logger = logging.getLogger(__name__)
@@ -106,7 +107,12 @@ def parse_verbose_json(payload: dict[str, Any]) -> tuple[list[Word], list[Segmen
 
 
 def build_result(
-    payload: dict[str, Any], segments: list[Segment], *, model: str, language: str
+    payload: dict[str, Any],
+    segments: list[Segment],
+    *,
+    model: str,
+    language: str,
+    alignment: Alignment | None = None,
 ) -> TranscriptionResult:
     duration = float(payload.get("duration") or 0.0) or (segments[-1].end if segments else 0.0)
     detected = payload.get("language") or (language if language != "auto" else "unknown")
@@ -116,6 +122,7 @@ def build_result(
         model=model,
         text=render_text(segments),
         segments=segments,
+        alignment=alignment,
     )
 
 
@@ -130,20 +137,33 @@ class OpenAIWhisperEngine:
             )
         self._settings = settings
         self._diarizer = diarizer or Diarizer(settings)
+        self._segment_aligner = build_segment_aligner(settings)
 
     def transcribe(
-        self, audio_path: Path, *, language: str, model: str, diarize: bool
+        self,
+        audio_path: Path,
+        *,
+        language: str,
+        model: str,
+        diarize: bool,
+        speakers: SpeakerBounds | None = None,
     ) -> TranscriptionResult:
         payload = request_transcription(self._settings, audio_path, language=language, model=model)
         words, plain_segments = parse_verbose_json(payload)
         if not words and not plain_segments:
             raise RuntimeError("whisper API returned neither words nor segments")
+        if words and plain_segments and not words_plausible(words):
+            logger.warning("provider word timestamps are implausible; merging speakers per segment")
+            words = []
         if diarize and not words:
             logger.info("no word timestamps from whisper API; merging speakers per segment")
 
-        turns = self._diarizer.diarize(audio_path) if diarize else None
+        turns = self._diarizer.diarize(audio_path, speakers=speakers) if diarize else None
         segments = resolve_segments(words, plain_segments, turns)
-        return build_result(payload, segments, model=model, language=language)
+        alignment: Alignment = (
+            "provider_words" if words else segment_merge_alignment(plain_segments, segments)
+        )
+        return build_result(payload, segments, model=model, language=language, alignment=alignment)
 
     def label_speakers(
         self,
@@ -153,6 +173,7 @@ class OpenAIWhisperEngine:
         segments: list[Segment],
         language: str,
         model: str,
+        speakers: SpeakerBounds | None = None,
     ) -> TranscriptionResult:
         return label_speakers(
             self._diarizer,
@@ -161,6 +182,8 @@ class OpenAIWhisperEngine:
             segments=segments,
             language=language,
             model=model,
+            aligner=self._segment_aligner,
+            speakers=speakers,
         )
 
     def warm_up(self) -> None:

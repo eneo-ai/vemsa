@@ -67,6 +67,32 @@ def test_falls_back_to_provider_timestamps_when_alignment_fails(
 
 
 @respx.mock
+def test_implausible_provider_words_fall_back_to_segments_not_words(
+    hybrid_settings: Settings, audio_file: Path, monkeypatch
+):
+    # ~10 words/s decoder-heuristic timeline alongside segments; alignment also
+    # fails — the segment merge must win over the garbage word timeline
+    compressed = dict(WORD_PAYLOAD)
+    compressed["words"] = [
+        {"word": f"w{i}", "start": i * 0.1, "end": i * 0.1 + 0.08} for i in range(26)
+    ]
+    respx.post(ENDPOINT).mock(return_value=Response(200, json=compressed))
+    engine = HybridEngine(hybrid_settings, diarizer=FakeDiarizer())
+
+    def boom(*args, **kwargs):
+        raise ImportError("No module named 'easyaligner'")
+
+    monkeypatch.setattr(engine, "_force_align", boom)
+
+    result = engine.transcribe(audio_file, language="sv", model="kb-whisper", diarize=True)
+
+    assert result.alignment in ("segment_only", "segment_split")
+    # output segments come from the provider segments, not the compressed words
+    assert [s.text for s in result.segments] == ["Hej och välkomna.", "Tack så mycket."]
+    assert [s.speaker for s in result.segments] == ["SPEAKER_00", "SPEAKER_01"]
+
+
+@respx.mock
 def test_no_diarize_with_alignment_groups_aligned_words(
     hybrid_settings: Settings, audio_file: Path, monkeypatch
 ):

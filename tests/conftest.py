@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from tolka.config import Settings
-from tolka.jobs.models import Job, JobStatus, Segment, TranscriptionResult, Word
+from tolka.jobs.models import Job, JobStatus, Segment, SpeakerBounds, TranscriptionResult, Word
 from tolka.jobs.store import SqliteJobStore
 
 
@@ -48,10 +48,22 @@ class FakeEngine:
         self.calls: list[dict[str, object]] = []
 
     def transcribe(
-        self, audio_path: Path, *, language: str, model: str, diarize: bool
+        self,
+        audio_path: Path,
+        *,
+        language: str,
+        model: str,
+        diarize: bool,
+        speakers: SpeakerBounds | None = None,
     ) -> TranscriptionResult:
         self.calls.append(
-            {"audio_path": audio_path, "language": language, "model": model, "diarize": diarize}
+            {
+                "audio_path": audio_path,
+                "language": language,
+                "model": model,
+                "diarize": diarize,
+                "speakers": speakers,
+            }
         )
         return make_result(diarize)
 
@@ -63,6 +75,7 @@ class FakeEngine:
         segments: list[Segment],
         language: str,
         model: str,
+        speakers: SpeakerBounds | None = None,
     ) -> TranscriptionResult:
         self.calls.append(
             {
@@ -72,6 +85,7 @@ class FakeEngine:
                 "segments": segments,
                 "language": language,
                 "model": model,
+                "speakers": speakers,
             }
         )
         result = make_result(True)
@@ -83,7 +97,13 @@ class FakeEngine:
 
 class FailingEngine:
     def transcribe(
-        self, audio_path: Path, *, language: str, model: str, diarize: bool
+        self,
+        audio_path: Path,
+        *,
+        language: str,
+        model: str,
+        diarize: bool,
+        speakers: SpeakerBounds | None = None,
     ) -> TranscriptionResult:
         raise RuntimeError("pipeline exploded")
 
@@ -95,6 +115,7 @@ class FailingEngine:
         segments: list[Segment],
         language: str,
         model: str,
+        speakers: SpeakerBounds | None = None,
     ) -> TranscriptionResult:
         raise RuntimeError("pipeline exploded")
 

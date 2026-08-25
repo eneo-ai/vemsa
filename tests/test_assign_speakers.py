@@ -99,3 +99,59 @@ def test_segment_level_assignment_gap_inherits_previous():
 def test_segment_level_assignment_without_turns_is_unchanged():
     segments = [plain_segment(0.0, 1.0, "a")]
     assert assign_speakers_to_segments(segments, []) == segments
+
+
+def test_segment_spanning_two_turns_splits_proportionally_on_word_boundary():
+    turns = [Turn(0.0, 6.0, "SPEAKER_00"), Turn(6.0, 10.0, "SPEAKER_01")]
+    segments = [plain_segment(0.0, 10.0, "ett två tre fyra fem sex sju åtta nio tio")]
+    labelled = assign_speakers_to_segments(segments, turns)
+    assert [(s.speaker, s.text) for s in labelled] == [
+        ("SPEAKER_00", "ett två tre fyra fem sex"),
+        ("SPEAKER_01", "sju åtta nio tio"),
+    ]
+    assert [(s.start, s.end) for s in labelled] == [(0.0, 6.0), (6.0, 10.0)]
+    assert all(s.words == [] for s in labelled)
+
+
+def test_small_minority_overlap_does_not_split():
+    turns = [Turn(0.0, 9.0, "SPEAKER_00"), Turn(9.0, 10.0, "SPEAKER_01")]
+    segments = [plain_segment(0.0, 10.0, "ett två tre fyra fem sex sju åtta nio tio")]
+    labelled = assign_speakers_to_segments(segments, turns)
+    assert [(s.speaker, s.text) for s in labelled] == [
+        ("SPEAKER_00", "ett två tre fyra fem sex sju åtta nio tio")
+    ]
+
+
+def test_short_segment_is_never_split():
+    turns = [Turn(0.0, 0.75, "SPEAKER_00"), Turn(0.75, 1.5, "SPEAKER_01")]
+    segments = [plain_segment(0.0, 1.5, "ett två tre fyra fem")]
+    labelled = assign_speakers_to_segments(segments, turns)
+    assert len(labelled) == 1
+
+
+def test_few_words_are_never_split():
+    turns = [Turn(0.0, 5.0, "SPEAKER_00"), Turn(5.0, 10.0, "SPEAKER_01")]
+    segments = [plain_segment(0.0, 10.0, "ett två tre")]
+    labelled = assign_speakers_to_segments(segments, turns)
+    assert len(labelled) == 1
+
+
+def test_split_prefers_sentence_punctuation_over_nearer_space():
+    # the cut at 5.5s lands on the space at offset 22, but the sentence end at
+    # offset 17 is within the 12-character punctuation window and wins
+    turns = [Turn(0.0, 5.5, "SPEAKER_00"), Turn(5.5, 10.0, "SPEAKER_01")]
+    segments = [plain_segment(0.0, 10.0, "Hej och välkomna. Tack så mycket för det")]
+    labelled = assign_speakers_to_segments(segments, turns)
+    assert [(s.speaker, s.text) for s in labelled] == [
+        ("SPEAKER_00", "Hej och välkomna."),
+        ("SPEAKER_01", "Tack så mycket för det"),
+    ]
+
+
+def test_silence_between_turns_joins_the_preceding_speaker():
+    # gap 4-6s inside the segment: the cut sits where the next speaker starts
+    turns = [Turn(0.0, 4.0, "SPEAKER_00"), Turn(6.0, 10.0, "SPEAKER_01")]
+    segments = [plain_segment(0.0, 10.0, "ett två tre fyra fem sex sju åtta nio tio")]
+    labelled = assign_speakers_to_segments(segments, turns)
+    assert [s.speaker for s in labelled] == ["SPEAKER_00", "SPEAKER_01"]
+    assert labelled[0].end == 6.0 and labelled[1].start == 6.0
