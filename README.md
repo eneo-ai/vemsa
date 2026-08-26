@@ -9,7 +9,7 @@ local.
 
 It exposes two front doors over one job engine:
 
-- **Async job API** — `POST /v1/jobs`, `GET /v1/jobs/{id}`, `GET /v1/jobs/{id}/result`
+- **Async job API** — submit, poll, cancel, and fetch through `/v1/jobs`
 - **MCP facade** — streamable-HTTP MCP server at `/mcp` with `transcribe_audio`,
   `submit_transcription`, and `get_transcription` tools
 
@@ -99,6 +99,37 @@ Poll `GET /v1/jobs/{id}` until `status` is `completed`, then fetch `GET /v1/jobs
 
 ```json
 {
+  "job_id": "...",
+  "status": "running",
+  "stage": "diarizing",
+  "queue_position": null,
+  "created_at": "2026-08-26T12:00:00Z",
+  "error": null
+}
+```
+
+`status` is `queued`, `running`, `completed`, `failed`, or `cancelled`. `stage` is the
+coarse, persisted processing stage: `queued`, `transcribing`, `aligning`, `diarizing`, or
+`finalizing`. Queued jobs include their current global FIFO `queue_position`; it is `null`
+after the worker claims the job.
+
+Cancel a job with `DELETE /v1/jobs/{id}`. Cancellation is idempotent: an active job returns
+`202` with `cancellation_requested=true`; a terminal job returns `200` unchanged; an unknown
+or other-client job returns `404`. Queued jobs leave the queue immediately. Running work
+stops at the next safe pipeline stage boundary, and the store rejects any completion that
+races with cancellation.
+
+```bash
+curl -X DELETE http://localhost:8000/v1/jobs/$JOB_ID \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Authenticated `GET /v1/health/ready` reports database and worker readiness alongside
+`service_version`, `queue_accepting_jobs`, and `queued_jobs`; an unavailable database or
+worker returns `503`.
+
+```json
+{
   "language": "sv",
   "duration_seconds": 3612.4,
   "model": "KBLab/kb-whisper-large",
@@ -113,7 +144,7 @@ Poll `GET /v1/jobs/{id}` until `status` is `completed`, then fetch `GET /v1/jobs
 
 `speaker` is `null` when `diarize=false`. If `webhook_url` is given, the result is POSTed there
 on completion. Results are retained for `TOLKA_RETENTION_HOURS` and then purged; source audio is
-deleted as soon as the job finishes.
+deleted as soon as the job reaches a terminal state.
 
 ### Diarize-only jobs (`task=diarize`)
 
@@ -250,6 +281,7 @@ Operational endpoints:
 
 - `GET /livez` — process liveness
 - `GET /readyz` (and compatibility alias `/healthz`) — database and worker readiness
+- `GET /v1/health/ready` — authenticated service readiness and queue admission state
 - `GET /metrics` — Prometheus metrics; requires the same bearer authentication
 
 See [`docs/PRODUCTION.md`](docs/PRODUCTION.md) for security, webhooks, backups, and rollout.

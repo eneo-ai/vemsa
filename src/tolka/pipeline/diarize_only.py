@@ -7,8 +7,9 @@ transcripts are still force-aligned locally when the `align` extra is installed.
 from pathlib import Path
 
 from tolka.config import Settings
-from tolka.jobs.models import Segment, SpeakerBounds, TranscriptionResult, Word
+from tolka.jobs.models import JobStage, Segment, SpeakerBounds, TranscriptionResult, Word
 from tolka.pipeline.align import build_segment_aligner
+from tolka.pipeline.base import StageReporter, report_stage
 from tolka.pipeline.diarize import Diarizer
 from tolka.pipeline.label import SpeakerDiarizer, label_speakers
 
@@ -26,6 +27,7 @@ class DiarizeOnlyEngine:
         model: str,
         diarize: bool,
         speakers: SpeakerBounds | None = None,
+        on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
         raise RuntimeError("this deployment only labels speakers (TOLKA_ENGINE=diarize)")
 
@@ -38,7 +40,11 @@ class DiarizeOnlyEngine:
         language: str,
         model: str,
         speakers: SpeakerBounds | None = None,
+        on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
+        if not words:
+            report_stage(on_stage, JobStage.ALIGNING)
+        report_stage(on_stage, JobStage.DIARIZING)
         return label_speakers(
             self._diarizer,
             audio_path,

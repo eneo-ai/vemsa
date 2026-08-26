@@ -12,10 +12,11 @@ from uuid import uuid4
 import httpx
 
 from tolka.config import Settings
-from tolka.jobs.models import EXTERNAL_MODEL, Job, WebhookOutboxEvent
+from tolka.jobs.models import EXTERNAL_MODEL, Job, JobStage, JobStatus, WebhookOutboxEvent
 from tolka.jobs.store import JobStore
 from tolka.observability import (
     JOB_DURATION,
+    JOB_STAGE_DURATION,
     JOBS_FINISHED,
     QUEUE_DEPTH,
     WEBHOOK_DELIVERIES,
@@ -28,6 +29,14 @@ from tolka.security import ForbiddenUrlError, validate_outbound_url
 logger = logging.getLogger(__name__)
 
 ORPHAN_MAX_AGE_S = 24 * 3600
+
+
+class JobCancelledError(RuntimeError):
+    pass
+
+
+class JobLeaseLostError(RuntimeError):
+    pass
 
 
 class JobQueue:
@@ -113,6 +122,72 @@ class JobQueue:
         audio_path = Path(job.audio_path) if job.audio_path else None
         delete_audio = False
         heartbeat: asyncio.Task[None] | None = None
+        engine = self._settings.resolve_engine()
+        current_stage = job.stage
+        stage_started = time.perf_counter()
+        loop = asyncio.get_running_loop()
+
+        async def _persist_stage(stage: JobStage) -> None:
+            active = await self._store.set_stage(job.id, stage, worker_id=self._worker_id)
+            if active:
+                return
+            current = await self._store.get(job.id)
+            if current is not None and current.status == JobStatus.CANCELLED:
+                raise JobCancelledError("job cancellation was requested")
+            raise JobLeaseLostError("worker no longer owns the job")
+
+        def _report_stage(stage: JobStage) -> None:
+            nonlocal current_stage, stage_started
+            if stage == current_stage:
+                return
+            future = asyncio.run_coroutine_threadsafe(_persist_stage(stage), loop)
+            try:
+                future.result(timeout=5.0)
+            except TimeoutError as exc:
+                future.cancel()
+                raise RuntimeError("job stage update timed out") from exc
+            JOB_STAGE_DURATION.labels(current_stage.value, engine, job.request.task).observe(
+                time.perf_counter() - stage_started
+            )
+            logger.info(
+                "job stage changed",
+                extra={
+                    "event": "job.stage_changed",
+                    "job_id": job.id,
+                    "client_id": job.client_id,
+                    "from_stage": current_stage.value,
+                    "stage": stage.value,
+                    "engine": engine,
+                    "task": job.request.task,
+                },
+            )
+            current_stage = stage
+            stage_started = time.perf_counter()
+
+        def _record_cancelled() -> None:
+            nonlocal delete_audio
+            delete_audio = True
+            JOBS_FINISHED.labels("cancelled", engine, job.request.task).inc()
+            JOB_DURATION.labels("cancelled", engine, job.request.task).observe(
+                time.perf_counter() - started
+            )
+            JOB_STAGE_DURATION.labels(current_stage.value, engine, job.request.task).observe(
+                time.perf_counter() - stage_started
+            )
+            logger.info(
+                "job stopped after cancellation",
+                extra={
+                    "event": "job.cancelled",
+                    "job_id": job.id,
+                    "client_id": job.client_id,
+                    "stage": current_stage.value,
+                    "engine": engine,
+                    "task": job.request.task,
+                    "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+                },
+            )
+            self._webhook_wakeup.set()
+
         try:
             if audio_path is None:
                 assert job.request.source_url is not None
@@ -138,6 +213,7 @@ class JobQueue:
                     # The result must never claim Tolka's default model ran.
                     model=job.request.model or EXTERNAL_MODEL,
                     speakers=job.request.speaker_bounds(),
+                    on_stage=_report_stage,
                 )
             else:
                 result = await asyncio.to_thread(
@@ -147,7 +223,26 @@ class JobQueue:
                     model=job.request.model or self._settings.default_model,
                     diarize=job.request.diarize,
                     speakers=job.request.speaker_bounds(),
+                    on_stage=_report_stage,
                 )
+            await _persist_stage(JobStage.FINALIZING)
+            JOB_STAGE_DURATION.labels(current_stage.value, engine, job.request.task).observe(
+                time.perf_counter() - stage_started
+            )
+            logger.info(
+                "job stage changed",
+                extra={
+                    "event": "job.stage_changed",
+                    "job_id": job.id,
+                    "client_id": job.client_id,
+                    "from_stage": current_stage.value,
+                    "stage": JobStage.FINALIZING.value,
+                    "engine": engine,
+                    "task": job.request.task,
+                },
+            )
+            current_stage = JobStage.FINALIZING
+            stage_started = time.perf_counter()
             committed = await self._store.finish(
                 job.id,
                 result,
@@ -155,6 +250,10 @@ class JobQueue:
                 webhook_url=str(job.request.webhook_url) if job.request.webhook_url else None,
             )
             if not committed:
+                current = await self._store.get(job.id)
+                if current is not None and current.status == JobStatus.CANCELLED:
+                    _record_cancelled()
+                    return
                 logger.warning("job %s result discarded after worker lease was lost", job.id)
                 return
             delete_audio = True
@@ -176,7 +275,14 @@ class JobQueue:
                     "duration_ms": round((time.perf_counter() - started) * 1000, 2),
                 },
             )
+            JOB_STAGE_DURATION.labels(current_stage.value, engine, job.request.task).observe(
+                time.perf_counter() - stage_started
+            )
             self._webhook_wakeup.set()
+        except JobCancelledError:
+            _record_cancelled()
+        except JobLeaseLostError:
+            logger.warning("job %s work discarded after worker lease was lost", job.id)
         except asyncio.CancelledError:
             logger.warning("job %s interrupted; its lease will expire for retry", job.id)
             raise
@@ -201,6 +307,10 @@ class JobQueue:
                 webhook_url=str(job.request.webhook_url) if job.request.webhook_url else None,
             )
             if not committed:
+                current = await self._store.get(job.id)
+                if current is not None and current.status == JobStatus.CANCELLED:
+                    _record_cancelled()
+                    return
                 logger.warning("job %s failure discarded after worker lease was lost", job.id)
                 return
             delete_audio = True

@@ -1,18 +1,26 @@
 import json
+import logging
 from datetime import datetime
+from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, ValidationError
 from starlette.datastructures import UploadFile
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.formparsers import MultiPartException
 
+from tolka.api.health import ReadinessResponse, load_readiness
 from tolka.deps import AppDeps
-from tolka.jobs.models import Job, JobRequest, JobStatus, TranscriptionResult, new_job
-from tolka.observability import JOBS_SUBMITTED
+from tolka.jobs.models import Job, JobRequest, JobStage, JobStatus, TranscriptionResult, new_job
+from tolka.observability import (
+    JOB_CANCELLATIONS,
+    JOBS_SUBMITTED,
+    QUEUE_REJECTIONS,
+)
 from tolka.pipeline.fetch import AudioTooLargeError, save_upload
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class JobSubmittedResponse(BaseModel):
@@ -23,8 +31,17 @@ class JobSubmittedResponse(BaseModel):
 class JobStatusResponse(BaseModel):
     job_id: str
     status: JobStatus
+    stage: JobStage
+    queue_position: int | None = None
     created_at: datetime
     error: str | None = None
+
+
+class JobCancellationResponse(BaseModel):
+    job_id: str
+    status: JobStatus
+    stage: JobStage
+    cancellation_requested: bool
 
 
 def _deps(request: Request) -> AppDeps:
@@ -44,8 +61,30 @@ async def _ensure_queue_capacity(deps: AppDeps, client_id: str) -> None:
     total = await deps.ready_store.count_active()
     client_total = await deps.ready_store.count_active(client_id=client_id)
     if total >= deps.settings.max_queued_jobs:
+        QUEUE_REJECTIONS.labels("global").inc()
+        logger.warning(
+            "job rejected because the global queue is full",
+            extra={
+                "event": "queue.rejected",
+                "scope": "global",
+                "client_id": client_id,
+                "active_jobs": total,
+                "limit": deps.settings.max_queued_jobs,
+            },
+        )
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail="job queue is full")
     if client_total >= deps.settings.max_queued_jobs_per_client:
+        QUEUE_REJECTIONS.labels("client").inc()
+        logger.warning(
+            "job rejected because the client queue is full",
+            extra={
+                "event": "queue.rejected",
+                "scope": "client",
+                "client_id": client_id,
+                "active_jobs": client_total,
+                "limit": deps.settings.max_queued_jobs_per_client,
+            },
+        )
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS,
             detail="client has reached its active job limit",
@@ -160,6 +199,16 @@ async def create_job(request: Request) -> JobSubmittedResponse:
         job = await _job_from_json(request, deps, client_id)
     await deps.ready_store.create(job)
     JOBS_SUBMITTED.labels("upload" if job.audio_path else "url").inc()
+    logger.info(
+        "job submitted",
+        extra={
+            "event": "job.submitted",
+            "job_id": job.id,
+            "client_id": client_id,
+            "task": job.request.task,
+            "source_type": "upload" if job.audio_path else "url",
+        },
+    )
     if deps.queue is not None:
         deps.queue.notify()
     return JobSubmittedResponse(job_id=job.id, status=job.status)
@@ -167,11 +216,69 @@ async def create_job(request: Request) -> JobSubmittedResponse:
 
 @router.get("/jobs/{job_id}")
 async def get_job(job_id: str, request: Request) -> JobStatusResponse:
-    job = await _deps(request).ready_store.get(job_id, client_id=request.state.client_id)
+    deps = _deps(request)
+    client_id: str = request.state.client_id
+    job = await deps.ready_store.get(job_id, client_id=client_id)
     if job is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="unknown job")
     return JobStatusResponse(
-        job_id=job.id, status=job.status, created_at=job.created_at, error=job.error
+        job_id=job.id,
+        status=job.status,
+        stage=job.stage,
+        queue_position=await deps.ready_store.queue_position(job.id, client_id=client_id),
+        created_at=job.created_at,
+        error=job.error,
+    )
+
+
+@router.delete("/jobs/{job_id}")
+async def cancel_job(job_id: str, request: Request, response: Response) -> JobCancellationResponse:
+    deps = _deps(request)
+    client_id: str = request.state.client_id
+    existing = await deps.ready_store.get(job_id, client_id=client_id)
+    if existing is None:
+        JOB_CANCELLATIONS.labels("unknown").inc()
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="unknown job")
+
+    if existing.status in {JobStatus.QUEUED, JobStatus.RUNNING}:
+        cancelled = await deps.ready_store.cancel(
+            job_id,
+            client_id=client_id,
+            webhook_url=(
+                str(existing.request.webhook_url) if existing.request.webhook_url else None
+            ),
+        )
+        if cancelled is not None:
+            response.status_code = status.HTTP_202_ACCEPTED
+            JOB_CANCELLATIONS.labels(existing.status.value).inc()
+            if cancelled.attempt == 0 and cancelled.audio_path:
+                Path(cancelled.audio_path).unlink(missing_ok=True)
+            logger.info(
+                "job cancellation accepted",
+                extra={
+                    "event": "job.cancellation_accepted",
+                    "job_id": job_id,
+                    "client_id": client_id,
+                    "previous_status": existing.status.value,
+                    "stage": cancelled.stage.value,
+                },
+            )
+            return JobCancellationResponse(
+                job_id=cancelled.id,
+                status=cancelled.status,
+                stage=cancelled.stage,
+                cancellation_requested=True,
+            )
+        existing = await deps.ready_store.get(job_id, client_id=client_id)
+        if existing is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="unknown job")
+
+    JOB_CANCELLATIONS.labels("already_terminal").inc()
+    return JobCancellationResponse(
+        job_id=existing.id,
+        status=existing.status,
+        stage=existing.stage,
+        cancellation_requested=existing.status == JobStatus.CANCELLED,
     )
 
 
@@ -190,3 +297,11 @@ async def get_job_result(job_id: str, request: Request) -> TranscriptionResult:
     result = await deps.ready_store.get_result(job_id, client_id=client_id)
     assert result is not None
     return result
+
+
+@router.get("/health/ready", response_model=ReadinessResponse)
+async def readiness(request: Request, response: Response) -> ReadinessResponse:
+    snapshot = await load_readiness(_deps(request), client_id=request.state.client_id)
+    if snapshot.status != "ready":
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    return snapshot

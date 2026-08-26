@@ -7,6 +7,7 @@ import aiosqlite
 from tolka.jobs.models import (
     Job,
     JobRequest,
+    JobStage,
     JobStatus,
     TranscriptionResult,
     WebhookOutboxEvent,
@@ -17,6 +18,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     id TEXT PRIMARY KEY,
     client_id TEXT NOT NULL DEFAULT 'legacy',
     status TEXT NOT NULL,
+    stage TEXT NOT NULL DEFAULT 'queued',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     request_json TEXT NOT NULL,
@@ -25,7 +27,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     error TEXT,
     attempt INTEGER NOT NULL DEFAULT 0,
     lease_owner TEXT,
-    lease_expires_at TEXT
+    lease_expires_at TEXT,
+    cancellation_requested_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs (status, created_at);
 CREATE TABLE IF NOT EXISTS worker_heartbeats (
@@ -49,8 +52,8 @@ CREATE INDEX IF NOT EXISTS idx_webhook_outbox_due
 """
 
 _JOB_COLUMNS = (
-    "id, client_id, status, created_at, updated_at, request_json, audio_path, error, "
-    "attempt, lease_owner, lease_expires_at"
+    "id, client_id, status, stage, created_at, updated_at, request_json, audio_path, error, "
+    "attempt, lease_owner, lease_expires_at, cancellation_requested_at"
 )
 
 
@@ -63,6 +66,17 @@ class JobStore(Protocol):
         self, *, worker_id: str = "legacy-worker", lease_for_s: float = 3600.0
     ) -> Job | None: ...
     async def set_audio_path(self, job_id: str, audio_path: str) -> None: ...
+    async def set_stage(
+        self, job_id: str, stage: JobStage, *, worker_id: str | None = None
+    ) -> bool: ...
+    async def queue_position(self, job_id: str, *, client_id: str) -> int | None: ...
+    async def cancel(
+        self,
+        job_id: str,
+        *,
+        client_id: str,
+        webhook_url: str | None = None,
+    ) -> Job | None: ...
     async def renew_lease(self, job_id: str, worker_id: str, lease_for_s: float) -> bool: ...
     async def finish(
         self,
@@ -112,6 +126,7 @@ def _row_to_job(row: aiosqlite.Row) -> Job:
         id=row["id"],
         client_id=row["client_id"],
         status=JobStatus(row["status"]),
+        stage=JobStage(row["stage"]),
         created_at=datetime.fromisoformat(row["created_at"]),
         updated_at=datetime.fromisoformat(row["updated_at"]),
         request=JobRequest.model_validate_json(row["request_json"]),
@@ -121,6 +136,11 @@ def _row_to_job(row: aiosqlite.Row) -> Job:
         lease_owner=row["lease_owner"],
         lease_expires_at=(
             datetime.fromisoformat(row["lease_expires_at"]) if row["lease_expires_at"] else None
+        ),
+        cancellation_requested_at=(
+            datetime.fromisoformat(row["cancellation_requested_at"])
+            if row["cancellation_requested_at"]
+            else None
         ),
     )
 
@@ -147,15 +167,33 @@ class SqliteJobStore:
             row["name"]
             for row in await (await self._db.execute("PRAGMA table_info(jobs)")).fetchall()
         }
+        had_stage = "stage" in columns
         migrations = {
             "client_id": "ALTER TABLE jobs ADD COLUMN client_id TEXT NOT NULL DEFAULT 'legacy'",
             "attempt": "ALTER TABLE jobs ADD COLUMN attempt INTEGER NOT NULL DEFAULT 0",
             "lease_owner": "ALTER TABLE jobs ADD COLUMN lease_owner TEXT",
             "lease_expires_at": "ALTER TABLE jobs ADD COLUMN lease_expires_at TEXT",
+            "stage": "ALTER TABLE jobs ADD COLUMN stage TEXT NOT NULL DEFAULT 'queued'",
+            "cancellation_requested_at": (
+                "ALTER TABLE jobs ADD COLUMN cancellation_requested_at TEXT"
+            ),
         }
         for column, statement in migrations.items():
             if column not in columns:
                 await self._db.execute(statement)
+        if not had_stage:
+            await self._db.execute(
+                "UPDATE jobs SET stage = ? WHERE status = ?",
+                (JobStage.TRANSCRIBING.value, JobStatus.RUNNING.value),
+            )
+            await self._db.execute(
+                "UPDATE jobs SET stage = ? WHERE status IN (?, ?)",
+                (
+                    JobStage.FINALIZING.value,
+                    JobStatus.COMPLETED.value,
+                    JobStatus.FAILED.value,
+                ),
+            )
         await self._db.commit()
 
     async def close(self) -> None:
@@ -166,12 +204,13 @@ class SqliteJobStore:
     async def create(self, job: Job) -> None:
         await self.db.execute(
             "INSERT INTO jobs"
-            " (id, client_id, status, created_at, updated_at, request_json, audio_path)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            " (id, client_id, status, stage, created_at, updated_at, request_json, audio_path)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 job.id,
                 job.client_id,
                 job.status.value,
+                job.stage.value,
                 job.created_at.isoformat(),
                 job.updated_at.isoformat(),
                 job.request.model_dump_json(),
@@ -223,6 +262,75 @@ class SqliteJobStore:
         )
         await self.db.commit()
 
+    async def set_stage(
+        self, job_id: str, stage: JobStage, *, worker_id: str | None = None
+    ) -> bool:
+        owner_clause = "" if worker_id is None else " AND lease_owner = ?"
+        parameters: tuple[str, ...] = (
+            stage.value,
+            _now(),
+            job_id,
+            JobStatus.RUNNING.value,
+        )
+        if worker_id is not None:
+            parameters += (worker_id,)
+        cursor = await self.db.execute(
+            "UPDATE jobs SET stage = ?, updated_at = ? WHERE id = ? AND status = ?" + owner_clause,
+            parameters,
+        )
+        await self.db.commit()
+        return cursor.rowcount == 1
+
+    async def queue_position(self, job_id: str, *, client_id: str) -> int | None:
+        job = await self.get(job_id, client_id=client_id)
+        if job is None or job.status != JobStatus.QUEUED:
+            return None
+        cursor = await self.db.execute(
+            "SELECT COUNT(*) + 1 AS position FROM jobs"
+            " WHERE status = ? AND (created_at < ? OR (created_at = ? AND id < ?))",
+            (
+                JobStatus.QUEUED.value,
+                job.created_at.isoformat(),
+                job.created_at.isoformat(),
+                job.id,
+            ),
+        )
+        row = await cursor.fetchone()
+        return int(row["position"]) if row else None
+
+    async def cancel(
+        self,
+        job_id: str,
+        *,
+        client_id: str,
+        webhook_url: str | None = None,
+    ) -> Job | None:
+        now = _now()
+        cursor = await self.db.execute(
+            "UPDATE jobs SET status = ?, updated_at = ?, cancellation_requested_at = ?,"
+            " lease_owner = NULL, lease_expires_at = NULL"
+            " WHERE id = ? AND client_id = ? AND status IN (?, ?)"
+            f" RETURNING {_JOB_COLUMNS}",
+            (
+                JobStatus.CANCELLED.value,
+                now,
+                now,
+                job_id,
+                client_id,
+                JobStatus.QUEUED.value,
+                JobStatus.RUNNING.value,
+            ),
+        )
+        row = await cursor.fetchone()
+        if row is not None and webhook_url is not None:
+            await self._insert_webhook(
+                job_id,
+                webhook_url,
+                {"job_id": job_id, "status": JobStatus.CANCELLED.value},
+            )
+        await self.db.commit()
+        return _row_to_job(row) if row else None
+
     async def renew_lease(self, job_id: str, worker_id: str, lease_for_s: float) -> bool:
         lease_expires_at = (datetime.now(UTC) + timedelta(seconds=lease_for_s)).isoformat()
         cursor = await self.db.execute(
@@ -252,8 +360,9 @@ class SqliteJobStore:
             parameters += (worker_id,)
         cursor = await self.db.execute(
             "UPDATE jobs SET status = ?, result_json = ?, updated_at = ?,"
-            " lease_owner = NULL, lease_expires_at = NULL WHERE id = ?" + owner_clause,
-            parameters,
+            " lease_owner = NULL, lease_expires_at = NULL"
+            " WHERE id = ? AND status = ?" + owner_clause,
+            parameters[:4] + (JobStatus.RUNNING.value,) + parameters[4:],
         )
         if cursor.rowcount == 1 and webhook_url is not None:
             await self._insert_webhook(
@@ -282,8 +391,9 @@ class SqliteJobStore:
             parameters += (worker_id,)
         cursor = await self.db.execute(
             "UPDATE jobs SET status = ?, error = ?, updated_at = ?,"
-            " lease_owner = NULL, lease_expires_at = NULL WHERE id = ?" + owner_clause,
-            parameters,
+            " lease_owner = NULL, lease_expires_at = NULL"
+            " WHERE id = ? AND status = ?" + owner_clause,
+            parameters[:4] + (JobStatus.RUNNING.value,) + parameters[4:],
         )
         if cursor.rowcount == 1 and webhook_url is not None:
             await self._insert_webhook(
@@ -322,8 +432,14 @@ class SqliteJobStore:
 
     async def purge_older_than(self, cutoff: datetime) -> list[Job]:
         cursor = await self.db.execute(
-            f"DELETE FROM jobs WHERE status IN (?, ?) AND updated_at < ? RETURNING {_JOB_COLUMNS}",
-            (JobStatus.COMPLETED.value, JobStatus.FAILED.value, cutoff.isoformat()),
+            f"DELETE FROM jobs WHERE status IN (?, ?, ?) AND updated_at < ?"
+            f" RETURNING {_JOB_COLUMNS}",
+            (
+                JobStatus.COMPLETED.value,
+                JobStatus.FAILED.value,
+                JobStatus.CANCELLED.value,
+                cutoff.isoformat(),
+            ),
         )
         rows = await cursor.fetchall()
         await self.db.commit()

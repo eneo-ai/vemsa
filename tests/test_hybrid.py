@@ -6,7 +6,7 @@ from httpx import Response
 
 from test_whisper_api import API_BASE, ENDPOINT, WORD_PAYLOAD, FakeDiarizer
 from tolka.config import Settings
-from tolka.jobs.models import Word
+from tolka.jobs.models import JobStage, Word
 from tolka.pipeline.hybrid import HybridEngine
 
 ALIGNED_WORDS = [
@@ -39,12 +39,24 @@ def test_uses_locally_aligned_words_when_alignment_succeeds(
     respx.post(ENDPOINT).mock(return_value=Response(200, json=WORD_PAYLOAD))
     engine = HybridEngine(hybrid_settings, diarizer=FakeDiarizer())
     monkeypatch.setattr(engine, "_force_align", lambda *args, **kwargs: ALIGNED_WORDS)
+    stages: list[JobStage] = []
 
-    result = engine.transcribe(audio_file, language="sv", model="kb-whisper", diarize=True)
+    result = engine.transcribe(
+        audio_file,
+        language="sv",
+        model="kb-whisper",
+        diarize=True,
+        on_stage=stages.append,
+    )
 
     # word timestamps come from local alignment, not the provider payload
     assert result.segments[0].words[0].start == 0.05
     assert [s.speaker for s in result.segments] == ["SPEAKER_00", "SPEAKER_01"]
+    assert stages == [
+        JobStage.TRANSCRIBING,
+        JobStage.ALIGNING,
+        JobStage.DIARIZING,
+    ]
 
 
 @respx.mock

@@ -44,6 +44,44 @@ async def test_claim_is_fifo_and_transitions_to_running(store: SqliteJobStore):
     assert await store.count_queued() == 0
 
 
+async def test_queue_position_is_global_fifo_but_scoped_to_job_owner(store: SqliteJobStore):
+    first = job_at(0)
+    first.client_id = "alpha"
+    second = job_at(1)
+    second.client_id = "beta"
+    await store.create(first)
+    await store.create(second)
+
+    assert await store.queue_position(first.id, client_id="alpha") == 1
+    assert await store.queue_position(second.id, client_id="beta") == 2
+    assert await store.queue_position(second.id, client_id="alpha") is None
+
+
+async def test_cancel_is_terminal_and_rejects_late_worker_result(store: SqliteJobStore):
+    job = job_at(0, webhook_url="https://hooks.example.org/cancelled")
+    job.client_id = "alpha"
+    await store.create(job)
+    claimed = await store.claim_next_queued(worker_id="worker-one")
+    assert claimed is not None
+
+    cancelled = await store.cancel(
+        job.id,
+        client_id="alpha",
+        webhook_url="https://hooks.example.org/cancelled",
+    )
+    assert cancelled is not None
+    assert cancelled.status == JobStatus.CANCELLED
+    assert cancelled.cancellation_requested_at is not None
+    assert await store.count_active(client_id="alpha") == 0
+    assert not await store.finish(job.id, make_result(), worker_id="worker-one")
+    assert not await store.fail(job.id, "late failure", worker_id="worker-one")
+    assert await store.get_result(job.id, client_id="alpha") is None
+    assert await store.cancel(job.id, client_id="alpha") is None
+    event = await store.claim_webhook("webhook-worker", 60)
+    assert event is not None
+    assert event.payload == {"job_id": job.id, "status": "cancelled"}
+
+
 async def test_finish_stores_result(store: SqliteJobStore):
     job = job_at(0)
     await store.create(job)
