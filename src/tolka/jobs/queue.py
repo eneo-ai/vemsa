@@ -5,6 +5,7 @@ import hmac
 import json
 import logging
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
@@ -69,6 +70,10 @@ class JobQueue:
         ]
         self.notify()
         self._webhook_wakeup.set()
+        logger.info(
+            "worker ready, polling for jobs",
+            extra={"event": "worker.ready", "worker_id": self._worker_id},
+        )
 
     async def stop(self) -> None:
         self._stopping = True
@@ -117,7 +122,6 @@ class JobQueue:
             job_id_var.reset(token)
 
     async def _process_job(self, job: Job) -> None:
-        logger.info("job %s started", job.id)
         started = time.perf_counter()
         audio_path = Path(job.audio_path) if job.audio_path else None
         delete_audio = False
@@ -126,6 +130,18 @@ class JobQueue:
         current_stage = job.stage
         stage_started = time.perf_counter()
         loop = asyncio.get_running_loop()
+        logger.info(
+            "job started",
+            extra={
+                "event": "job.started",
+                "job_id": job.id,
+                "client_id": job.client_id,
+                "task": job.request.task,
+                "engine": engine,
+                "attempt": job.attempt,
+                "source_type": "upload" if job.audio_path else "url",
+            },
+        )
 
         async def _persist_stage(stage: JobStage) -> None:
             active = await self._store.set_stage(job.id, stage, worker_id=self._worker_id)
@@ -191,6 +207,14 @@ class JobQueue:
         try:
             if audio_path is None:
                 assert job.request.source_url is not None
+                logger.info(
+                    "fetching source audio",
+                    extra={
+                        "event": "job.fetching_source",
+                        "job_id": job.id,
+                        "client_id": job.client_id,
+                    },
+                )
                 audio_path = await fetch_url(
                     str(job.request.source_url),
                     dest_dir=self._settings.work_dir,
@@ -201,7 +225,13 @@ class JobQueue:
                 )
                 await self._store.set_audio_path(job.id, str(audio_path))
             heartbeat = asyncio.create_task(
-                self._heartbeat_lease(job.id), name=f"tolka-lease-{job.id}"
+                self._heartbeat_lease(
+                    job,
+                    engine=engine,
+                    started=started,
+                    current_stage=lambda: current_stage,
+                ),
+                name=f"tolka-lease-{job.id}",
             )
             if job.request.task == "diarize":
                 result = await asyncio.to_thread(
@@ -327,19 +357,48 @@ class JobQueue:
             if delete_audio and audio_path is not None:
                 audio_path.unlink(missing_ok=True)
 
-    async def _heartbeat_lease(self, job_id: str) -> None:
+    async def _heartbeat_lease(
+        self,
+        job: Job,
+        *,
+        engine: str,
+        started: float,
+        current_stage: Callable[[], JobStage],
+    ) -> None:
         while True:
             await asyncio.sleep(self._settings.lease_heartbeat_s)
             renewed = await self._store.renew_lease(
-                job_id, self._worker_id, self._settings.job_lease_s
+                job.id, self._worker_id, self._settings.job_lease_s
             )
             if not renewed:
-                logger.warning("job %s worker lease could not be renewed", job_id)
+                logger.warning("job %s worker lease could not be renewed", job.id)
                 return
+            logger.info(
+                "job in progress",
+                extra={
+                    "event": "job.progress",
+                    "job_id": job.id,
+                    "client_id": job.client_id,
+                    "task": job.request.task,
+                    "engine": engine,
+                    "stage": current_stage().value,
+                    "elapsed_s": round(time.perf_counter() - started, 1),
+                },
+            )
 
     async def _worker_heartbeat_loop(self) -> None:
         while True:
             await self._store.record_worker_heartbeat(self._worker_id)
+            queued = await self._store.count_queued()
+            logger.info(
+                "worker heartbeat",
+                extra={
+                    "event": "worker.heartbeat",
+                    "worker_id": self._worker_id,
+                    "queued_jobs": queued,
+                    "running_jobs": await self._store.count_active() - queued,
+                },
+            )
             await asyncio.sleep(self._settings.lease_heartbeat_s)
 
     async def _webhook_loop(self) -> None:
