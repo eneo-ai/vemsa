@@ -32,7 +32,7 @@ def test_production_requires_named_credentials(tmp_path):
             api_tokens="bare-token",
             engine="remote",
             whisper_api_base="https://whisper.example/v1",
-            db_path=tmp_path / "db.sqlite3",
+            database_url="postgresql://tolka:tolka@localhost/tolka",
         )
 
 
@@ -41,7 +41,7 @@ def test_mcp_fails_closed_without_credentials(tmp_path):
         _env_file=None,
         api_tokens="",
         engine="fake",
-        db_path=tmp_path / "db.sqlite3",
+        database_url="postgresql://tolka:tolka@localhost/tolka",
     )
     with pytest.raises(ValueError, match="TOLKA_API_TOKENS"):
         create_app(settings=settings, engine=FakeEngine())

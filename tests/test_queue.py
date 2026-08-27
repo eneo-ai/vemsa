@@ -8,11 +8,11 @@ from conftest import FailingEngine, FakeEngine, wait_for_status
 from tolka.config import Settings
 from tolka.jobs.models import JobRequest, JobStatus, new_job
 from tolka.jobs.queue import JobQueue
-from tolka.jobs.store import SqliteJobStore
+from tolka.jobs.store import JobStore
 
 
 @contextlib.asynccontextmanager
-async def running_queue(store: SqliteJobStore, engine, settings: Settings):
+async def running_queue(store: JobStore, engine, settings: Settings):
     queue = JobQueue(store, engine, settings)
     queue.webhook_retry_delays = ()
     await queue.start()
@@ -29,7 +29,7 @@ def upload_job(tmp_path: Path, **request_kwargs):
 
 
 async def test_upload_job_completes_and_audio_deleted(
-    store: SqliteJobStore, settings: Settings, tmp_path: Path
+    store: JobStore, settings: Settings, tmp_path: Path
 ):
     job, audio = upload_job(tmp_path, language="sv")
     await store.create(job)
@@ -53,9 +53,7 @@ async def test_upload_job_completes_and_audio_deleted(
     ]
 
 
-async def test_failing_engine_marks_job_failed(
-    store: SqliteJobStore, settings: Settings, tmp_path: Path
-):
+async def test_failing_engine_marks_job_failed(store: JobStore, settings: Settings, tmp_path: Path):
     job, audio = upload_job(tmp_path)
     await store.create(job)
 
@@ -68,7 +66,7 @@ async def test_failing_engine_marks_job_failed(
 
 
 @respx.mock
-async def test_source_url_is_fetched_to_work_dir(store: SqliteJobStore, settings: Settings):
+async def test_source_url_is_fetched_to_work_dir(store: JobStore, settings: Settings):
     respx.get("https://example.org/meeting.mp3").mock(
         return_value=Response(200, content=b"downloaded audio")
     )
@@ -86,9 +84,7 @@ async def test_source_url_is_fetched_to_work_dir(store: SqliteJobStore, settings
 
 
 @respx.mock
-async def test_webhook_delivered_on_completion(
-    store: SqliteJobStore, settings: Settings, tmp_path: Path
-):
+async def test_webhook_delivered_on_completion(store: JobStore, settings: Settings, tmp_path: Path):
     route = respx.post("https://hooks.example.org/done").mock(return_value=Response(200))
     job, _ = upload_job(tmp_path, webhook_url="https://hooks.example.org/done")
     await store.create(job)
@@ -108,7 +104,7 @@ async def test_webhook_delivered_on_completion(
 
 @respx.mock
 async def test_webhook_is_signed_when_secret_is_configured(
-    store: SqliteJobStore, settings: Settings, tmp_path: Path
+    store: JobStore, settings: Settings, tmp_path: Path
 ):
     settings.webhook_signing_secret = "signing-secret"
     route = respx.post("https://hooks.example.org/done").mock(return_value=Response(200))
@@ -126,7 +122,7 @@ async def test_webhook_is_signed_when_secret_is_configured(
 
 @respx.mock
 async def test_webhook_failure_does_not_fail_job(
-    store: SqliteJobStore, settings: Settings, tmp_path: Path
+    store: JobStore, settings: Settings, tmp_path: Path
 ):
     route = respx.post("https://hooks.example.org/done").mock(return_value=Response(500))
     job, _ = upload_job(tmp_path, webhook_url="https://hooks.example.org/done")
@@ -141,7 +137,7 @@ async def test_webhook_failure_does_not_fail_job(
 
 
 async def test_expired_worker_lease_is_reclaimed(
-    store: SqliteJobStore, settings: Settings, tmp_path: Path
+    store: JobStore, settings: Settings, tmp_path: Path
 ):
     job, _ = upload_job(tmp_path)
     await store.create(job)
@@ -153,7 +149,7 @@ async def test_expired_worker_lease_is_reclaimed(
 
 
 async def test_purge_once_deletes_rows_and_audio(
-    store: SqliteJobStore, settings: Settings, tmp_path: Path
+    store: JobStore, settings: Settings, tmp_path: Path
 ):
     from conftest import make_result
 

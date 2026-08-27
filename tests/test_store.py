@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 from conftest import make_result
 from tolka.jobs.models import Job, JobRequest, JobStatus
-from tolka.jobs.store import SqliteJobStore
+from tolka.jobs.store import JobStore
 
 
 def job_at(seconds: int, **request_kwargs) -> Job:
@@ -16,7 +16,7 @@ def job_at(seconds: int, **request_kwargs) -> Job:
     )
 
 
-async def test_create_and_get_roundtrip(store: SqliteJobStore):
+async def test_create_and_get_roundtrip(store: JobStore):
     job = job_at(0, language="sv", diarize=False)
     await store.create(job)
 
@@ -31,7 +31,7 @@ async def test_create_and_get_roundtrip(store: SqliteJobStore):
     assert await store.get("nope") is None
 
 
-async def test_claim_is_fifo_and_transitions_to_running(store: SqliteJobStore):
+async def test_claim_is_fifo_and_transitions_to_running(store: JobStore):
     await store.create(job_at(1))
     await store.create(job_at(0))
 
@@ -44,7 +44,7 @@ async def test_claim_is_fifo_and_transitions_to_running(store: SqliteJobStore):
     assert await store.count_queued() == 0
 
 
-async def test_queue_position_is_global_fifo_but_scoped_to_job_owner(store: SqliteJobStore):
+async def test_queue_position_is_global_fifo_but_scoped_to_job_owner(store: JobStore):
     first = job_at(0)
     first.client_id = "alpha"
     second = job_at(1)
@@ -57,7 +57,7 @@ async def test_queue_position_is_global_fifo_but_scoped_to_job_owner(store: Sqli
     assert await store.queue_position(second.id, client_id="alpha") is None
 
 
-async def test_cancel_is_terminal_and_rejects_late_worker_result(store: SqliteJobStore):
+async def test_cancel_is_terminal_and_rejects_late_worker_result(store: JobStore):
     job = job_at(0, webhook_url="https://hooks.example.org/cancelled")
     job.client_id = "alpha"
     await store.create(job)
@@ -82,7 +82,7 @@ async def test_cancel_is_terminal_and_rejects_late_worker_result(store: SqliteJo
     assert event.payload == {"job_id": job.id, "status": "cancelled"}
 
 
-async def test_finish_stores_result(store: SqliteJobStore):
+async def test_finish_stores_result(store: JobStore):
     job = job_at(0)
     await store.create(job)
     await store.claim_next_queued()
@@ -96,7 +96,7 @@ async def test_finish_stores_result(store: SqliteJobStore):
     assert result.segments[0].speaker == "SPEAKER_00"
 
 
-async def test_fail_stores_error(store: SqliteJobStore):
+async def test_fail_stores_error(store: JobStore):
     job = job_at(0)
     await store.create(job)
     await store.claim_next_queued()
@@ -109,7 +109,7 @@ async def test_fail_stores_error(store: SqliteJobStore):
     assert await store.get_result(job.id) is None
 
 
-async def test_expired_lease_is_reclaimed(store: SqliteJobStore):
+async def test_expired_lease_is_reclaimed(store: JobStore):
     await store.create(job_at(0))
     first = await store.claim_next_queued(worker_id="worker-one", lease_for_s=-1)
 
@@ -119,7 +119,7 @@ async def test_expired_lease_is_reclaimed(store: SqliteJobStore):
     assert second.lease_owner == "worker-two"
 
 
-async def test_purge_removes_only_old_terminal_jobs(store: SqliteJobStore):
+async def test_purge_removes_only_old_terminal_jobs(store: JobStore):
     old_done = job_at(0)
     old_queued = job_at(1)
     await store.create(old_done)

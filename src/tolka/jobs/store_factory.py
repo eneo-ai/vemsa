@@ -3,7 +3,7 @@ from urllib.parse import urlsplit
 
 from tolka.config import Settings
 from tolka.jobs.postgres_store import PostgresJobStore
-from tolka.jobs.store import JobStore, SqliteJobStore
+from tolka.jobs.store import JobStore
 
 logger = logging.getLogger(__name__)
 
@@ -16,15 +16,15 @@ def _redacted_target(database_url: str) -> str:
 
 
 async def open_job_store(settings: Settings, *, role: str = "primary") -> JobStore:
-    if settings.database_url:
-        store: JobStore = PostgresJobStore(settings.database_url)
-        backend, target = "postgres", _redacted_target(settings.database_url)
-    else:
-        store = SqliteJobStore(settings.db_path)
-        backend, target = "sqlite", str(settings.db_path)
+    store = PostgresJobStore(settings.database_url)
     logger.info(
         "job store opened",
-        extra={"event": "store.opened", "backend": backend, "target": target, "role": role},
+        extra={
+            "event": "store.opened",
+            "backend": "postgres",
+            "target": _redacted_target(settings.database_url),
+            "role": role,
+        },
     )
     await store.open()
     return store

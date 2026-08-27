@@ -71,7 +71,8 @@ class JobQueue:
         return (
             bool(self._tasks)
             and all(not task.done() for task in self._tasks)
-            and (self._control_thread is None or self._control_thread.is_alive())
+            and self._control_thread is not None
+            and self._control_thread.is_alive()
         )
 
     async def start(self) -> None:
@@ -81,20 +82,11 @@ class JobQueue:
             asyncio.create_task(self._purge_loop(), name="tolka-purge"),
             asyncio.create_task(self._webhook_loop(), name="tolka-webhook"),
         ]
-        if self._settings.database_url:
-            # PostgreSQL: renew leases and heartbeat from a dedicated thread with
-            # its own connection, immune to main-loop starvation.
-            await self._start_control_thread()
-            assert self._control_loop is not None
-            self._worker_heartbeat = asyncio.run_coroutine_threadsafe(
-                self._worker_heartbeat_loop(), self._control_loop
-            )
-        else:
-            # SQLite is written for exactly one connection per process; a second
-            # one contends on the write lock, so renewal stays on the main loop.
-            self._tasks.append(
-                asyncio.create_task(self._worker_heartbeat_loop(), name="tolka-worker-heartbeat")
-            )
+        await self._start_control_thread()
+        assert self._control_loop is not None
+        self._worker_heartbeat = asyncio.run_coroutine_threadsafe(
+            self._worker_heartbeat_loop(), self._control_loop
+        )
         self.notify()
         self._webhook_wakeup.set()
         logger.info(
@@ -214,7 +206,7 @@ class JobQueue:
         started = time.perf_counter()
         audio_path = Path(job.audio_path) if job.audio_path else None
         delete_audio = False
-        renewal: concurrent.futures.Future[None] | asyncio.Task[None] | None = None
+        renewal: concurrent.futures.Future[None] | None = None
         engine = self._settings.resolve_engine()
         current_stage = job.stage
         stage_started = time.perf_counter()
@@ -313,17 +305,17 @@ class JobQueue:
                     allowed_hosts=tuple(self._settings.source_allowed_hosts),
                 )
                 await self._store.set_audio_path(job.id, str(audio_path))
-            renewal_coro = self._heartbeat_lease(
-                job,
-                store=self._control_store or self._store,
-                engine=engine,
-                started=started,
-                current_stage=lambda: current_stage,
+            assert self._control_loop is not None and self._control_store is not None
+            renewal = asyncio.run_coroutine_threadsafe(
+                self._heartbeat_lease(
+                    job,
+                    store=self._control_store,
+                    engine=engine,
+                    started=started,
+                    current_stage=lambda: current_stage,
+                ),
+                self._control_loop,
             )
-            if self._control_loop is not None:
-                renewal = asyncio.run_coroutine_threadsafe(renewal_coro, self._control_loop)
-            else:
-                renewal = asyncio.create_task(renewal_coro, name=f"tolka-lease-{job.id}")
             if job.request.task == "diarize":
                 result = await asyncio.to_thread(
                     self._engine.label_speakers,
@@ -443,9 +435,6 @@ class JobQueue:
         finally:
             if renewal is not None:
                 renewal.cancel()
-                if isinstance(renewal, asyncio.Task):
-                    with contextlib.suppress(asyncio.CancelledError):
-                        await renewal
             if delete_audio and audio_path is not None:
                 audio_path.unlink(missing_ok=True)
 
@@ -478,7 +467,8 @@ class JobQueue:
             )
 
     async def _worker_heartbeat_loop(self) -> None:
-        store = self._control_store or self._store
+        store = self._control_store
+        assert store is not None
         while True:
             await store.record_worker_heartbeat(self._worker_id)
             queued = await store.count_queued()

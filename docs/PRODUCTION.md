@@ -8,10 +8,9 @@ Production Compose runs three services:
 2. `worker` claims leased jobs from PostgreSQL and owns the GPU pipeline.
 3. `postgres` stores jobs, results, worker heartbeats, and webhook outbox events.
 
-SQLite remains the default for tests and single-process development. Do not place its WAL
-database on NFS and do not scale SQLite-backed API processes. PostgreSQL claims use row locks
-with `SKIP LOCKED`, expiring leases, and heartbeats so multiple workers do not intentionally
-claim the same job.
+PostgreSQL is the only supported job store, in development and tests as well as production
+(`TOLKA_DATABASE_URL` is required). Claims use row locks with `SKIP LOCKED`, expiring leases,
+and heartbeats so multiple workers do not intentionally claim the same job.
 
 Audio files live on the shared `/data` Docker volume and are deleted after a terminal job.
 That limits the supplied Compose deployment to one Docker host. Use private object storage
@@ -201,12 +200,10 @@ counts every `TOLKA_LEASE_HEARTBEAT_S`, and each in-flight job emits `job.progre
 stage and elapsed time on every lease renewal. A silent worker is therefore always a stopped
 or stuck one, never merely an idle one.
 
-On PostgreSQL, lease renewal and the worker heartbeat run on a dedicated thread with its own
-database connection, so GIL-heavy pipeline stages that starve the main event loop cannot let
-the lease lapse mid-job (a suspended host still can, and a second worker then re-claims the
-job; the store discards the original attempt's late result on commit). On SQLite — a
-single-connection store by design — renewal shares the main event loop, so size
-`TOLKA_JOB_LEASE_S` generously for CPU-only SQLite deployments.
+Lease renewal and the worker heartbeat run on a dedicated thread with its own database
+connection, so GIL-heavy pipeline stages that starve the main event loop cannot let the
+lease lapse mid-job (a suspended host still can, and a second worker then re-claims the
+job; the store discards the original attempt's late result on commit).
 
 ## Backups and retention
 

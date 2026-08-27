@@ -10,8 +10,8 @@ from httpx import Response
 from conftest import FailingEngine, FakeEngine
 from tolka.config import Settings
 from tolka.deps import AppDeps
+from tolka.jobs.postgres_store import PostgresJobStore
 from tolka.jobs.queue import JobQueue
-from tolka.jobs.store import SqliteJobStore
 from tolka.mcp.server import build_mcp
 
 AUDIO_URL = "https://example.org/meeting.mp3"
@@ -26,7 +26,7 @@ def mock_audio(size_header: str = "5") -> None:
 async def mcp_client(settings: Settings, engine=None):
     settings.mcp_poll_interval_s = 0.01
     deps = AppDeps(settings=settings, engine=engine or FakeEngine())
-    store = SqliteJobStore(settings.db_path)
+    store = PostgresJobStore(settings.database_url)
     await store.open()
     queue = JobQueue(store, deps.engine, settings)
     deps.store = store

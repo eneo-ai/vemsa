@@ -49,8 +49,7 @@ class Settings(BaseSettings):
 
     model_cache_dir: Path = Path("data/models")
     work_dir: Path = Path("data/work")
-    db_path: Path = Path("data/tolka.sqlite3")
-    database_url: str | None = None
+    database_url: str
 
     max_audio_bytes: int = 2 * GIB
     # task=diarize: cap on the serialized words/segments a caller may attach

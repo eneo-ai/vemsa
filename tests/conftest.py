@@ -1,5 +1,6 @@
 import asyncio
 import io
+import os
 import wave
 from pathlib import Path
 
@@ -15,8 +16,11 @@ from tolka.jobs.models import (
     TranscriptionResult,
     Word,
 )
-from tolka.jobs.store import SqliteJobStore
+from tolka.jobs.postgres_store import PostgresJobStore
+from tolka.jobs.store import JobStore
 from tolka.pipeline.base import StageReporter, report_stage
+
+TEST_DATABASE_URL = os.getenv("TOLKA_TEST_POSTGRES_URL")
 
 
 def make_wav_bytes(duration_ms: int = 50) -> bytes:
@@ -154,29 +158,37 @@ class FailingEngine:
 
 
 @pytest.fixture
-def settings(tmp_path: Path) -> Settings:
-    return Settings(
+async def settings(tmp_path: Path) -> Settings:
+    if not TEST_DATABASE_URL:
+        pytest.skip("TOLKA_TEST_POSTGRES_URL is not configured")
+    settings = Settings(
         _env_file=None,
         api_tokens="secret-token",
-        db_path=tmp_path / "tolka.sqlite3",
+        database_url=TEST_DATABASE_URL,
         work_dir=tmp_path / "work",
         model_cache_dir=tmp_path / "models",
         purge_interval_s=3600.0,
         allow_private_urls=True,
         engine="fake",
     )
+    # Every test starts from an empty job store (open() also runs migrations).
+    store = PostgresJobStore(TEST_DATABASE_URL)
+    await store.open()
+    await store.pool.execute("TRUNCATE webhook_outbox, jobs, worker_heartbeats")
+    await store.close()
+    return settings
 
 
 @pytest.fixture
 async def store(settings: Settings):
-    store = SqliteJobStore(settings.db_path)
+    store = PostgresJobStore(settings.database_url)
     await store.open()
     yield store
     await store.close()
 
 
 async def wait_for_status(
-    store: SqliteJobStore, job_id: str, status: JobStatus, timeout: float = 5.0
+    store: JobStore, job_id: str, status: JobStatus, timeout: float = 5.0
 ) -> Job:
     async with asyncio.timeout(timeout):
         while True:

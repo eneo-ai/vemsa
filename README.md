@@ -202,8 +202,7 @@ All settings via environment variables with the `TOLKA_` prefix (see `src/tolka/
 | `TOLKA_HF_TOKEN` | – | Hugging Face token (pyannote models are gated) |
 | `TOLKA_MODEL_CACHE_DIR` | `./data/models` | Model cache (mount a volume) |
 | `TOLKA_WORK_DIR` | `./data/work` | Temp audio storage |
-| `TOLKA_DB_PATH` | `./data/tolka.sqlite3` | SQLite job store |
-| `TOLKA_DATABASE_URL` | – | PostgreSQL URL; when set, PostgreSQL replaces SQLite |
+| `TOLKA_DATABASE_URL` | – (required) | PostgreSQL URL for the job store |
 | `TOLKA_MAX_AUDIO_BYTES` | 2 GiB | Upload/download size limit |
 | `TOLKA_RETENTION_HOURS` | 72 | Result retention before purge |
 | `TOLKA_PRELOAD_MODELS` | `false` | Load ML pipelines at startup instead of first job |
