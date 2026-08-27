@@ -199,11 +199,14 @@ a credential-free target (a worker on the wrong database is visible from the fir
 `worker.ready` marks the queue loops running, `worker.heartbeat` reports queued and running
 counts every `TOLKA_LEASE_HEARTBEAT_S`, and each in-flight job emits `job.progress` with its
 stage and elapsed time on every lease renewal. A silent worker is therefore always a stopped
-or stuck one, never merely an idle one. Note that lease renewals and these logs share the
-event loop with pipeline bookkeeping: sustained CPU-saturated stages (or a suspended host)
-can delay renewals past `TOLKA_JOB_LEASE_S`, after which a second worker may re-claim the
-job and the original attempt's result is discarded on commit. Size the lease generously for
-CPU-only deployments.
+or stuck one, never merely an idle one.
+
+On PostgreSQL, lease renewal and the worker heartbeat run on a dedicated thread with its own
+database connection, so GIL-heavy pipeline stages that starve the main event loop cannot let
+the lease lapse mid-job (a suspended host still can, and a second worker then re-claims the
+job; the store discards the original attempt's late result on commit). On SQLite — a
+single-connection store by design — renewal shares the main event loop, so size
+`TOLKA_JOB_LEASE_S` generously for CPU-only SQLite deployments.
 
 ## Backups and retention
 

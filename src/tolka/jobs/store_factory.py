@@ -15,7 +15,7 @@ def _redacted_target(database_url: str) -> str:
     return f"{host}{port}{parts.path}"
 
 
-async def open_job_store(settings: Settings) -> JobStore:
+async def open_job_store(settings: Settings, *, role: str = "primary") -> JobStore:
     if settings.database_url:
         store: JobStore = PostgresJobStore(settings.database_url)
         backend, target = "postgres", _redacted_target(settings.database_url)
@@ -24,7 +24,7 @@ async def open_job_store(settings: Settings) -> JobStore:
         backend, target = "sqlite", str(settings.db_path)
     logger.info(
         "job store opened",
-        extra={"event": "store.opened", "backend": backend, "target": target},
+        extra={"event": "store.opened", "backend": backend, "target": target, "role": role},
     )
     await store.open()
     return store

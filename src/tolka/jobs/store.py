@@ -155,9 +155,23 @@ class SqliteJobStore:
         assert self._db is not None, "store is not open"
         return self._db
 
+    async def _fetchone(self, query: str, parameters: tuple = ()) -> aiosqlite.Row | None:
+        # Read-only lookups must close their cursor: an unfinished SELECT keeps
+        # an implicit read transaction open, and a later write on this
+        # connection would then fail with an immediate SQLITE_BUSY (snapshot
+        # upgrade) once another connection has written in the meantime.
+        cursor = await self.db.execute(query, parameters)
+        try:
+            return await cursor.fetchone()
+        finally:
+            await cursor.close()
+
     async def open(self) -> None:
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._db = await aiosqlite.connect(self._db_path)
+        # IMMEDIATE makes implicit write transactions take the write lock up
+        # front, so concurrent connections wait on busy_timeout instead of
+        # failing instantly on a mid-statement read-to-write upgrade.
+        self._db = await aiosqlite.connect(self._db_path, isolation_level="IMMEDIATE")
         self._db.row_factory = aiosqlite.Row
         await self._db.execute("PRAGMA foreign_keys=ON")
         await self._db.execute("PRAGMA busy_timeout=5000")
@@ -225,8 +239,7 @@ class SqliteJobStore:
         if client_id is not None:
             query += " AND client_id = ?"
             parameters = (job_id, client_id)
-        cursor = await self.db.execute(query, parameters)
-        row = await cursor.fetchone()
+        row = await self._fetchone(query, parameters)
         return _row_to_job(row) if row else None
 
     async def claim_next_queued(
@@ -285,7 +298,7 @@ class SqliteJobStore:
         job = await self.get(job_id, client_id=client_id)
         if job is None or job.status != JobStatus.QUEUED:
             return None
-        cursor = await self.db.execute(
+        row = await self._fetchone(
             "SELECT COUNT(*) + 1 AS position FROM jobs"
             " WHERE status = ? AND (created_at < ? OR (created_at = ? AND id < ?))",
             (
@@ -295,7 +308,6 @@ class SqliteJobStore:
                 job.id,
             ),
         )
-        row = await cursor.fetchone()
         return int(row["position"]) if row else None
 
     async def cancel(
@@ -424,8 +436,7 @@ class SqliteJobStore:
         if client_id is not None:
             query += " AND client_id = ?"
             parameters = (job_id, client_id)
-        cursor = await self.db.execute(query, parameters)
-        row = await cursor.fetchone()
+        row = await self._fetchone(query, parameters)
         if row is None or row["result_json"] is None:
             return None
         return TranscriptionResult.model_validate_json(row["result_json"])
@@ -446,10 +457,9 @@ class SqliteJobStore:
         return [_row_to_job(row) for row in rows]
 
     async def count_queued(self) -> int:
-        cursor = await self.db.execute(
+        row = await self._fetchone(
             "SELECT COUNT(*) AS n FROM jobs WHERE status = ?", (JobStatus.QUEUED.value,)
         )
-        row = await cursor.fetchone()
         assert row is not None
         return row["n"]
 
@@ -459,15 +469,13 @@ class SqliteJobStore:
         if client_id is not None:
             query += " AND client_id = ?"
             parameters += (client_id,)
-        cursor = await self.db.execute(query, parameters)
-        row = await cursor.fetchone()
+        row = await self._fetchone(query, parameters)
         assert row is not None
         return row["n"]
 
     async def ping(self) -> bool:
         try:
-            cursor = await self.db.execute("SELECT 1")
-            return await cursor.fetchone() is not None
+            return await self._fetchone("SELECT 1") is not None
         except aiosqlite.Error:
             return False
 
@@ -481,11 +489,10 @@ class SqliteJobStore:
 
     async def has_recent_worker(self, stale_after_s: float) -> bool:
         cutoff = datetime.now(UTC) - timedelta(seconds=stale_after_s)
-        cursor = await self.db.execute(
+        row = await self._fetchone(
             "SELECT EXISTS(SELECT 1 FROM worker_heartbeats WHERE updated_at >= ?) AS alive",
             (cutoff.isoformat(),),
         )
-        row = await cursor.fetchone()
         return bool(row["alive"]) if row else False
 
     async def claim_webhook(self, worker_id: str, lease_for_s: float) -> WebhookOutboxEvent | None:
