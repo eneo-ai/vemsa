@@ -284,6 +284,10 @@ Operational endpoints:
 - `GET /v1/health/ready` — authenticated service readiness and queue admission state
 - `GET /metrics` — Prometheus metrics; requires the same bearer authentication
 
+The worker logs which job store it opened at startup, a heartbeat with queued/running
+counts every 30s, and per-job progress (stage, elapsed time) while processing — a silent
+worker is stopped or stuck, never just idle.
+
 See [`docs/PRODUCTION.md`](docs/PRODUCTION.md) for security, webhooks, backups, and rollout.
 
 ## Status

@@ -194,6 +194,17 @@ default and include `request_id`, `job_id`, `client_id`, engine, task, stage, at
 and duration where applicable. They must never contain credentials, audio, transcripts,
 participant names, complete source URLs, or webhook payloads.
 
+The worker narrates its own liveness: `store.opened` at startup names the store backend and
+a credential-free target (a worker on the wrong database is visible from the first line),
+`worker.ready` marks the queue loops running, `worker.heartbeat` reports queued and running
+counts every `TOLKA_LEASE_HEARTBEAT_S`, and each in-flight job emits `job.progress` with its
+stage and elapsed time on every lease renewal. A silent worker is therefore always a stopped
+or stuck one, never merely an idle one. Note that lease renewals and these logs share the
+event loop with pipeline bookkeeping: sustained CPU-saturated stages (or a suspended host)
+can delay renewals past `TOLKA_JOB_LEASE_S`, after which a second worker may re-claim the
+job and the original attempt's result is discarded on commit. Size the lease generously for
+CPU-only deployments.
+
 ## Backups and retention
 
 Back up PostgreSQL with the organization's standard encrypted backup and point-in-time recovery
