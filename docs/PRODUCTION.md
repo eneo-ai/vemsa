@@ -103,10 +103,11 @@ and the "never log transcripts" rule now cover request payloads as well as resul
 
 ## Consumer integrations (eneo)
 
-Eneo integrates Tolka as the engine for its flow `transcribe_only` steps: it uploads the
-original audio as multipart to `POST /v1/jobs` (`diarize=true`, `language` from flow config),
-polls `GET /v1/jobs/{id}` every ~5s from a dedicated worker with a 3300s deadline, and passes
-`result.text` verbatim into the flow output. Deployment checklist:
+Eneo integrates Tolka as the engine for its flow `transcribe_only` steps. Tolka exposes
+authenticated readiness, coarse job stages, queue position, and idempotent cancellation.
+Eneo uploads the original audio as multipart to `POST /v1/jobs`, polls
+`GET /v1/jobs/{id}`, cancels through `DELETE /v1/jobs/{id}`, and passes `result.text`
+verbatim into the flow output. Deployment checklist:
 
 1. **Credential**: provision a named token, `TOLKA_API_TOKENS=eneo=<long-random-value>`;
    eneo stores it as `FLOW_TRANSCRIPTION_SERVICE_API_KEY`.
@@ -123,15 +124,34 @@ polls `GET /v1/jobs/{id}` every ~5s from a dedicated worker with a 3300s deadlin
 4. **Upload cap**: `TOLKA_MAX_AUDIO_BYTES` (default 2 GiB) binds on the original compressed
    file eneo sends; keep it at or above eneo's maximum audio upload size.
 5. **Retention**: the 72-hour default is ample; eneo fetches results within the run (≤1h).
-6. **Latency**: characterize worst-case job latency for the deployment's engine tier, GPU,
-   and maximum file size against eneo's 3300s poll deadline. Note that a job which crashes
-   the worker is re-leased without an attempt cap, so pathological inputs can exceed any
-   deadline; eneo's poll deadline is its backstop.
+6. **Readiness**: call authenticated `GET /v1/health/ready` before enabling the integration.
+   Treat `queue_accepting_jobs=false` as capacity degradation and `503` as unavailable.
+7. **Latency**: characterize worst-case job latency for the deployment's engine tier, GPU,
+   and maximum file size against eneo's poll deadline. A job which crashes the worker is
+   re-leased without an attempt cap, so the consumer deadline remains the backstop.
 
-The response contract eneo depends on (multipart part name `file`, the status enum, the
-`TranscriptionResult` shape, and the rendered `[HH:MM:SS - HH:MM:SS] SPEAKER_00:` line
-format of `text`) is change-controlled: shape changes must move in lockstep with eneo's
-`RemoteTranscriptionClient` and its contract tests.
+The response contract eneo depends on (multipart part name `file`, status/stage enums,
+cancellation semantics, `TranscriptionResult`, and the rendered
+`[HH:MM:SS - HH:MM:SS] SPEAKER_00:` line format) is change-controlled. Shape changes must
+move in lockstep with eneo's `RemoteTranscriptionClient` and its contract tests.
+
+## Cancellation and recovery
+
+`DELETE /v1/jobs/{id}` is client-scoped and idempotent. Active jobs are atomically moved to
+`cancelled`, their lease is released, and an optional cancellation webhook is inserted in
+the same transaction. Queued upload files are deleted by the API. A worker already inside a
+blocking ML stage may finish that stage, but its next stage update detects cancellation and
+the job store refuses late results or failures. The worker then deletes its temporary audio.
+
+For stuck jobs, first inspect `status`, `stage`, `updated_at`, worker heartbeat, queue depth,
+and lease expiry. Cancel work that is no longer wanted; restart an unhealthy worker and let
+the lease expire for work that should retry. Do not edit job rows manually during ordinary
+recovery.
+
+Roll out the Tolka changes before updating consumers. Keep the consumer integration disabled
+until authenticated readiness succeeds. Roll back by disabling consumer submissions,
+cancelling unwanted active jobs, and restoring the previous pinned image; existing terminal
+results remain readable until retention removes them.
 
 ## Outbound network policy
 
@@ -163,12 +183,16 @@ timestamps and compare signatures in constant time.
 
 - `/livez` checks that the API process can answer.
 - `/readyz` checks PostgreSQL and a recent worker heartbeat.
+- `/v1/health/ready` is authenticated and reports service version, database/worker readiness,
+  queue admission state, and queue depth.
 - `/metrics` exposes authenticated Prometheus data.
 
-Alert at minimum on oldest queued-job age, queue depth, job failure ratio, webhook exhaustion,
-missing worker heartbeats, disk usage, PostgreSQL availability, GPU OOM, and processing
-real-time factor. Logs are JSON by default and include `request_id`, `job_id`, `client_id`,
-engine, attempt, status, and duration where applicable.
+Alert at minimum on oldest queued-job age, queue depth, queue rejection rate, failure and
+cancellation ratio, per-stage duration, webhook exhaustion, missing worker heartbeats, disk
+usage, PostgreSQL availability, GPU OOM, and processing real-time factor. Logs are JSON by
+default and include `request_id`, `job_id`, `client_id`, engine, task, stage, attempt, status,
+and duration where applicable. They must never contain credentials, audio, transcripts,
+participant names, complete source URLs, or webhook payloads.
 
 ## Backups and retention
 
@@ -179,15 +203,18 @@ confirm that setting against the organization's records and privacy policy.
 
 ## Release gate
 
-Before deploying a model or image revision:
+Before deploying a service or image revision:
 
 1. Build from the committed `uv.lock` and scan the image and SBOM.
 2. Pin the deployed image by digest in the target environment.
-3. Run REST and MCP smoke tests through the real ingress.
-4. Transcribe representative Swedish recordings on the target GPU.
-5. Verify language auto-detection, alignment, diarization, fallback behavior, and OOM recovery.
-6. Test graceful worker termination, lease recovery, webhook retry, backup, and restore.
+3. Run the complete unit, REST, MCP, store, queue, contract, and security test suites.
+4. Run REST and MCP smoke tests through the real ingress, using a generated WAV and the fake
+   engine only outside production.
+5. Verify authenticated readiness, queue saturation, stage progression,
+   cancellation races, graceful worker termination, lease recovery, and webhook retry.
+6. Verify backup, restore, retention cleanup, and rollback against the pinned image.
 
-The local and hybrid ML integrations still contain `GPU-VERIFY` markers. Those checks require
-real model licenses, provider access, representative recordings, and production-class GPU
-hardware; CI cannot certify them.
+This release gate verifies service correctness and failure handling, not transcription or
+diarization accuracy. WER, speaker accuracy, and real-world correction burden remain
+unverified until representative, consented audio becomes available. The local and hybrid ML
+integrations still contain `GPU-VERIFY` markers; CI does not certify their model quality.

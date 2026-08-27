@@ -3,7 +3,8 @@
 import time
 from pathlib import Path
 
-from tolka.jobs.models import Segment, SpeakerBounds, TranscriptionResult, Word
+from tolka.jobs.models import JobStage, Segment, SpeakerBounds, TranscriptionResult, Word
+from tolka.pipeline.base import StageReporter, report_stage
 from tolka.pipeline.diarize import resolve_segments
 from tolka.pipeline.render import render_text
 
@@ -20,7 +21,9 @@ class CannedEngine:
         model: str,
         diarize: bool,
         speakers: SpeakerBounds | None = None,
+        on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
+        report_stage(on_stage, JobStage.TRANSCRIBING)
         if self._delay_s:
             time.sleep(self._delay_s)
         words = [
@@ -54,8 +57,10 @@ class CannedEngine:
         language: str,
         model: str,
         speakers: SpeakerBounds | None = None,
+        on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
         """Alternate SPEAKER_00/SPEAKER_01 per segment so consumers can test labelling."""
+        report_stage(on_stage, JobStage.DIARIZING)
         if self._delay_s:
             time.sleep(self._delay_s)
         plain = [segment.model_copy(update={"speaker": None}) for segment in segments]

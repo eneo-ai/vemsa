@@ -17,6 +17,15 @@ class JobStatus(StrEnum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class JobStage(StrEnum):
+    QUEUED = "queued"
+    TRANSCRIBING = "transcribing"
+    ALIGNING = "aligning"
+    DIARIZING = "diarizing"
+    FINALIZING = "finalizing"
 
 
 class Word(BaseModel):
@@ -127,6 +136,7 @@ class Job(BaseModel):
     id: str
     client_id: str = "legacy"
     status: JobStatus
+    stage: JobStage = JobStage.QUEUED
     created_at: datetime
     updated_at: datetime
     request: JobRequest
@@ -135,6 +145,7 @@ class Job(BaseModel):
     attempt: int = 0
     lease_owner: str | None = None
     lease_expires_at: datetime | None = None
+    cancellation_requested_at: datetime | None = None
 
 
 class WebhookOutboxEvent(BaseModel):

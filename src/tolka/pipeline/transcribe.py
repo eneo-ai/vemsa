@@ -13,8 +13,9 @@ from pathlib import Path
 from typing import Any
 
 from tolka.config import Settings
-from tolka.jobs.models import Segment, SpeakerBounds, TranscriptionResult, Word
+from tolka.jobs.models import JobStage, Segment, SpeakerBounds, TranscriptionResult, Word
 from tolka.pipeline.align import build_segment_aligner
+from tolka.pipeline.base import StageReporter, report_stage
 from tolka.pipeline.diarize import (
     Diarizer,
     assign_speakers,
@@ -64,6 +65,7 @@ class EasyTranscriberEngine:
         model: str,
         diarize: bool,
         speakers: SpeakerBounds | None = None,
+        on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
         from easytranscriber.pipelines import pipeline
 
@@ -71,6 +73,7 @@ class EasyTranscriberEngine:
         # whisper auto-detect; otherwise require an explicit language in the API.
         lang = None if language == "auto" else language
 
+        report_stage(on_stage, JobStage.TRANSCRIBING)
         with self._lock:
             # GPU-VERIFY(milestone-2): model instances are cached on disk via cache_dir,
             # but confirm in-memory reuse across pipeline() calls; if models reload per
@@ -93,6 +96,7 @@ class EasyTranscriberEngine:
         duration = audio_duration(audio_path, fallback=words[-1].end if words else 0.0)
 
         if diarize:
+            report_stage(on_stage, JobStage.DIARIZING)
             turns = self._diarizer.diarize(audio_path, speakers=speakers)
             segments = assign_speakers(words, turns)
         else:
@@ -119,7 +123,11 @@ class EasyTranscriberEngine:
         language: str,
         model: str,
         speakers: SpeakerBounds | None = None,
+        on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
+        if not words:
+            report_stage(on_stage, JobStage.ALIGNING)
+        report_stage(on_stage, JobStage.DIARIZING)
         return label_speakers(
             self._diarizer,
             audio_path,

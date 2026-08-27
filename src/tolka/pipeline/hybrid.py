@@ -12,8 +12,9 @@ from pathlib import Path
 from typing import Any
 
 from tolka.config import Settings
-from tolka.jobs.models import Alignment, Segment, SpeakerBounds, TranscriptionResult, Word
+from tolka.jobs.models import Alignment, JobStage, Segment, SpeakerBounds, TranscriptionResult, Word
 from tolka.pipeline.align import build_segment_aligner, force_align_segments
+from tolka.pipeline.base import StageReporter, report_stage
 from tolka.pipeline.diarize import Diarizer, resolve_segments
 from tolka.pipeline.label import (
     alignment_input,
@@ -47,7 +48,9 @@ class HybridEngine:
         model: str,
         diarize: bool,
         speakers: SpeakerBounds | None = None,
+        on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
+        report_stage(on_stage, JobStage.TRANSCRIBING)
         payload = request_transcription(self._settings, audio_path, language=language, model=model)
         provider_words, plain_segments = parse_verbose_json(payload)
         if not provider_words and not plain_segments:
@@ -70,6 +73,7 @@ class HybridEngine:
             or max((segment.end for segment in plain_segments), default=0.0),
         )
         aligned: list[Word] = []
+        report_stage(on_stage, JobStage.ALIGNING)
         try:
             aligned = self._force_align(audio_path, payload, align_segments, language)
         except Exception:
@@ -82,6 +86,8 @@ class HybridEngine:
             words = aligned
             alignment = "forced"
 
+        if diarize:
+            report_stage(on_stage, JobStage.DIARIZING)
         turns = self._diarizer.diarize(audio_path, speakers=speakers) if diarize else None
         segments = resolve_segments(words, [] if aligned else plain_segments, turns)
         if alignment is None:
@@ -97,7 +103,11 @@ class HybridEngine:
         language: str,
         model: str,
         speakers: SpeakerBounds | None = None,
+        on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
+        if not words:
+            report_stage(on_stage, JobStage.ALIGNING)
+        report_stage(on_stage, JobStage.DIARIZING)
         return label_speakers(
             self._diarizer,
             audio_path,

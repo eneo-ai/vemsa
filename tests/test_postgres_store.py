@@ -4,7 +4,7 @@ import os
 import pytest
 
 from conftest import make_result
-from tolka.jobs.models import JobRequest, new_job
+from tolka.jobs.models import JobRequest, JobStage, JobStatus, new_job
 from tolka.jobs.postgres_store import PostgresJobStore
 
 
@@ -50,3 +50,16 @@ async def test_postgres_leases_ownership_and_outbox(postgres_store: PostgresJobS
     assert event.payload["status"] == "completed"
     await postgres_store.mark_webhook_delivered(event.id, "webhook-worker")
     assert await postgres_store.claim_webhook("webhook-worker", 60) is None
+
+
+async def test_postgres_cancellation_rejects_late_completion(postgres_store: PostgresJobStore):
+    job = new_job(JobRequest(source_url="https://example.org/a.mp3"), client_id="alpha")
+    await postgres_store.create(job)
+    claimed = await postgres_store.claim_next_queued(worker_id="worker-a", lease_for_s=60)
+    assert claimed is not None
+    assert await postgres_store.set_stage(job.id, JobStage.TRANSCRIBING, worker_id="worker-a")
+
+    cancelled = await postgres_store.cancel(job.id, client_id="alpha")
+    assert cancelled is not None and cancelled.status == JobStatus.CANCELLED
+    assert not await postgres_store.finish(job.id, make_result(), worker_id="worker-a")
+    assert await postgres_store.get_result(job.id, client_id="alpha") is None

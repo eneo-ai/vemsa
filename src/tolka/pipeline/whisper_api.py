@@ -13,8 +13,9 @@ from typing import Any
 import httpx
 
 from tolka.config import Settings
-from tolka.jobs.models import Alignment, Segment, SpeakerBounds, TranscriptionResult, Word
+from tolka.jobs.models import Alignment, JobStage, Segment, SpeakerBounds, TranscriptionResult, Word
 from tolka.pipeline.align import build_segment_aligner
+from tolka.pipeline.base import StageReporter, report_stage
 from tolka.pipeline.diarize import Diarizer, resolve_segments
 from tolka.pipeline.label import label_speakers, segment_merge_alignment, words_plausible
 from tolka.pipeline.render import render_text
@@ -147,7 +148,9 @@ class OpenAIWhisperEngine:
         model: str,
         diarize: bool,
         speakers: SpeakerBounds | None = None,
+        on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
+        report_stage(on_stage, JobStage.TRANSCRIBING)
         payload = request_transcription(self._settings, audio_path, language=language, model=model)
         words, plain_segments = parse_verbose_json(payload)
         if not words and not plain_segments:
@@ -158,6 +161,8 @@ class OpenAIWhisperEngine:
         if diarize and not words:
             logger.info("no word timestamps from whisper API; merging speakers per segment")
 
+        if diarize:
+            report_stage(on_stage, JobStage.DIARIZING)
         turns = self._diarizer.diarize(audio_path, speakers=speakers) if diarize else None
         segments = resolve_segments(words, plain_segments, turns)
         alignment: Alignment = (
@@ -174,7 +179,11 @@ class OpenAIWhisperEngine:
         language: str,
         model: str,
         speakers: SpeakerBounds | None = None,
+        on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
+        if not words:
+            report_stage(on_stage, JobStage.ALIGNING)
+        report_stage(on_stage, JobStage.DIARIZING)
         return label_speakers(
             self._diarizer,
             audio_path,

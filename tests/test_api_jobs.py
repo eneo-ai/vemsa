@@ -1,15 +1,25 @@
 import asyncio
 import contextlib
+import threading
+import time
+from pathlib import Path
 
 import httpx
 import pytest
 import respx
 from httpx import Response
 
-from conftest import FakeEngine
+from conftest import FakeEngine, make_result, make_wav_bytes
 from tolka.config import Settings
-from tolka.jobs.models import JobRequest, new_job
+from tolka.jobs.models import (
+    JobRequest,
+    JobStage,
+    SpeakerBounds,
+    TranscriptionResult,
+    new_job,
+)
 from tolka.main import create_app
+from tolka.pipeline.base import StageReporter, report_stage
 
 AUTH = {"Authorization": "Bearer secret-token"}
 
@@ -56,6 +66,8 @@ async def test_json_submission_full_lifecycle(settings: Settings):
 
         status = await poll_until(client, job_id, "completed")
         assert status["error"] is None
+        assert status["stage"] == "finalizing"
+        assert status["queue_position"] is None
         assert "created_at" in status
 
         result = (await client.get(f"/v1/jobs/{job_id}/result", headers=AUTH)).json()
@@ -64,10 +76,15 @@ async def test_json_submission_full_lifecycle(settings: Settings):
         assert result["segments"][0]["speaker"] == "SPEAKER_00"
         assert result["segments"][0]["words"][0]["word"] == "hej"
 
+        terminal_cancel = await client.delete(f"/v1/jobs/{job_id}", headers=AUTH)
+        assert terminal_cancel.status_code == 200
+        assert terminal_cancel.json()["status"] == "completed"
+        assert terminal_cancel.json()["cancellation_requested"] is False
+
 
 async def test_multipart_submission_without_diarization(settings: Settings):
     engine = FakeEngine()
-    async with api_client(settings, engine) as (client, _):
+    async with api_client(settings, engine) as (client, app):
         response = await client.post(
             "/v1/jobs",
             files={"file": ("meeting.wav", b"fake bytes", "audio/wav")},
@@ -139,3 +156,179 @@ async def test_healthz_needs_no_auth(settings: Settings):
         response = await client.get("/healthz")
         assert response.status_code == 200
         assert response.json()["status"] == "ready"
+
+
+async def test_authenticated_readiness_contract(settings: Settings):
+    async with api_client(settings) as (client, _):
+        assert (await client.get("/v1/health/ready")).status_code == 401
+        response = await client.get("/v1/health/ready", headers=AUTH)
+        assert response.status_code == 200
+        assert response.json() == {
+            "status": "ready",
+            "service_version": "0.1.0",
+            "database_ready": True,
+            "worker_ready": True,
+            "queue_accepting_jobs": True,
+            "queued_jobs": 0,
+        }
+
+
+async def test_readiness_reports_saturated_queue_without_becoming_unready(
+    settings: Settings,
+):
+    settings.run_worker = False
+    settings.max_queued_jobs = 1
+    settings.max_queued_jobs_per_client = 1
+    async with api_client(settings) as (client, app):
+        client_id = next(iter(settings.token_clients.values()))
+        await app.state.deps.ready_store.record_worker_heartbeat("external-worker")
+        await app.state.deps.ready_store.create(
+            new_job(JobRequest(source_url="https://example.org/queued.mp3"), client_id=client_id)
+        )
+        response = await client.get("/v1/health/ready", headers=AUTH)
+        assert response.status_code == 200
+        assert response.json()["status"] == "ready"
+        assert response.json()["queue_accepting_jobs"] is False
+        assert response.json()["queued_jobs"] == 1
+
+
+async def test_readiness_is_503_without_a_worker(settings: Settings):
+    settings.run_worker = False
+    async with api_client(settings) as (client, _):
+        response = await client.get("/v1/health/ready", headers=AUTH)
+        assert response.status_code == 503
+        assert response.json()["status"] == "not_ready"
+        assert response.json()["worker_ready"] is False
+
+
+async def test_openapi_advertises_job_lifecycle(settings: Settings):
+    async with api_client(settings) as (client, _):
+        schema = (await client.get("/openapi.json")).json()
+        assert "delete" in schema["paths"]["/v1/jobs/{job_id}"]
+        assert "get" in schema["paths"]["/v1/health/ready"]
+        statuses = schema["components"]["schemas"]["JobStatus"]["enum"]
+        stages = schema["components"]["schemas"]["JobStage"]["enum"]
+        assert statuses == ["queued", "running", "completed", "failed", "cancelled"]
+        assert stages == [
+            "queued",
+            "transcribing",
+            "aligning",
+            "diarizing",
+            "finalizing",
+        ]
+
+
+async def test_queued_job_reports_position_and_cancels_idempotently(settings: Settings):
+    settings.run_worker = False
+    async with api_client(settings) as (client, app):
+        response = await client.post(
+            "/v1/jobs",
+            files={"file": ("meeting.wav", make_wav_bytes(), "audio/wav")},
+            headers=AUTH,
+        )
+        assert response.status_code == 202
+        job_id = response.json()["job_id"]
+        stored = await app.state.deps.ready_store.get(job_id)
+        assert stored is not None and stored.audio_path is not None
+        audio_path = Path(stored.audio_path)
+
+        status_response = await client.get(f"/v1/jobs/{job_id}", headers=AUTH)
+        assert status_response.json()["stage"] == "queued"
+        assert status_response.json()["queue_position"] == 1
+
+        cancelled = await client.delete(f"/v1/jobs/{job_id}", headers=AUTH)
+        assert cancelled.status_code == 202
+        assert cancelled.json() == {
+            "job_id": job_id,
+            "status": "cancelled",
+            "stage": "queued",
+            "cancellation_requested": True,
+        }
+        assert not audio_path.exists()
+        assert await app.state.deps.ready_store.count_queued() == 0
+
+        repeated = await client.delete(f"/v1/jobs/{job_id}", headers=AUTH)
+        assert repeated.status_code == 200
+        assert repeated.json()["status"] == "cancelled"
+        assert repeated.json()["cancellation_requested"] is True
+
+
+class BlockingEngine:
+    def __init__(self) -> None:
+        self.started = threading.Event()
+        self.release = threading.Event()
+        self.finished = threading.Event()
+
+    def transcribe(
+        self,
+        audio_path: Path,
+        *,
+        language: str,
+        model: str,
+        diarize: bool,
+        speakers: SpeakerBounds | None = None,
+        on_stage: StageReporter | None = None,
+    ) -> TranscriptionResult:
+        report_stage(on_stage, JobStage.TRANSCRIBING)
+        self.started.set()
+        self.release.wait(timeout=5)
+        self.finished.set()
+        return make_result(diarize)
+
+    def label_speakers(
+        self,
+        audio_path: Path,
+        *,
+        words,
+        segments,
+        language: str,
+        model: str,
+        speakers: SpeakerBounds | None = None,
+        on_stage: StageReporter | None = None,
+    ) -> TranscriptionResult:
+        report_stage(on_stage, JobStage.DIARIZING)
+        self.started.set()
+        self.release.wait(timeout=5)
+        self.finished.set()
+        return make_result().model_copy(update={"model": model})
+
+    def warm_up(self) -> None:
+        pass
+
+
+def wait_until_missing(path: Path, timeout: float = 2.0) -> bool:
+    deadline = time.monotonic() + timeout
+    while path.exists() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    return not path.exists()
+
+
+async def test_running_cancellation_discards_late_result(settings: Settings):
+    engine = BlockingEngine()
+    async with api_client(settings, engine) as (client, app):
+        response = await client.post(
+            "/v1/jobs",
+            files={"file": ("meeting.wav", make_wav_bytes(), "audio/wav")},
+            headers=AUTH,
+        )
+        job_id = response.json()["job_id"]
+        try:
+            assert await asyncio.to_thread(engine.started.wait, 2)
+            stored = await app.state.deps.ready_store.get(job_id)
+            assert stored is not None and stored.audio_path is not None
+            audio_path = Path(stored.audio_path)
+            running = await client.get(f"/v1/jobs/{job_id}", headers=AUTH)
+            assert running.json()["status"] == "running"
+            assert running.json()["stage"] == "transcribing"
+
+            cancelled = await client.delete(f"/v1/jobs/{job_id}", headers=AUTH)
+            assert cancelled.status_code == 202
+            assert cancelled.json()["status"] == "cancelled"
+        finally:
+            engine.release.set()
+
+        assert await asyncio.to_thread(engine.finished.wait, 2)
+        assert await asyncio.to_thread(wait_until_missing, audio_path)
+        result = await client.get(f"/v1/jobs/{job_id}/result", headers=AUTH)
+        assert result.status_code == 409
+        assert result.json()["detail"]["status"] == "cancelled"

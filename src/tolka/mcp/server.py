@@ -72,6 +72,8 @@ def build_mcp(deps: AppDeps) -> FastMCP:
             raise ToolError(f"unknown job id {job_id!r} (results are purged after retention)")
         if job.status == JobStatus.FAILED:
             raise ToolError(f"transcription failed: {job.error}")
+        if job.status == JobStatus.CANCELLED:
+            raise ToolError("transcription was cancelled")
         if job.status != JobStatus.COMPLETED:
             return f"status: {job.status.value} — not finished yet, ask again shortly"
         result = await deps.ready_store.get_result(job_id, client_id=client_id)
@@ -99,8 +101,13 @@ def build_mcp(deps: AppDeps) -> FastMCP:
                 return result.text
             if job.status == JobStatus.FAILED:
                 raise ToolError(f"transcription failed: {job.error}")
+            if job.status == JobStatus.CANCELLED:
+                raise ToolError("transcription was cancelled")
             if ctx is not None:
-                await ctx.report_progress(progress=0, message=f"job {job_id}: {job.status.value}")
+                await ctx.report_progress(
+                    progress=0,
+                    message=f"job {job_id}: {job.status.value} ({job.stage.value})",
+                )
             await asyncio.sleep(settings.mcp_poll_interval_s)
         return (
             f"Transcription is still running after {settings.mcp_sync_timeout_s:.0f}s. "

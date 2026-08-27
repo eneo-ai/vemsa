@@ -1,7 +1,15 @@
+from collections.abc import Callable
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, TypeAlias
 
-from tolka.jobs.models import Segment, SpeakerBounds, TranscriptionResult, Word
+from tolka.jobs.models import JobStage, Segment, SpeakerBounds, TranscriptionResult, Word
+
+StageReporter: TypeAlias = Callable[[JobStage], None]
+
+
+def report_stage(reporter: StageReporter | None, stage: JobStage) -> None:
+    if reporter is not None:
+        reporter(stage)
 
 
 class TranscriptionEngine(Protocol):
@@ -15,6 +23,7 @@ class TranscriptionEngine(Protocol):
         model: str,
         diarize: bool,
         speakers: SpeakerBounds | None = None,
+        on_stage: StageReporter | None = None,
     ) -> TranscriptionResult: ...
 
     def label_speakers(
@@ -26,6 +35,7 @@ class TranscriptionEngine(Protocol):
         language: str,
         model: str,
         speakers: SpeakerBounds | None = None,
+        on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
         """Diarize the audio and attach speakers to a transcript produced elsewhere."""
         ...

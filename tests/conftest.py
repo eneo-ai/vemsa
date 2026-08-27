@@ -1,11 +1,35 @@
 import asyncio
+import io
+import wave
 from pathlib import Path
 
 import pytest
 
 from tolka.config import Settings
-from tolka.jobs.models import Job, JobStatus, Segment, SpeakerBounds, TranscriptionResult, Word
+from tolka.jobs.models import (
+    Job,
+    JobStage,
+    JobStatus,
+    Segment,
+    SpeakerBounds,
+    TranscriptionResult,
+    Word,
+)
 from tolka.jobs.store import SqliteJobStore
+from tolka.pipeline.base import StageReporter, report_stage
+
+
+def make_wav_bytes(duration_ms: int = 50) -> bytes:
+    """Generate a tiny valid mono PCM WAV without checking in an audio fixture."""
+    buffer = io.BytesIO()
+    sample_rate = 8_000
+    frame_count = sample_rate * duration_ms // 1_000
+    with wave.open(buffer, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(sample_rate)
+        wav.writeframes(b"\x00\x00" * frame_count)
+    return buffer.getvalue()
 
 
 def make_result(diarize: bool = True) -> TranscriptionResult:
@@ -55,7 +79,9 @@ class FakeEngine:
         model: str,
         diarize: bool,
         speakers: SpeakerBounds | None = None,
+        on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
+        report_stage(on_stage, JobStage.TRANSCRIBING)
         self.calls.append(
             {
                 "audio_path": audio_path,
@@ -76,7 +102,9 @@ class FakeEngine:
         language: str,
         model: str,
         speakers: SpeakerBounds | None = None,
+        on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
+        report_stage(on_stage, JobStage.DIARIZING)
         self.calls.append(
             {
                 "task": "diarize",
@@ -104,6 +132,7 @@ class FailingEngine:
         model: str,
         diarize: bool,
         speakers: SpeakerBounds | None = None,
+        on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
         raise RuntimeError("pipeline exploded")
 
@@ -116,6 +145,7 @@ class FailingEngine:
         language: str,
         model: str,
         speakers: SpeakerBounds | None = None,
+        on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
         raise RuntimeError("pipeline exploded")
 

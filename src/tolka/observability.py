@@ -37,6 +37,21 @@ JOB_DURATION = Histogram(
     "End-to-end worker processing time",
     ("status", "engine", "task"),
 )
+JOB_STAGE_DURATION = Histogram(
+    "tolka_job_stage_seconds",
+    "Time spent in each persisted job stage",
+    ("stage", "engine", "task"),
+)
+JOB_CANCELLATIONS = Counter(
+    "tolka_job_cancellations_total",
+    "Cancellation requests by outcome",
+    ("outcome",),
+)
+QUEUE_REJECTIONS = Counter(
+    "tolka_queue_rejections_total",
+    "Jobs rejected at admission because a queue limit was reached",
+    ("scope",),
+)
 QUEUE_DEPTH = Gauge("tolka_queue_depth", "Currently queued jobs")
 WEBHOOK_DELIVERIES = Counter(
     "tolka_webhook_deliveries_total", "Webhook delivery attempts", ("outcome",)
