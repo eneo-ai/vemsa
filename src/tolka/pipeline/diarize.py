@@ -27,6 +27,22 @@ class Turn:
     speaker: str
 
 
+# Sentence-final punctuation for word grouping; closing quotes/brackets after it
+# are ignored. A colon deliberately does not end a sentence: a heading read
+# aloud ("Styrkor och framgångar:") belongs with what it introduces.
+_SENTENCE_END_CHARS = ".?!…"
+_TRAILING_CLOSERS = "\"'”’»)]"
+
+# A silence this long ends a segment even mid-sentence, so a transcript without
+# punctuation cannot collapse into one endless segment.
+HARD_GAP_SPLIT_S = 15.0
+
+
+def _ends_sentence(text: str) -> bool:
+    stripped = text.rstrip(_TRAILING_CLOSERS)
+    return bool(stripped) and stripped[-1] in _SENTENCE_END_CHARS
+
+
 def _overlap(word: Word, turn: Turn) -> float:
     return max(0.0, min(word.end, turn.end) - max(word.start, turn.start))
 
@@ -63,8 +79,9 @@ def assign_speakers(
     words: list[Word], turns: list[Turn], *, gap_split_s: float = 1.0
 ) -> list[Segment]:
     """Assign speakers to aligned words by maximal temporal overlap with diarization
-    turns, then group consecutive same-speaker words into segments (also splitting
-    on inter-word gaps longer than gap_split_s)."""
+    turns, then group consecutive same-speaker words into segments (splitting where
+    a pause longer than gap_split_s coincides with a sentence end — see
+    _group_labelled)."""
     if not words:
         return []
     words = sorted(words, key=lambda word: word.start)
@@ -406,6 +423,11 @@ class Diarizer:
 def _group_labelled(
     words: list[Word], labels: list[str | None], gap_split_s: float
 ) -> list[Segment]:
+    """Group consecutive same-speaker words into segments the way a human lines
+    a transcript: a segment ends at a speaker change, at a pause longer than
+    gap_split_s that coincides with sentence-final punctuation (a pause
+    mid-sentence keeps the sentence together), or at a silence longer than
+    HARD_GAP_SPLIT_S regardless of punctuation."""
     segments: list[Segment] = []
     start_index = 0
     for index in range(1, len(words) + 1):
@@ -413,7 +435,8 @@ def _group_labelled(
         if not end_of_input:
             speaker_changed = labels[index] != labels[start_index]
             gap = words[index].start - words[index - 1].end
-            if not speaker_changed and gap <= gap_split_s:
+            sentence_break = gap > gap_split_s and _ends_sentence(words[index - 1].word)
+            if not speaker_changed and not sentence_break and gap <= HARD_GAP_SPLIT_S:
                 continue
         group = words[start_index:index]
         segments.append(

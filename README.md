@@ -41,7 +41,11 @@ are compromises: `hybrid`/`remote` offload whisper for boxes without a GPU, and 
 CPU-only is intended for local testing with small files, expected to be slow.
 
 In every tier, pyannote diarization runs locally and speakers are merged onto the timestamps
-by maximal temporal overlap (word-level when words exist, whole-segment otherwise). Requests
+by maximal temporal overlap (word-level when words exist, whole-segment otherwise). Labelled
+words are grouped into output segments the way a human lines a transcript: a segment ends at
+a speaker change, or at a pause (>1 s) that coincides with sentence-final punctuation — a
+pause mid-sentence, or after a heading's colon, keeps the sentence together (a >15 s silence
+splits regardless, so unpunctuated transcripts cannot collapse into one segment). Requests
 may pass `num_speakers`, or `min_speakers`/`max_speakers`, as a clustering prior — pyannote
 tends to over-split without one.
 

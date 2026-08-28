@@ -39,23 +39,46 @@ def test_first_word_in_gap_uses_nearest_turn():
     assert segments[0].speaker == "SPEAKER_00"
 
 
-def test_grouping_splits_on_speaker_change_and_gap():
+def test_grouping_splits_on_speaker_change_and_sentence_pause():
     turns = [Turn(0.0, 2.0, "SPEAKER_00"), Turn(2.0, 10.0, "SPEAKER_01")]
     words = [
         word("a", 0.0, 0.5),
         word("b", 0.6, 1.0),
-        word("c", 2.5, 3.0),  # speaker change
-        word("d", 5.0, 5.5),  # same speaker, >1s gap
+        word("c.", 2.5, 3.0),  # speaker change
+        word("d", 5.0, 5.5),  # same speaker, >1s pause after a sentence end
     ]
     segments = assign_speakers(words, turns)
     assert [(s.speaker, s.text) for s in segments] == [
         ("SPEAKER_00", "a b"),
-        ("SPEAKER_01", "c"),
+        ("SPEAKER_01", "c."),
         ("SPEAKER_01", "d"),
     ]
     assert segments[0].start == 0.0
     assert segments[0].end == 1.0
     assert [w.word for w in segments[0].words] == ["a", "b"]
+
+
+def test_pause_mid_sentence_keeps_the_sentence_together():
+    # >1s pauses without sentence-final punctuation (and after a heading colon)
+    # do not split: a human transcriber keeps the sentence on one line
+    turns = [Turn(0.0, 12.0, "SPEAKER_00")]
+    words = [
+        word("Rubrik:", 0.0, 0.5),
+        word("hej", 3.0, 3.3),  # pause after a colon: keeps going
+        word("och", 6.0, 6.3),  # pause mid-sentence: keeps going
+        word("välkomna!", 6.4, 7.0),
+        word("Tack.", 10.0, 10.4),  # pause after "!": new segment
+    ]
+    segments = assign_speakers(words, turns)
+    assert [s.text for s in segments] == ["Rubrik: hej och välkomna!", "Tack."]
+
+
+def test_very_long_silence_splits_even_mid_sentence():
+    # unpunctuated transcripts must not collapse into one endless segment
+    turns = [Turn(0.0, 40.0, "SPEAKER_00")]
+    words = [word("hej", 0.0, 0.5), word("där", 20.0, 20.5)]
+    segments = assign_speakers(words, turns)
+    assert [s.text for s in segments] == ["hej", "där"]
 
 
 def test_no_turns_falls_back_to_speakerless_segments():
@@ -65,10 +88,10 @@ def test_no_turns_falls_back_to_speakerless_segments():
     assert segments[0].speaker is None
 
 
-def test_segments_without_speakers_splits_on_gap():
-    words = [word("a", 0.0, 0.5), word("b", 3.0, 3.5)]
+def test_segments_without_speakers_splits_on_sentence_pause():
+    words = [word("a.", 0.0, 0.5), word("b", 3.0, 3.5)]
     segments = segments_without_speakers(words)
-    assert [s.text for s in segments] == ["a", "b"]
+    assert [s.text for s in segments] == ["a.", "b"]
     assert all(s.speaker is None for s in segments)
 
 
