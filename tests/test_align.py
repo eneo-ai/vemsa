@@ -41,3 +41,35 @@ def test_empty_segments_fall_back_to_the_payload_text():
     assert alignment_transcript(segments, fallback_text=" hela ") == [
         {"start": 0.0, "end": 0.0, "text": "hela"}
     ]
+
+
+def test_emissions_model_resolution(tmp_path):
+    from tolka.config import Settings
+    from tolka.pipeline.align import _resolve_emissions_model
+
+    settings = Settings(
+        _env_file=None,
+        database_url="postgresql://unused/unused",
+        emissions_model="fallback/model",
+        emissions_models="sv=KBLab/wav2vec2-large-voxrex-swedish,en=facebook/wav2vec2-base-960h",
+    )
+    # explicit matches, case-insensitively
+    assert settings.emissions_model_for("sv") == ("KBLab/wav2vec2-large-voxrex-swedish", True)
+    assert settings.emissions_model_for("EN") == ("facebook/wav2vec2-base-960h", True)
+    # unmapped languages fall back to the default model
+    assert settings.emissions_model_for("fi") == ("fallback/model", False)
+    assert _resolve_emissions_model(settings, "fi") == "fallback/model"
+    assert _resolve_emissions_model(settings, "auto") == "fallback/model"
+
+
+def test_emissions_models_entries_are_validated(tmp_path):
+    import pytest
+
+    from tolka.config import Settings
+
+    with pytest.raises(ValueError):
+        Settings(
+            _env_file=None,
+            database_url="postgresql://unused/unused",
+            emissions_models="not-a-pair",
+        )

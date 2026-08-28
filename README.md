@@ -33,6 +33,13 @@ The service is platform-agnostic: any client that can speak HTTP (or MCP) can us
 
 `auto` picks `hybrid` when `TOLKA_WHISPER_API_BASE` is set, otherwise `local`.
 
+**Production posture: Tolka is designed to run on a GPU machine, where `local` (or `diarize`
+for label-only deployments) is the quality tier** — whisper contributes text only, wav2vec2
+CTC forced alignment is the sole source of word timestamps, and pyannote the sole source of
+speakers; no provider's decoder-heuristic timestamps ever enter the result. The other tiers
+are compromises: `hybrid`/`remote` offload whisper for boxes without a GPU, and everything
+CPU-only is intended for local testing with small files, expected to be slow.
+
 In every tier, pyannote diarization runs locally and speakers are merged onto the timestamps
 by maximal temporal overlap (word-level when words exist, whole-segment otherwise). Requests
 may pass `num_speakers`, or `min_speakers`/`max_speakers`, as a clustering prior — pyannote
@@ -73,8 +80,13 @@ Who wins when several sources are available differs by task, deliberately:
 
 - **`task=transcribe`, hybrid tier**: forced alignment wins over provider words
   (WhisperX-style) — the provider's transcript text is kept, its timeline replaced.
-- **`task=diarize`**: plausible caller-supplied words win — the caller has already vetted
-  them; alignment runs only when words are absent or rejected.
+- **`task=diarize`**: forced alignment wins here too (`TOLKA_DIARIZE_PREFER_ALIGN`, default
+  on): caller-supplied words are set aside and the transcript is realigned against the audio —
+  timestamps derived from the audio beat whatever the caller's provider decoded. Should
+  alignment fail, the fallback is the segment-level merge (coarser speakers, but text order
+  can never be corrupted the way a broken word timeline corrupts it), not the set-aside
+  words. Callers that measure their word timestamps honestly can restore caller-words-first
+  with `TOLKA_DIARIZE_PREFER_ALIGN=false`.
 
 Fallbacks are logged (`alignment=forced words=<n>`, or `alignment=segment_only
 reason=<...>`), so the worker log always answers "did alignment run, and if not, why".
@@ -159,13 +171,15 @@ curl -X POST http://localhost:8000/v1/jobs \
   -F 'words=[{"word":"hej","start":0.0,"end":0.4},{"word":"då","start":2.1,"end":2.3}]'
 ```
 
-Timestamps are absolute seconds from the start of the uploaded audio. Plausible word-level
-timestamps give word-precise speaker changes directly. `segments` alone (each
-`{"start","end","text"}` — a single segment covering the whole file is fine) are
-force-aligned against the audio first when the `align` extra is installed
-(`TOLKA_DIARIZE_FORCE_ALIGN`, default on), recovering word-precise speaker changes from a
-plain transcript; without alignment they degrade to `segment_split`/`segment_only` as
-described in the fallback hierarchy above. The transcript is capped at
+Timestamps are absolute seconds from the start of the uploaded audio. The recommended
+payload is `segments` with **measured** windows — e.g. one segment per transcription chunk
+whose boundaries the caller measured itself — because Tolka force-aligns the text against
+the audio for word-precise speaker changes (`TOLKA_DIARIZE_FORCE_ALIGN` /
+`TOLKA_DIARIZE_PREFER_ALIGN`, both default on) and trustworthy windows are the best
+alignment anchors; a single segment covering the whole file also works. Caller-supplied
+`words` are used directly only when alignment is unavailable/disabled (or the deployment
+opts into caller-words-first); without alignment, segments degrade to
+`segment_split`/`segment_only` as described in the fallback hierarchy above. The transcript is capped at
 `TOLKA_MAX_TRANSCRIPT_BYTES` (default 8 MiB). `model` is echoed into the result and defaults
 to `"external"` so the result never claims one of Tolka's models transcribed. Speaker-count
 priors (`num_speakers`, or `min_speakers`/`max_speakers`, all ≥ 1) are accepted on both
@@ -197,8 +211,11 @@ All settings via environment variables with the `TOLKA_` prefix (see `src/tolka/
 | `TOLKA_WHISPER_API_KEY` | – | Bearer token for the whisper endpoint |
 | `TOLKA_WHISPER_TIMEOUT_S` | 3600 | Per-request timeout against the whisper endpoint |
 | `TOLKA_DEFAULT_MODEL` | `KBLab/kb-whisper-large` | Whisper model (name passed to the endpoint, or loaded locally) |
-| `TOLKA_EMISSIONS_MODEL` | `KBLab/wav2vec2-large-voxrex-swedish` | CTC model for forced alignment (local/hybrid, and diarize-task alignment) |
+| `TOLKA_EMISSIONS_MODEL` | `KBLab/wav2vec2-large-voxrex-swedish` | Fallback CTC model for forced alignment when the job language has no `TOLKA_EMISSIONS_MODELS` entry |
+| `TOLKA_EMISSIONS_MODELS` | `sv=KBLab/wav2vec2-large-voxrex-swedish` | Per-language CTC alignment models, comma-separated `lang=model`; an unmapped explicit language aligns with the fallback under a logged warning (`align.language_fallback`) |
 | `TOLKA_DIARIZE_FORCE_ALIGN` | `true` | Force-align segment-only `task=diarize` transcripts when the `align` extra is installed |
+| `TOLKA_DIARIZE_PREFER_ALIGN` | `true` | `task=diarize`: force-align even when the caller supplied words (segment-level merge is the fallback). Set `false` only for callers whose word timestamps are honestly measured |
+| `TOLKA_MIN_ALIGNMENT` | – | Quality floor (`forced` / `provider_words` / `segment_split` / `segment_only`): fail a job whose word-timestamp rung degrades below it instead of completing with a coarser result |
 | `TOLKA_HF_TOKEN` | – | Hugging Face token (pyannote models are gated) |
 | `TOLKA_MODEL_CACHE_DIR` | `./data/models` | Model cache (mount a volume) |
 | `TOLKA_WORK_DIR` | `./data/work` | Temp audio storage |

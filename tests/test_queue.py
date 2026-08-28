@@ -53,6 +53,39 @@ async def test_upload_job_completes_and_audio_deleted(
     ]
 
 
+async def test_alignment_floor_fails_a_degraded_job(
+    store: JobStore, settings: Settings, tmp_path: Path
+):
+    # FakeEngine reports no alignment rung, which ranks below every floor
+    settings.min_alignment = "forced"
+    job, audio = upload_job(tmp_path, language="sv")
+    await store.create(job)
+
+    async with running_queue(store, FakeEngine(), settings) as queue:
+        queue.notify()
+        failed = await wait_for_status(store, job.id, JobStatus.FAILED)
+
+    assert failed.error is not None and "TOLKA_MIN_ALIGNMENT" in failed.error
+    assert not audio.exists()
+
+
+async def test_alignment_floor_passes_a_forced_result(
+    store: JobStore, settings: Settings, tmp_path: Path
+):
+    settings.min_alignment = "forced"
+
+    class ForcedEngine(FakeEngine):
+        def transcribe(self, *args, **kwargs):
+            return super().transcribe(*args, **kwargs).model_copy(update={"alignment": "forced"})
+
+    job, _ = upload_job(tmp_path, language="sv")
+    await store.create(job)
+
+    async with running_queue(store, ForcedEngine(), settings) as queue:
+        queue.notify()
+        await wait_for_status(store, job.id, JobStatus.COMPLETED)
+
+
 async def test_failing_engine_marks_job_failed(store: JobStore, settings: Settings, tmp_path: Path):
     job, audio = upload_job(tmp_path)
     await store.create(job)

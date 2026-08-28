@@ -193,6 +193,7 @@ class OpenAIWhisperEngine:
             model=model,
             aligner=self._segment_aligner,
             speakers=speakers,
+            prefer_alignment=self._settings.diarize_prefer_align,
         )
 
     def warm_up(self) -> None:

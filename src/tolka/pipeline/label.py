@@ -61,16 +61,30 @@ def words_plausible(words: list[Word]) -> bool:
 def segment_windows_plausible(segments: list[Segment]) -> bool:
     """Whether segment windows show a humanly possible speaking rate.
 
-    Whitespace-words per second of total window time; windows produced by the
-    same rejected decoder timeline as implausible words are compressed the same
-    way, so they must not anchor forced alignment."""
+    Whitespace-words per second, checked over the total window time and per
+    segment: a broken timeline can average out plausible while individual
+    windows cram a sentence into a second (observed from decoder-heuristic
+    timestamps: sentence-sized clumps separated by silence). Windows produced
+    by such a timeline must not anchor forced alignment."""
     word_count = sum(len(segment.text.split()) for segment in segments)
     if word_count < PLAUSIBLE_MIN_WORDS:
         return True
     window_time = sum(max(0.0, segment.end - segment.start) for segment in segments)
     if window_time <= 0:
         return False
-    return word_count / window_time <= PLAUSIBLE_MAX_WORDS_PER_SECOND
+    if word_count / window_time > PLAUSIBLE_MAX_WORDS_PER_SECOND:
+        return False
+    return all(_window_plausible(segment) for segment in segments)
+
+
+def _window_plausible(segment: Segment) -> bool:
+    words = len(segment.text.split())
+    if words < PLAUSIBLE_MIN_WORDS:
+        return True
+    duration = segment.end - segment.start
+    if duration <= 0:
+        return False
+    return words / duration <= PLAUSIBLE_MAX_WORDS_PER_SECOND
 
 
 def alignment_input(
@@ -94,6 +108,7 @@ def label_speakers(
     model: str,
     aligner: SegmentAligner | None = None,
     speakers: SpeakerBounds | None = None,
+    prefer_alignment: bool = False,
 ) -> TranscriptionResult:
     plain_segments = [segment.model_copy(update={"speaker": None}) for segment in segments]
     if not words:
@@ -107,6 +122,17 @@ def label_speakers(
         )
         words = []
         words_discarded = True
+    if words and plain_segments and aligner is not None and prefer_alignment:
+        # Timestamps derived from the audio beat whatever the caller's provider
+        # decoded. Should alignment fail, the segment-level merge is the fallback:
+        # coarser speakers, but the text order can never be corrupted the way a
+        # broken word timeline corrupts it.
+        logger.info(
+            "caller-supplied words set aside: forced alignment is preferred"
+            " (TOLKA_DIARIZE_PREFER_ALIGN)",
+            extra={"event": "label.prefer_align", "words": len(words)},
+        )
+        words = []
     alignment: Alignment | None = "provider_words" if words else None
     fallback_reason = "no word timestamps supplied"
     if not words and plain_segments and aligner is None:

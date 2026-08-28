@@ -47,6 +47,11 @@ JOB_CANCELLATIONS = Counter(
     "Cancellation requests by outcome",
     ("outcome",),
 )
+JOB_ALIGNMENT = Counter(
+    "tolka_job_alignment_total",
+    "Completed jobs by word-timestamp rung — anything but 'forced' is a quality degradation",
+    ("alignment", "engine", "task"),
+)
 QUEUE_REJECTIONS = Counter(
     "tolka_queue_rejections_total",
     "Jobs rejected at admission because a queue limit was reached",

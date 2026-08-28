@@ -15,10 +15,19 @@ from uuid import uuid4
 import httpx
 
 from tolka.config import Settings
-from tolka.jobs.models import EXTERNAL_MODEL, Job, JobStage, JobStatus, WebhookOutboxEvent
+from tolka.jobs.models import (
+    ALIGNMENT_RANK,
+    EXTERNAL_MODEL,
+    Job,
+    JobStage,
+    JobStatus,
+    TranscriptionResult,
+    WebhookOutboxEvent,
+)
 from tolka.jobs.store import JobStore
 from tolka.jobs.store_factory import open_job_store
 from tolka.observability import (
+    JOB_ALIGNMENT,
     JOB_DURATION,
     JOB_STAGE_DURATION,
     JOBS_FINISHED,
@@ -41,6 +50,14 @@ class JobCancelledError(RuntimeError):
 
 class JobLeaseLostError(RuntimeError):
     pass
+
+
+class AlignmentBelowFloorError(RuntimeError):
+    """The result's word-timestamp rung degraded below TOLKA_MIN_ALIGNMENT.
+
+    Raised instead of completing so a quality-critical deployment fails loudly
+    (and retryably) rather than shipping a coarser result. The message is safe
+    to show to the client."""
 
 
 class JobQueue:
@@ -338,6 +355,10 @@ class JobQueue:
                     speakers=job.request.speaker_bounds(),
                     on_stage=_report_stage,
                 )
+            # counted before the floor check so floored jobs still show up in the
+            # rung distribution
+            JOB_ALIGNMENT.labels(result.alignment or "none", engine, job.request.task).inc()
+            self._check_alignment_floor(result)
             await _persist_stage(JobStage.FINALIZING)
             JOB_STAGE_DURATION.labels(current_stage.value, engine, job.request.task).observe(
                 time.perf_counter() - stage_started
@@ -385,6 +406,7 @@ class JobQueue:
                     "attempt": job.attempt,
                     "engine": self._settings.resolve_engine(),
                     "task": job.request.task,
+                    "alignment": result.alignment,
                     "duration_ms": round((time.perf_counter() - started) * 1000, 2),
                 },
             )
@@ -412,7 +434,13 @@ class JobQueue:
                     "error_type": type(exc).__name__,
                 },
             )
-            public_error = f"{type(exc).__name__}: processing failed"
+            # generic failures hide internals; the alignment floor is a policy the
+            # client can act on, so its message passes through
+            public_error = (
+                str(exc)
+                if isinstance(exc, AlignmentBelowFloorError)
+                else f"{type(exc).__name__}: processing failed"
+            )
             committed = await self._store.fail(
                 job.id,
                 public_error,
@@ -437,6 +465,18 @@ class JobQueue:
                 renewal.cancel()
             if delete_audio and audio_path is not None:
                 audio_path.unlink(missing_ok=True)
+
+    def _check_alignment_floor(self, result: TranscriptionResult) -> None:
+        floor = self._settings.min_alignment
+        if floor is None:
+            return
+        achieved = ALIGNMENT_RANK.get(result.alignment, -1) if result.alignment else -1
+        if achieved >= ALIGNMENT_RANK[floor]:
+            return
+        raise AlignmentBelowFloorError(
+            f"word-timestamp quality degraded to {result.alignment or 'none'},"
+            f" below the configured floor of {floor} (TOLKA_MIN_ALIGNMENT)"
+        )
 
     async def _heartbeat_lease(
         self,

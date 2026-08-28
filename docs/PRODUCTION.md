@@ -54,8 +54,10 @@ TOLKA_IMAGE=ghcr.io/eneo-ai/tolka:latest-cpu \
   docker compose -f compose.yaml -f compose.cpu.yaml up --no-build
 ```
 
-Expect CPU diarization at roughly real time and plan job deadlines accordingly; the
-`remote` engine tier keeps transcription itself fast by offloading whisper.
+**Production deployments are expected to run on a GPU host.** CPU-only deployments (and
+the `hybrid`/`remote` offload tiers) exist for local testing with small audio files and
+are expected to be slow: plan on CPU diarization and forced alignment at roughly real
+time, and size job deadlines accordingly.
 
 ### Selecting an image
 
@@ -128,6 +130,11 @@ verbatim into the flow output. Deployment checklist:
 7. **Latency**: characterize worst-case job latency for the deployment's engine tier, GPU,
    and maximum file size against eneo's poll deadline. A job which crashes the worker is
    re-leased without an attempt cap, so the consumer deadline remains the backstop.
+8. **Diarize payload**: eneo's flow transcription sends `task=diarize` with one segment per
+   transcription chunk, using chunk boundaries eneo measured itself — the only timestamps
+   in that flow that are certain. Tolka force-aligns the text inside those windows
+   (`TOLKA_DIARIZE_PREFER_ALIGN`, default on), so provider word timestamps are neither
+   needed nor wanted in the payload.
 
 The response contract eneo depends on (multipart part name `file`, status/stage enums,
 cancellation semantics, `TranscriptionResult`, and the rendered
@@ -188,7 +195,16 @@ timestamps and compare signatures in constant time.
 
 Alert at minimum on oldest queued-job age, queue depth, queue rejection rate, failure and
 cancellation ratio, per-stage duration, webhook exhaustion, missing worker heartbeats, disk
-usage, PostgreSQL availability, GPU OOM, and processing real-time factor. Logs are JSON by
+usage, PostgreSQL availability, GPU OOM, and processing real-time factor.
+
+Quality degradation is deliberate, silent-by-default behavior — make it loud in production:
+`tolka_job_alignment_total{alignment=...}` counts finished jobs by word-timestamp rung, and
+`job.completed` log lines carry the `alignment` field. On a healthy GPU deployment
+effectively every job should be `forced`; alert on any sustained share of
+`provider_words`/`segment_split`/`segment_only`, and on `align.language_fallback` warnings
+(a job language without a configured CTC model). Deployments that would rather retry than
+ship a coarse result can set `TOLKA_MIN_ALIGNMENT=forced`, which fails such jobs with a
+client-visible error instead of completing them. Logs are JSON by
 default and include `request_id`, `job_id`, `client_id`, engine, task, stage, attempt, status,
 and duration where applicable. They must never contain credentials, audio, transcripts,
 participant names, complete source URLs, or webhook payloads.
@@ -229,3 +245,23 @@ This release gate verifies service correctness and failure handling, not transcr
 diarization accuracy. WER, speaker accuracy, and real-world correction burden remain
 unverified until representative, consented audio becomes available. The local and hybrid ML
 integrations still contain `GPU-VERIFY` markers; CI does not certify their model quality.
+
+## GPU verification gate
+
+The `GPU-VERIFY` markers in the source are open items that can only be closed on a GPU host
+with representative audio; they are **mandatory before the first production rollout**, not
+optional tuning. On the target GPU deployment, with real (consented) recordings:
+
+1. **Local-tier output shapes** (`pipeline/transcribe.py`): run `task=transcribe` end to end
+   on the `local` engine and confirm easytranscriber's alignment output parses without the
+   attribute-name fallbacks; then delete the fallbacks.
+2. **Detected language** (`pipeline/transcribe.py`): confirm whether whisper's detected
+   language can be surfaced for `language=auto` jobs instead of echoing the request.
+3. **Diarization priors** (`pipeline/diarize.py`): run multi-speaker recordings with and
+   without `num/min/max_speakers` and tune guidance for consumers — pyannote tends to
+   over-split without a prior; verify detected speaker counts against ground truth.
+4. **Warm-up coverage** (`pipeline/transcribe.py`): pre-download the whisper and emissions
+   models at startup so the first job is not the slow one.
+5. **Alignment rung**: confirm every job in the verification batch reports
+   `alignment=forced` (see the telemetry section); investigate any that does not before
+   going live.

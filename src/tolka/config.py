@@ -40,12 +40,30 @@ class Settings(BaseSettings):
     # explicit language (e.g. GDM); empty omits the field so the provider auto-detects
     whisper_auto_language: str = ""
     default_model: str = "KBLab/kb-whisper-large"
+    # fallback CTC model for forced alignment when the job's language has no
+    # entry in emissions_models
     emissions_model: str = "KBLab/wav2vec2-large-voxrex-swedish"
+    # per-language CTC models for forced alignment, comma-separated lang=model;
+    # a language without an entry aligns with emissions_model under a warning —
+    # an acoustic-model mismatch is a silent quality cliff
+    emissions_models: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["sv=KBLab/wav2vec2-large-voxrex-swedish"]
+    )
     diarization_model: str = "pyannote/speaker-diarization-3.1"
     # task=diarize with segments but no words: force-align the text locally for
     # word-precise speaker changes (requires the `align` extra; falls back to
     # segment-level labelling when unavailable or when alignment fails)
     diarize_force_align: bool = True
+    # task=diarize with caller-supplied words: set the words aside and force-align
+    # the transcript locally anyway — word timestamps derived from the audio beat
+    # whatever a provider's decoder heuristics produced. Disable only for callers
+    # that measure their word timestamps honestly.
+    diarize_prefer_align: bool = True
+    # quality floor: fail a job whose word-timestamp rung degrades below this
+    # instead of completing with a coarser result (unset = degrade, never fail)
+    min_alignment: Literal["forced", "provider_words", "segment_split", "segment_only"] | None = (
+        None
+    )
 
     model_cache_dir: Path = Path("data/models")
     work_dir: Path = Path("data/work")
@@ -102,11 +120,32 @@ class Settings(BaseSettings):
             return self.engine
         return "hybrid" if self.whisper_api_base else "local"
 
+    @property
+    def emissions_model_overrides(self) -> dict[str, str]:
+        """Per-language CTC model map parsed from ``emissions_models``."""
+        overrides: dict[str, str] = {}
+        for value in self.emissions_models:
+            language, _, model = value.partition("=")
+            overrides[language.strip().lower()] = model.strip()
+        return overrides
+
+    def emissions_model_for(self, language: str) -> tuple[str, bool]:
+        """CTC model for a job language, and whether it was an explicit match.
+
+        Unmatched languages fall back to ``emissions_model``; the caller should
+        surface that as the quality warning it is (except for auto/unknown,
+        where no better choice exists)."""
+        model = self.emissions_model_overrides.get(language.strip().lower())
+        if model:
+            return model, True
+        return self.emissions_model, False
+
     @field_validator(
         "api_tokens",
         "source_allowed_hosts",
         "webhook_allowed_hosts",
         "whisper_extra_form",
+        "emissions_models",
         mode="before",
     )
     @classmethod
@@ -127,6 +166,10 @@ class Settings(BaseSettings):
             key, separator, _ = value.partition("=")
             if not separator or not key:
                 raise ValueError("whisper_extra_form entries must use key=value")
+        for value in self.emissions_models:
+            language, separator, model = value.partition("=")
+            if not separator or not language.strip() or not model.strip():
+                raise ValueError("emissions_models entries must use language=model")
         if self.environment == "production":
             if not self.api_tokens:
                 raise ValueError("TOLKA_API_TOKENS is required in production")

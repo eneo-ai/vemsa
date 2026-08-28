@@ -20,8 +20,11 @@ from tolka.pipeline.diarize import _decodable_audio, audio_duration
 logger = logging.getLogger(__name__)
 
 _align_lock = threading.Lock()
-# (emissions_model, device) -> (vad_model, ctc_model, processor); guarded by _align_lock
+# (emissions model, device) -> (vad_model, ctc_model, processor); guarded by _align_lock
 _loaded_stacks: dict[tuple[str, str], tuple[Any, Any, Any]] = {}
+
+# request languages that carry no usable signal for picking an acoustic model
+_UNSPECIFIC_LANGUAGES = {"", "auto", "unknown"}
 
 
 class SegmentAligner(Protocol):
@@ -65,27 +68,48 @@ def alignment_transcript(
     return [{"start": 0.0, "end": fallback_end, "text": fallback_text.strip()}]
 
 
-def _load_alignment_stack(settings: Settings, device: str) -> tuple[Any, Any, Any]:
+def _load_alignment_stack(
+    settings: Settings, emissions_model: str, device: str
+) -> tuple[Any, Any, Any]:
     """Silero VAD + wav2vec2 CTC model + processor, cached per (model, device)."""
-    key = (settings.emissions_model, device)
+    key = (emissions_model, device)
     if key not in _loaded_stacks:
         import torch
         from easyaligner.vad.silero import load_vad_model
         from transformers import AutoModelForCTC, Wav2Vec2Processor
 
-        logger.info("loading alignment stack %s on %s", settings.emissions_model, device)
+        logger.info("loading alignment stack %s on %s", emissions_model, device)
         model = (
             AutoModelForCTC.from_pretrained(
-                settings.emissions_model, cache_dir=str(settings.model_cache_dir)
+                emissions_model, cache_dir=str(settings.model_cache_dir)
             )
             .to(device)
             .to(torch.float16 if device == "cuda" else torch.float32)
         )
         processor = Wav2Vec2Processor.from_pretrained(
-            settings.emissions_model, cache_dir=str(settings.model_cache_dir)
+            emissions_model, cache_dir=str(settings.model_cache_dir)
         )
         _loaded_stacks[key] = (load_vad_model(), model, processor)
     return _loaded_stacks[key]
+
+
+def _resolve_emissions_model(settings: Settings, language: str) -> str:
+    """CTC model for the job's language, warning on the acoustic-model mismatch
+    an unmapped explicit language implies (auto/unknown have no better choice)."""
+    emissions_model, matched = settings.emissions_model_for(language)
+    if not matched and language.strip().lower() not in _UNSPECIFIC_LANGUAGES:
+        logger.warning(
+            "no emissions model configured for language %s; aligning with %s"
+            " (add a TOLKA_EMISSIONS_MODELS entry for word-precise quality)",
+            language,
+            emissions_model,
+            extra={
+                "event": "align.language_fallback",
+                "language": language,
+                "emissions_model": emissions_model,
+            },
+        )
+    return emissions_model
 
 
 def force_align_segments(
@@ -99,16 +123,17 @@ def force_align_segments(
     """Align the transcript text against the audio, returning word timestamps.
 
     easyaligner's pipeline steps hand data to each other through JSON/npy files,
-    so each run gets a throwaway directory under work_dir. `language` picks no
-    model here (the emissions model is fixed via TOLKA_EMISSIONS_MODEL, Swedish
-    by default — a non-Swedish job aligns with a Swedish acoustic model, the
-    known quality caveat); callers keep this behind a runtime fallback and must
-    never fail a job on alignment errors."""
+    so each run gets a throwaway directory under work_dir. `language` picks the
+    CTC model via TOLKA_EMISSIONS_MODELS (falling back to TOLKA_EMISSIONS_MODEL
+    with a warning — an acoustic-model mismatch degrades word precision);
+    callers keep this behind a runtime fallback and must never fail a job on
+    alignment errors."""
     import torch
     from easyaligner.data.datamodel import SpeechSegment
     from easyaligner.pipelines import pipeline as align_pipeline
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    emissions_model = _resolve_emissions_model(settings, language)
 
     # easyaligner is not guaranteed to decode everything ffmpeg can (the ingest
     # contract); transcode like the diarizer does when libsndfile cannot read it.
@@ -131,7 +156,9 @@ def force_align_segments(
             ]
         ]
         with _align_lock:
-            vad_model, ctc_model, processor = _load_alignment_stack(settings, device)
+            vad_model, ctc_model, processor = _load_alignment_stack(
+                settings, emissions_model, device
+            )
             Path(settings.work_dir).mkdir(parents=True, exist_ok=True)
             with tempfile.TemporaryDirectory(prefix="align-", dir=str(settings.work_dir)) as tmp:
                 aligned = align_pipeline(

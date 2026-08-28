@@ -287,6 +287,64 @@ def test_caller_words_win_over_the_aligner(tmp_path: Path):
     assert result.alignment == "provider_words"
 
 
+def test_prefer_alignment_sets_caller_words_aside(tmp_path: Path):
+    # TOLKA_DIARIZE_PREFER_ALIGN: plausible caller words are set aside and the
+    # transcript is force-aligned anyway; the (plausible) windows anchor it
+    received: list[list[Segment]] = []
+
+    def recording_aligner(audio_path: Path, segments: list[Segment], language: str) -> list[Word]:
+        received.append(segments)
+        return [Word(**w) for w in WORDS]
+
+    result = label_speakers(
+        FakeDiarizer(),
+        tmp_path / "a.wav",
+        words=[Word(word="fel", start=0.0, end=0.1), Word(word="ordning", start=0.2, end=0.3)],
+        segments=SEGMENT_ONLY,
+        language="sv",
+        model="external",
+        aligner=recording_aligner,
+        prefer_alignment=True,
+    )
+    assert result.alignment == "forced"
+    assert received == [SEGMENT_ONLY]
+    assert "hej och" in result.text
+
+
+def test_prefer_alignment_falls_back_to_segment_merge(tmp_path: Path):
+    # when alignment fails, the segment-level merge wins over the set-aside
+    # caller words: coarser speakers, but the text order cannot be corrupted
+    def broken_aligner(audio_path: Path, segments: list[Segment], language: str) -> list[Word]:
+        raise RuntimeError("no tokenizer for this language")
+
+    result = label_speakers(
+        FakeDiarizer(),
+        tmp_path / "a.wav",
+        words=[Word(**w) for w in WORDS],
+        segments=SEGMENT_ONLY,
+        language="sv",
+        model="external",
+        aligner=broken_aligner,
+        prefer_alignment=True,
+    )
+    assert result.alignment == "segment_only"
+    assert [s.text for s in result.segments] == ["hej och tack"]
+
+
+def test_prefer_alignment_without_an_aligner_keeps_caller_words(tmp_path: Path):
+    result = label_speakers(
+        FakeDiarizer(),
+        tmp_path / "a.wav",
+        words=[Word(**w) for w in WORDS],
+        segments=SEGMENT_ONLY,
+        language="sv",
+        model="external",
+        aligner=None,
+        prefer_alignment=True,
+    )
+    assert result.alignment == "provider_words"
+
+
 def test_segment_split_is_reported_in_alignment(tmp_path: Path):
     # no words, no aligner, and the merge splits the segment at the turn boundary
     class TwoTurnDiarizer(FakeDiarizer):
@@ -379,6 +437,33 @@ def test_implausible_segment_windows_align_as_one_window(tmp_path: Path):
     assert received[0][0].text == "ett två tre fyra fem sex sju åtta nio tio"
 
 
+def test_locally_compressed_segment_windows_align_as_one_window(tmp_path: Path):
+    # a clumpy timeline: one window crams a sentence into a second while a long
+    # slow window drags the global average under the threshold — the per-segment
+    # check must still reject the windows as alignment anchors
+    received: list[list[Segment]] = []
+
+    def recording_aligner(audio_path: Path, segments: list[Segment], language: str) -> list[Word]:
+        received.append(segments)
+        return [Word(**w) for w in WORDS]
+
+    clumpy = [
+        Segment(start=0.0, end=1.0, text="ett två tre fyra fem sex sju åtta nio tio"),
+        Segment(start=10.0, end=60.0, text="elva tolv tretton fjorton femton"),
+    ]
+    result = label_speakers(
+        FakeDiarizer(),
+        tmp_path / "a.wav",
+        words=[],
+        segments=clumpy,
+        language="sv",
+        model="external",
+        aligner=recording_aligner,
+    )
+    assert result.alignment == "forced"
+    assert [(s.start, s.end) for s in received[0]] == [(0.0, 60.0)]
+
+
 def test_implausible_words_without_segments_are_still_used(tmp_path: Path):
     # nothing better exists: keep the words rather than returning nothing
     result = label_speakers(
@@ -418,6 +503,35 @@ def test_diarize_only_engine_aligns_and_passes_speaker_bounds(settings: Settings
     assert result.alignment == "forced"
     assert len(result.segments) == 2
     assert diarizer.speaker_bounds == [bounds]
+
+
+def test_prefer_align_setting_reaches_the_merge(settings: Settings, tmp_path: Path):
+    # on by default: caller words are set aside and the transcript is realigned
+    assert settings.diarize_prefer_align is True
+    engine = DiarizeOnlyEngine(settings, diarizer=FakeDiarizer())
+    engine._segment_aligner = fake_aligner
+    caller_words = [Word(word="fel", start=0.0, end=0.1), Word(word="ordning", start=0.2, end=0.3)]
+    result = engine.label_speakers(
+        tmp_path / "a.wav",
+        words=caller_words,
+        segments=SEGMENT_ONLY,
+        language="sv",
+        model="external",
+    )
+    assert result.alignment == "forced"
+
+    # the opt-out restores caller-words-first for callers that measure honestly
+    settings.diarize_prefer_align = False
+    engine = DiarizeOnlyEngine(settings, diarizer=FakeDiarizer())
+    engine._segment_aligner = fake_aligner
+    result = engine.label_speakers(
+        tmp_path / "a.wav",
+        words=caller_words,
+        segments=SEGMENT_ONLY,
+        language="sv",
+        model="external",
+    )
+    assert result.alignment == "provider_words"
 
 
 async def test_speaker_bounds_reach_the_engine_from_both_tasks(settings: Settings):

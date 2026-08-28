@@ -47,6 +47,16 @@ class Segment(BaseModel):
 # were split proportionally at turn boundaries, or whole segments were labelled.
 Alignment = Literal["provider_words", "forced", "segment_split", "segment_only"]
 
+# Quality ranking of the rungs (highest is best): audio-derived forced alignment,
+# then provider-measured words, then the two segment-level approximations. Used by
+# the TOLKA_MIN_ALIGNMENT floor; a missing rung ranks below every floor.
+ALIGNMENT_RANK: dict[Alignment, int] = {
+    "forced": 3,
+    "provider_words": 2,
+    "segment_split": 1,
+    "segment_only": 0,
+}
+
 
 class TranscriptionResult(BaseModel):
     language: str
