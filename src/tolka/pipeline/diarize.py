@@ -345,17 +345,27 @@ def audio_duration(audio_path: Path, *, fallback: float) -> float:
         return fallback
 
 
-def _decodable_audio(audio_path: Path) -> tuple[Path, bool]:
-    """Path pyannote's soundfile backend can read, plus whether it is a temp file.
+# Containers safe to hand to pyannote's decoder without transcoding. Compressed
+# formats (mp3/ogg/...) are transcoded even though libsndfile could read them:
+# pyannote 4 decodes via torchcodec, whose decoded frame count for e.g. VBR mp3
+# can disagree with the container's duration estimate and fail the pipeline with
+# a ValueError — while the same audio works once transcoded to wav.
+_PCM_FORMATS = {"WAV", "WAVEX", "AIFF", "FLAC"}
 
-    libsndfile covers wav/flac/ogg/mp3 but not e.g. m4a/aac; the ingest contract is
-    "any ffmpeg-decodable format", so fall back to an ffmpeg transcode next to the
-    original (16 kHz mono wav — what the pipeline resamples to anyway)."""
+
+def _decodable_audio(audio_path: Path) -> tuple[Path, bool]:
+    """Path pyannote's decoder handles reliably, plus whether it is a temp file.
+
+    PCM containers pass through; everything else — compressed formats libsndfile
+    could read, and formats it cannot (m4a/aac) — gets one canonical ffmpeg
+    transcode next to the original (16 kHz mono wav, what the pipeline resamples
+    to anyway), which also keeps the aligner and the diarizer on the identical
+    decoded timeline."""
     try:
         import soundfile
 
-        soundfile.info(str(audio_path))
-        return audio_path, False
+        if soundfile.info(str(audio_path)).format in _PCM_FORMATS:
+            return audio_path, False
     except Exception:
         pass
     converted = audio_path.with_name(audio_path.name + ".diarize.wav")

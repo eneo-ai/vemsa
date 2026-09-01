@@ -3,9 +3,11 @@
 import asyncio
 import contextlib
 import json
+import subprocess
 from pathlib import Path
 
 import httpx
+import pytest
 import respx
 from httpx import Response
 
@@ -14,7 +16,7 @@ from tolka.config import Settings
 from tolka.jobs.models import Segment, SpeakerBounds, Word
 from tolka.main import create_app
 from tolka.pipeline import align
-from tolka.pipeline.diarize import Turn
+from tolka.pipeline.diarize import Turn, _decodable_audio
 from tolka.pipeline.diarize_only import DiarizeOnlyEngine
 from tolka.pipeline.fake import CannedEngine
 from tolka.pipeline.label import label_speakers, words_plausible
@@ -564,3 +566,40 @@ async def test_speaker_bounds_validation(settings: Settings):
         # bounds without diarization make no sense
         response = await submit(client, diarize="false", max_speakers="3")
         assert response.status_code == 422
+
+
+def test_decodable_audio_passes_pcm_containers_through(tmp_path: Path):
+    soundfile = pytest.importorskip("soundfile")
+    path = tmp_path / "audio.wav"
+    soundfile.write(path, [0.0] * 1600, 16000)
+
+    resolved, is_temp = _decodable_audio(path)
+
+    assert resolved == path
+    assert not is_temp
+
+
+def test_decodable_audio_transcodes_compressed_formats(tmp_path: Path, monkeypatch):
+    # pyannote 4 decodes via torchcodec, which fails on formats libsndfile reads
+    # fine (VBR mp3); soundfile-readable must not short-circuit the transcode
+    soundfile = pytest.importorskip("soundfile")
+    path = tmp_path / "audio.mp3"
+    try:
+        soundfile.write(path, [0.0] * 1600, 16000)
+    except Exception:
+        pytest.skip("libsndfile without mp3 write support")
+
+    commands = []
+
+    def fake_ffmpeg(cmd, **kwargs):
+        commands.append(cmd)
+        Path(cmd[-1]).write_bytes(b"")
+        return subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+    monkeypatch.setattr("tolka.pipeline.diarize.subprocess.run", fake_ffmpeg)
+
+    resolved, is_temp = _decodable_audio(path)
+
+    assert is_temp
+    assert resolved.name == "audio.mp3.diarize.wav"
+    assert commands and commands[0][0] == "ffmpeg"
