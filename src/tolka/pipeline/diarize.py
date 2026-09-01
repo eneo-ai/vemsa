@@ -52,9 +52,12 @@ def _nearest_turn(word: Word | Segment, turns: list[Turn]) -> Turn:
     return min(turns, key=lambda turn: abs((turn.start + turn.end) / 2 - midpoint))
 
 
-def _label_words(words: list[Word], turns: list[Turn]) -> list[str]:
-    """Per word, the speaker of the maximally overlapping turn; zero overlap inherits
-    the previous word's speaker (nearest turn by midpoint for the first word)."""
+def _label_words(words: list[Word], turns: list[Turn], *, min_coverage: float = 0.25) -> list[str]:
+    """Per word, the speaker of the maximally overlapping turn; a winning overlap
+    below min_coverage of the word's duration counts as no overlap — forced-alignment
+    jitter can land a sliver of a boundary word inside the neighbouring turn. Words
+    without a (sufficient) overlap inherit the previous word's speaker (nearest turn
+    by midpoint for the first word)."""
     labels: list[str] = []
     first_candidate = 0
     for word in words:
@@ -69,26 +72,63 @@ def _label_words(words: list[Word], turns: list[Turn]) -> list[str]:
                 best_overlap = overlap
                 best = turns[index].speaker
             index += 1
+        if best_overlap < min_coverage * (word.end - word.start):
+            best = None
         if best is None:
             best = labels[-1] if labels else _nearest_turn(word, turns).speaker
         labels.append(best)
     return labels
 
 
+def _smooth_islands(
+    words: list[Word],
+    labels: list[str],
+    *,
+    max_words: int = 2,
+    max_duration_s: float = 1.0,
+) -> list[str]:
+    """Relabel a short run of words whose neighbours on both sides agree on a
+    different speaker.
+
+    An untranscribed backchannel ("mm") flips the exclusive diarization track to
+    the other speaker for a moment, and alignment jitter can drop a mid-sentence
+    word into that window — a human transcriber would never credit one word
+    mid-sentence to another speaker. A run beginning right after sentence-final
+    punctuation is kept: a short interjection ("Ja.") legitimately starts there."""
+    smoothed = list(labels)
+    run_start = 0
+    for index in range(1, len(smoothed) + 1):
+        if index < len(smoothed) and smoothed[index] == smoothed[run_start]:
+            continue
+        if run_start > 0 and index < len(smoothed):
+            neighbour = smoothed[run_start - 1]
+            count = index - run_start
+            duration = words[index - 1].end - words[run_start].start
+            if (
+                neighbour == smoothed[index]
+                and neighbour != smoothed[run_start]
+                and (count <= max_words or duration <= max_duration_s)
+                and not _ends_sentence(words[run_start - 1].word)
+            ):
+                smoothed[run_start:index] = [neighbour] * count
+        run_start = index
+    return smoothed
+
+
 def assign_speakers(
     words: list[Word], turns: list[Turn], *, gap_split_s: float = 1.0
 ) -> list[Segment]:
     """Assign speakers to aligned words by maximal temporal overlap with diarization
-    turns, then group consecutive same-speaker words into segments (splitting where
-    a pause longer than gap_split_s coincides with a sentence end — see
-    _group_labelled)."""
+    turns, smooth away single-word islands surrounded by another speaker, then group
+    consecutive same-speaker words into segments (splitting where a pause longer
+    than gap_split_s coincides with a sentence end — see _group_labelled)."""
     if not words:
         return []
     words = sorted(words, key=lambda word: word.start)
     if not turns:
         return segments_without_speakers(words, gap_split_s=gap_split_s)
     turns = sorted(turns, key=lambda turn: turn.start)
-    labels = _label_words(words, turns)
+    labels = _smooth_islands(words, _label_words(words, turns))
     return _group_labelled(words, labels, gap_split_s)
 
 

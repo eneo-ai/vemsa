@@ -83,6 +83,92 @@ def test_very_long_silence_splits_even_mid_sentence():
     assert [s.text for s in segments] == ["hej", "där"]
 
 
+def test_single_word_island_mid_sentence_is_absorbed():
+    # the observed eneo case: an untranscribed backchannel flips the exclusive
+    # diarization track to SPEAKER_02 for a moment and the mid-sentence word
+    # "som" lands inside that window — it must stay with the surrounding speaker
+    turns = [
+        Turn(0.0, 2.1, "SPEAKER_01"),
+        Turn(2.1, 2.6, "SPEAKER_02"),
+        Turn(2.6, 5.0, "SPEAKER_01"),
+    ]
+    words = [
+        word("min", 0.0, 0.3),
+        word("mamma", 0.4, 0.8),
+        word("jobbade", 0.9, 1.4),
+        word("natt", 1.5, 1.9),
+        word("som", 2.15, 2.5),
+        word("sjuksköterska.", 2.7, 3.6),
+    ]
+    segments = assign_speakers(words, turns)
+    assert [(s.speaker, s.text) for s in segments] == [
+        ("SPEAKER_01", "min mamma jobbade natt som sjuksköterska.")
+    ]
+
+
+def test_island_after_sentence_end_is_kept():
+    # a short interjection right after sentence-final punctuation is legitimate
+    turns = [
+        Turn(0.0, 1.1, "SPEAKER_00"),
+        Turn(1.1, 1.9, "SPEAKER_01"),
+        Turn(1.9, 4.0, "SPEAKER_00"),
+    ]
+    words = [
+        word("Hej", 0.0, 0.4),
+        word("där.", 0.5, 1.0),
+        word("Ja.", 1.2, 1.7),
+        word("Och", 2.0, 2.4),
+        word("sedan", 2.5, 3.0),
+        word("vidare", 3.1, 3.6),
+    ]
+    segments = assign_speakers(words, turns)
+    assert [(s.speaker, s.text) for s in segments] == [
+        ("SPEAKER_00", "Hej där."),
+        ("SPEAKER_01", "Ja."),
+        ("SPEAKER_00", "Och sedan vidare"),
+    ]
+
+
+def test_long_island_is_not_absorbed():
+    # four words over well more than a second is a real speaker turn
+    turns = [
+        Turn(0.0, 1.0, "SPEAKER_00"),
+        Turn(1.0, 3.5, "SPEAKER_01"),
+        Turn(3.5, 5.0, "SPEAKER_00"),
+    ]
+    words = [
+        word("a", 0.0, 0.4),
+        word("b", 0.5, 0.9),
+        word("c", 1.1, 1.6),
+        word("d", 1.7, 2.2),
+        word("e", 2.3, 2.8),
+        word("f", 2.9, 3.4),
+        word("g", 3.6, 4.0),
+    ]
+    segments = assign_speakers(words, turns)
+    assert [s.speaker for s in segments] == ["SPEAKER_00", "SPEAKER_01", "SPEAKER_00"]
+
+
+def test_island_at_the_edges_is_kept():
+    # no neighbour on one side: nothing to absorb into
+    turns = [Turn(0.0, 0.6, "SPEAKER_01"), Turn(0.6, 3.0, "SPEAKER_00")]
+    words = [word("a", 0.0, 0.5), word("b", 0.7, 1.2), word("c", 1.3, 1.8)]
+    segments = assign_speakers(words, turns)
+    assert [s.speaker for s in segments] == ["SPEAKER_01", "SPEAKER_00"]
+
+
+def test_sliver_overlap_inherits_previous_speaker():
+    # word b only clips the SPEAKER_01 turn by 0.05s (10% of its duration):
+    # below the coverage floor, so it inherits SPEAKER_00 from the word before
+    turns = [Turn(0.0, 0.9, "SPEAKER_00"), Turn(1.45, 3.0, "SPEAKER_01")]
+    words = [word("a", 0.2, 0.8), word("b", 1.0, 1.5), word("c", 2.0, 2.5)]
+    segments = assign_speakers(words, turns)
+    assert [(s.speaker, s.text) for s in segments] == [
+        ("SPEAKER_00", "a b"),
+        ("SPEAKER_01", "c"),
+    ]
+
+
 def test_no_turns_falls_back_to_speakerless_segments():
     words = [word("a", 0.0, 0.5), word("b", 0.6, 1.0)]
     segments = assign_speakers(words, [])
