@@ -283,11 +283,12 @@ docker build --build-arg ML_EXTRAS="diarize align" -t tolka .    # hybrid/remote
 ```
 
 Prebuilt images are published to GHCR on every `main` push and release tag — `latest` /
-`vX.Y.Z` with CUDA torch (amd64) and a `-cpu` twin of every tag (amd64 + arm64):
+`vX.Y.Z` with CUDA torch and a `-cpu` twin of every tag (both amd64-only; torchcodec has
+no linux/arm64 wheels, so Apple-silicon development runs natively via `uv sync`):
 
 ```bash
 docker pull ghcr.io/eneo-ai/tolka:latest         # NVIDIA GPU hosts
-docker pull ghcr.io/eneo-ai/tolka:latest-cpu     # CPU-only hosts (incl. Apple silicon)
+docker pull ghcr.io/eneo-ai/tolka:latest-cpu     # CPU-only hosts
 TOLKA_IMAGE=ghcr.io/eneo-ai/tolka:latest docker compose up --no-build
 ```
 

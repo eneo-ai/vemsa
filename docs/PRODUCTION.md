@@ -25,7 +25,10 @@ services; two flavors are built:
 | Flavor | Tags | Torch | Platforms | For |
 | --- | --- | --- | --- | --- |
 | GPU (default) | `latest`, `main`, `vX.Y.Z`, `X.Y`, `sha-<commit>` | CUDA 12.8 wheels | amd64 | hosts with an NVIDIA GPU (the `local`/`hybrid` engines, fast diarization) |
-| CPU | same tags with `-cpu` suffix (`latest-cpu`, …) | CPU wheels | amd64, arm64 | GPU-less hosts, `remote` engine deployments, Apple-silicon servers |
+| CPU | same tags with `-cpu` suffix (`latest-cpu`, …) | CPU wheels | amd64 | GPU-less hosts, `remote` engine deployments |
+
+There is no arm64 image: torchcodec (pyannote 4's audio decoder) publishes no linux/arm64
+wheels. On Apple silicon, develop natively via `uv sync` (macOS arm64 wheels exist).
 
 Both flavors bake in every ML extra (`diarize align local`), so `TOLKA_ENGINE` alone decides
 behavior at runtime. Slimmer builds (e.g. `ML_EXTRAS="diarize"` for remote-only) are a local

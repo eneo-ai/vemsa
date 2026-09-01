@@ -26,10 +26,12 @@ jobs:
             extras: diarize align local
             platforms: linux/amd64
             suffix: ""
-          # -cpu: for hosts without NVIDIA GPUs (also arm64, e.g. Apple silicon)
+          # -cpu: for hosts without NVIDIA GPUs. amd64 only: torchcodec (pyannote
+          # 4's audio decoder) ships no linux/arm64 wheels; Apple-silicon devs run
+          # natively via uv instead (torchcodec has macOS arm64 wheels)
           - variant: cpu
             extras: diarize align local
-            platforms: linux/amd64,linux/arm64
+            platforms: linux/amd64
             suffix: -cpu
     steps:
       - uses: actions/checkout@v4
