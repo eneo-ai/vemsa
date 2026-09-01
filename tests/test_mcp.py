@@ -72,6 +72,31 @@ async def test_submit_rejects_bad_language(settings: Settings):
 
 
 @respx.mock
+async def test_submit_vocabulary_reaches_the_engine(settings: Settings):
+    mock_audio()
+    engine = FakeEngine()
+    async with mcp_client(settings, engine) as client:
+        submitted = await client.call_tool(
+            "submit_transcription", {"url": AUDIO_URL, "vocabulary": ["Çagri", "Tolka"]}
+        )
+        async with asyncio.timeout(5):
+            while True:
+                result = await client.call_tool("get_transcription", {"job_id": submitted.data})
+                if not result.data.startswith("status:"):
+                    break
+                await asyncio.sleep(0.01)
+    assert engine.calls[0]["vocabulary"] == ["Çagri", "Tolka"]
+
+
+async def test_submit_rejects_oversized_vocabulary(settings: Settings):
+    async with mcp_client(settings) as client:
+        with pytest.raises(ToolError, match="invalid arguments"):
+            await client.call_tool(
+                "submit_transcription", {"url": AUDIO_URL, "vocabulary": ["x"] * 51}
+            )
+
+
+@respx.mock
 async def test_transcribe_audio_waits_for_result(settings: Settings):
     mock_audio()
     async with mcp_client(settings) as client:

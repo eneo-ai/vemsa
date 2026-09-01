@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import json
 import threading
 import time
 from pathlib import Path
@@ -99,6 +100,75 @@ async def test_multipart_submission_without_diarization(settings: Settings):
         assert result["segments"][0]["speaker"] is None
         assert engine.calls[0]["language"] == "en"
         assert engine.calls[0]["diarize"] is False
+
+
+async def test_vocabulary_is_plumbed_to_the_engine(settings: Settings):
+    engine = FakeEngine()
+    async with api_client(settings, engine) as (client, _):
+        response = await client.post(
+            "/v1/jobs",
+            files={"file": ("meeting.wav", b"fake bytes", "audio/wav")},
+            data={"language": "sv", "vocabulary": '["Anna Lindqvist", "Tolka"]'},
+            headers=AUTH,
+        )
+        assert response.status_code == 202
+        await poll_until(client, response.json()["job_id"], "completed")
+        assert engine.calls[0]["vocabulary"] == ["Anna Lindqvist", "Tolka"]
+
+
+@respx.mock
+async def test_json_body_vocabulary_is_plumbed(settings: Settings):
+    respx.get("https://example.org/m.mp3").mock(return_value=Response(200, content=b"audio"))
+    engine = FakeEngine()
+    async with api_client(settings, engine) as (client, _):
+        response = await client.post(
+            "/v1/jobs",
+            json={"source_url": "https://example.org/m.mp3", "vocabulary": ["Çagri"]},
+            headers=AUTH,
+        )
+        assert response.status_code == 202
+        await poll_until(client, response.json()["job_id"], "completed")
+        assert engine.calls[0]["vocabulary"] == ["Çagri"]
+
+
+async def test_vocabulary_validation_failures(settings: Settings):
+    async with api_client(settings) as (client, _):
+
+        async def submit_vocabulary(value: str, **extra: str) -> httpx.Response:
+            return await client.post(
+                "/v1/jobs",
+                files={"file": ("a.wav", b"fake audio")},
+                data={"vocabulary": value, **extra},
+                headers=AUTH,
+            )
+
+        # only meaningful when Tolka runs the ASR itself
+        words = '[{"word":"hej","start":0.0,"end":0.4}]'
+        response = await submit_vocabulary('["Anna"]', task="diarize", words=words)
+        assert response.status_code == 422
+        assert "task=transcribe" in str(response.json()["detail"])
+        # malformed JSON part
+        response = await submit_vocabulary("[{broken")
+        assert response.status_code == 422
+        assert "not valid JSON" in response.json()["detail"]
+        # over the caps
+        assert (await submit_vocabulary(json.dumps(["x"] * 51))).status_code == 422
+        assert (await submit_vocabulary(json.dumps(["y" * 65]))).status_code == 422
+        assert (await submit_vocabulary(json.dumps(["z" * 60] * 20))).status_code == 422
+
+
+async def test_whitespace_vocabulary_normalizes_to_none(settings: Settings):
+    engine = FakeEngine()
+    async with api_client(settings, engine) as (client, _):
+        response = await client.post(
+            "/v1/jobs",
+            files={"file": ("a.wav", b"fake audio")},
+            data={"vocabulary": '["  ", ""]'},
+            headers=AUTH,
+        )
+        assert response.status_code == 202
+        await poll_until(client, response.json()["job_id"], "completed")
+        assert engine.calls[0]["vocabulary"] is None
 
 
 async def test_unknown_job_is_404(settings: Settings):
@@ -267,6 +337,7 @@ class BlockingEngine:
         model: str,
         diarize: bool,
         speakers: SpeakerBounds | None = None,
+        vocabulary: list[str] | None = None,
         on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
         report_stage(on_stage, JobStage.TRANSCRIBING)

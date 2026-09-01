@@ -48,10 +48,13 @@ class HybridEngine:
         model: str,
         diarize: bool,
         speakers: SpeakerBounds | None = None,
+        vocabulary: list[str] | None = None,
         on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
         report_stage(on_stage, JobStage.TRANSCRIBING)
-        payload = request_transcription(self._settings, audio_path, language=language, model=model)
+        payload = request_transcription(
+            self._settings, audio_path, language=language, model=model, vocabulary=vocabulary
+        )
         provider_words, plain_segments = parse_verbose_json(payload)
         if not provider_words and not plain_segments:
             raise RuntimeError("whisper API returned neither words nor segments")

@@ -91,7 +91,8 @@ async def _ensure_queue_capacity(deps: AppDeps, client_id: str) -> None:
         )
 
 
-_TRANSCRIPT_FIELDS = ("words", "segments")
+_TRANSCRIPT_FIELDS = ("words", "segments")  # size-capped against max_transcript_bytes
+_JSON_FIELDS = (*_TRANSCRIPT_FIELDS, "vocabulary")
 
 
 def _part_too_large(deps: AppDeps) -> HTTPException:
@@ -137,12 +138,12 @@ async def _job_from_multipart(request: Request, deps: AppDeps, client_id: str) -
     fields: dict[str, object] = {
         key: value for key, value in form.items() if key != "file" and value != ""
     }
-    # Multipart values are strings; the transcript parts carry JSON arrays.
-    for name in _TRANSCRIPT_FIELDS:
+    # Multipart values are strings; these parts carry JSON arrays.
+    for name in _JSON_FIELDS:
         raw = fields.get(name)
         if not isinstance(raw, str):
             continue
-        if len(raw.encode()) > deps.settings.max_transcript_bytes:
+        if name in _TRANSCRIPT_FIELDS and len(raw.encode()) > deps.settings.max_transcript_bytes:
             raise HTTPException(
                 status.HTTP_413_CONTENT_TOO_LARGE,
                 detail=f"transcript exceeds {deps.settings.max_transcript_bytes} bytes",

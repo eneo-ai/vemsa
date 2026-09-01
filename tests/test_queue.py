@@ -49,6 +49,7 @@ async def test_upload_job_completes_and_audio_deleted(
             "model": settings.default_model,
             "diarize": True,
             "speakers": None,
+            "vocabulary": None,
         }
     ]
 

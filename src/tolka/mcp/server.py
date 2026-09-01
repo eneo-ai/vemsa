@@ -39,7 +39,9 @@ def build_mcp(deps: AppDeps) -> FastMCP:
             return next(iter(client_ids))
         raise ToolError("authenticated client identity is unavailable")
 
-    async def _submit(url: str, language: str, diarize: bool) -> str:
+    async def _submit(
+        url: str, language: str, diarize: bool, vocabulary: list[str] | None = None
+    ) -> str:
         client_id = _client_id()
         total = await deps.ready_store.count_active()
         client_total = await deps.ready_store.count_active(client_id=client_id)
@@ -48,7 +50,12 @@ def build_mcp(deps: AppDeps) -> FastMCP:
         if client_total >= deps.settings.max_queued_jobs_per_client:
             raise ToolError("client has reached its active job limit")
         try:
-            job_request = JobRequest(source_url=url, language=language, diarize=diarize)  # type: ignore[arg-type]
+            job_request = JobRequest(
+                source_url=url,  # type: ignore[arg-type]
+                language=language,  # type: ignore[arg-type]
+                diarize=diarize,
+                vocabulary=vocabulary,
+            )
         except ValidationError as exc:
             raise ToolError(f"invalid arguments: {exc}") from exc
         job = new_job(job_request, client_id=client_id)
@@ -58,10 +65,17 @@ def build_mcp(deps: AppDeps) -> FastMCP:
         return job.id
 
     @mcp.tool
-    async def submit_transcription(url: str, language: str = "auto", diarize: bool = True) -> str:
+    async def submit_transcription(
+        url: str,
+        language: str = "auto",
+        diarize: bool = True,
+        vocabulary: list[str] | None = None,
+    ) -> str:
         """Submit an audio URL for transcription; returns a job id to poll with
-        get_transcription. Use for long recordings. language: sv, en, or auto."""
-        return await _submit(url, language, diarize)
+        get_transcription. Use for long recordings. language: sv, en, or auto.
+        vocabulary: names/terms expected in the audio (e.g. participant names),
+        hinting the recognizer's spelling; max 50 short entries."""
+        return await _submit(url, language, diarize, vocabulary)
 
     @mcp.tool
     async def get_transcription(job_id: str) -> str:
@@ -82,13 +96,18 @@ def build_mcp(deps: AppDeps) -> FastMCP:
 
     @mcp.tool
     async def transcribe_audio(
-        url: str, language: str = "auto", diarize: bool = True, ctx: Context | None = None
+        url: str,
+        language: str = "auto",
+        diarize: bool = True,
+        vocabulary: list[str] | None = None,
+        ctx: Context | None = None,
     ) -> str:
         """Transcribe an audio URL and wait for the result. Returns the transcript with
         timestamps and speaker labels. For very long recordings prefer
-        submit_transcription + get_transcription."""
+        submit_transcription + get_transcription. vocabulary: names/terms expected
+        in the audio (e.g. participant names), hinting the recognizer's spelling."""
         await _reject_oversize_source(url, deps)
-        job_id = await _submit(url, language, diarize)
+        job_id = await _submit(url, language, diarize, vocabulary)
         settings = deps.settings
         deadline = asyncio.get_running_loop().time() + settings.mcp_sync_timeout_s
         while asyncio.get_running_loop().time() < deadline:

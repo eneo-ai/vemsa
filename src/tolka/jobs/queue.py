@@ -353,6 +353,7 @@ class JobQueue:
                     model=job.request.model or self._settings.default_model,
                     diarize=job.request.diarize,
                     speakers=job.request.speaker_bounds(),
+                    vocabulary=job.request.vocabulary,
                     on_stage=_report_stage,
                 )
             # counted before the floor check so floored jobs still show up in the

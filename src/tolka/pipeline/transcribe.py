@@ -73,8 +73,15 @@ class EasyTranscriberEngine:
         model: str,
         diarize: bool,
         speakers: SpeakerBounds | None = None,
+        vocabulary: list[str] | None = None,
         on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
+        if vocabulary:
+            logger.warning(
+                "easytranscriber has no vocabulary/prompt support; ignoring %d terms",
+                len(vocabulary),
+            )
+
         from easytranscriber.pipelines import pipeline
 
         # GPU-VERIFY(milestone-2): confirm easytranscriber accepts language=None for

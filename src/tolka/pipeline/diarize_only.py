@@ -28,6 +28,7 @@ class DiarizeOnlyEngine:
         model: str,
         diarize: bool,
         speakers: SpeakerBounds | None = None,
+        vocabulary: list[str] | None = None,
         on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
         raise RuntimeError("this deployment only labels speakers (TOLKA_ENGINE=diarize)")

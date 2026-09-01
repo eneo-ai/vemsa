@@ -120,6 +120,51 @@ def test_extra_form_fields_are_sent(whisper_settings: Settings, audio_file: Path
 
 
 @respx.mock
+def test_vocabulary_is_sent_as_prompt(whisper_settings: Settings, audio_file: Path):
+    route = respx.post(ENDPOINT).mock(return_value=Response(200, json=WORD_PAYLOAD))
+    engine = OpenAIWhisperEngine(whisper_settings, diarizer=FakeDiarizer())
+
+    engine.transcribe(
+        audio_file,
+        language="sv",
+        model="kb-whisper",
+        diarize=False,
+        vocabulary=["Anna Lindqvist", "Tolka"],
+    )
+
+    body = route.calls.last.request.read()
+    assert b'name="prompt"' in body
+    assert b"Anna Lindqvist, Tolka" in body
+
+
+@respx.mock
+def test_vocabulary_overrides_static_extra_form_prompt(
+    whisper_settings: Settings, audio_file: Path
+):
+    whisper_settings.whisper_extra_form = ["prompt=static hint"]
+    route = respx.post(ENDPOINT).mock(return_value=Response(200, json=WORD_PAYLOAD))
+    engine = OpenAIWhisperEngine(whisper_settings, diarizer=FakeDiarizer())
+
+    engine.transcribe(
+        audio_file, language="sv", model="kb-whisper", diarize=False, vocabulary=["Anna"]
+    )
+
+    body = route.calls.last.request.read()
+    assert body.count(b'name="prompt"') == 1
+    assert b"static hint" not in body and b"Anna" in body
+
+
+@respx.mock
+def test_no_vocabulary_sends_no_prompt(whisper_settings: Settings, audio_file: Path):
+    route = respx.post(ENDPOINT).mock(return_value=Response(200, json=WORD_PAYLOAD))
+    engine = OpenAIWhisperEngine(whisper_settings, diarizer=FakeDiarizer())
+
+    engine.transcribe(audio_file, language="sv", model="kb-whisper", diarize=False)
+
+    assert b'name="prompt"' not in route.calls.last.request.read()
+
+
+@respx.mock
 def test_segment_only_fallback_assigns_speakers_per_segment(
     whisper_settings: Settings, audio_file: Path
 ):

@@ -3,13 +3,19 @@ from enum import StrEnum
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, HttpUrl, model_validator
+from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
 Language = Literal["sv", "en", "auto"]
 # transcribe: run the engine end to end. diarize: the caller supplies the transcript
 # (word timestamps in seconds from the start of the audio); Tolka adds speaker labels.
 JobTask = Literal["transcribe", "diarize"]
 EXTERNAL_MODEL = "external"
+
+# Whisper's prompt window is ~224 tokens; cap the vocabulary well under it so the
+# hint never truncates mid-name.
+VOCABULARY_MAX_TERMS = 50
+VOCABULARY_MAX_TERM_CHARS = 64
+VOCABULARY_MAX_TOTAL_CHARS = 1024
 
 
 class JobStatus(StrEnum):
@@ -100,6 +106,30 @@ class JobRequest(BaseModel):
     num_speakers: int | None = Field(default=None, ge=1)
     min_speakers: int | None = Field(default=None, ge=1)
     max_speakers: int | None = Field(default=None, ge=1)
+    # task=transcribe only: names/terms likely to occur in the audio, passed to
+    # the ASR decoder as a prompt hint (remote/hybrid tiers; the local tier
+    # ignores it).
+    vocabulary: list[str] | None = None
+
+    @field_validator("vocabulary")
+    @classmethod
+    def _clean_vocabulary(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        terms = [term.strip() for term in value if term.strip()]
+        if not terms:
+            return None
+        if len(terms) > VOCABULARY_MAX_TERMS:
+            raise ValueError(f"vocabulary is capped at {VOCABULARY_MAX_TERMS} entries")
+        if any(len(term) > VOCABULARY_MAX_TERM_CHARS for term in terms):
+            raise ValueError(
+                f"vocabulary terms are capped at {VOCABULARY_MAX_TERM_CHARS} characters"
+            )
+        if sum(len(term) for term in terms) > VOCABULARY_MAX_TOTAL_CHARS:
+            raise ValueError(
+                f"vocabulary is capped at {VOCABULARY_MAX_TOTAL_CHARS} characters total"
+            )
+        return terms
 
     @model_validator(mode="after")
     def _validate_task(self) -> "JobRequest":
@@ -115,6 +145,8 @@ class JobRequest(BaseModel):
             raise ValueError("min_speakers cannot exceed max_speakers")
         if not self.diarize and self.speaker_bounds() is not None:
             raise ValueError("speaker bounds require diarize=true")
+        if self.task != "transcribe" and self.vocabulary is not None:
+            raise ValueError("vocabulary is only accepted for task=transcribe")
         if self.task == "transcribe":
             if self.words is not None or self.segments is not None:
                 raise ValueError("words and segments are only accepted for task=diarize")

@@ -115,8 +115,17 @@ curl -X POST http://localhost:8000/v1/jobs \
 
 curl -X POST http://localhost:8000/v1/jobs \
   -H "Authorization: Bearer $TOKEN" \
-  -F file=@meeting.mp3 -F language=sv
+  -F file=@meeting.mp3 -F language=sv \
+  -F 'vocabulary=["Anna Lindqvist","Çagri"]'
 ```
+
+`vocabulary` is an optional list of names/terms likely to occur in the audio (meeting
+participants, product names). It is passed to the whisper provider as the OpenAI-compatible
+`prompt` field, biasing the decoder toward those spellings — a hint, not a guarantee, and in
+ambiguous audio it can also bias *toward* hearing the hinted terms. Capped at 50 entries of
+up to 64 characters (1024 total). Only accepted for `task=transcribe` (a diarize job runs no
+ASR — 422); the local tier has no prompt support and logs-and-ignores it; a per-job
+vocabulary overrides a static `prompt` configured via `TOLKA_WHISPER_EXTRA_FORM`.
 
 Poll `GET /v1/jobs/{id}` until `status` is `completed`, then fetch `GET /v1/jobs/{id}/result`:
 
@@ -221,6 +230,7 @@ All settings via environment variables with the `TOLKA_` prefix (see `src/tolka/
 | `TOLKA_WHISPER_API_BASE` | – | OpenAI-compatible base URL, e.g. `http://whisper-host:8000/v1` (required for hybrid/remote) |
 | `TOLKA_WHISPER_API_KEY` | – | Bearer token for the whisper endpoint |
 | `TOLKA_WHISPER_TIMEOUT_S` | 3600 | Per-request timeout against the whisper endpoint |
+| `TOLKA_WHISPER_EXTRA_FORM` | – | Extra `key=value` form fields sent with every provider transcription request; a job's `vocabulary` overrides a static `prompt` set here |
 | `TOLKA_DEFAULT_MODEL` | `KBLab/kb-whisper-large` | Whisper model (name passed to the endpoint, or loaded locally) |
 | `TOLKA_EMISSIONS_MODEL` | `KBLab/wav2vec2-large-voxrex-swedish` | Fallback CTC model for forced alignment when the job language has no `TOLKA_EMISSIONS_MODELS` entry |
 | `TOLKA_EMISSIONS_MODELS` | `sv=KBLab/wav2vec2-large-voxrex-swedish` | Per-language CTC alignment models, comma-separated `lang=model`; an unmapped explicit language aligns with the fallback under a logged warning (`align.language_fallback`) |

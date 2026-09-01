@@ -24,7 +24,12 @@ logger = logging.getLogger(__name__)
 
 
 def request_transcription(
-    settings: Settings, audio_path: Path, *, language: str, model: str
+    settings: Settings,
+    audio_path: Path,
+    *,
+    language: str,
+    model: str,
+    vocabulary: list[str] | None = None,
 ) -> dict[str, Any]:
     """Blocking POST to the whisper endpoint; verbose_json with word+segment granularity."""
     if not settings.whisper_api_base:
@@ -44,6 +49,10 @@ def request_transcription(
     for item in settings.whisper_extra_form:
         key, _, value = item.partition("=")
         data[key] = value
+    if vocabulary:
+        # OpenAI-compatible decoder hint; a per-job vocabulary overrides a static
+        # prompt from TOLKA_WHISPER_EXTRA_FORM.
+        data["prompt"] = ", ".join(vocabulary)
     headers = {}
     if settings.whisper_api_key:
         headers["Authorization"] = f"Bearer {settings.whisper_api_key}"
@@ -157,10 +166,13 @@ class OpenAIWhisperEngine:
         model: str,
         diarize: bool,
         speakers: SpeakerBounds | None = None,
+        vocabulary: list[str] | None = None,
         on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
         report_stage(on_stage, JobStage.TRANSCRIBING)
-        payload = request_transcription(self._settings, audio_path, language=language, model=model)
+        payload = request_transcription(
+            self._settings, audio_path, language=language, model=model, vocabulary=vocabulary
+        )
         words, plain_segments = parse_verbose_json(payload)
         if not words and not plain_segments:
             raise RuntimeError("whisper API returned neither words nor segments")

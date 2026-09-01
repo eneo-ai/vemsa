@@ -23,6 +23,7 @@ class TranscriptionEngine(Protocol):
         model: str,
         diarize: bool,
         speakers: SpeakerBounds | None = None,
+        vocabulary: list[str] | None = None,
         on_stage: StageReporter | None = None,
     ) -> TranscriptionResult: ...
 
