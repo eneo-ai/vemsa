@@ -21,12 +21,12 @@ WORD_PAYLOAD = {
         {"id": 1, "start": 2.0, "end": 2.6, "text": " Tack så mycket."},
     ],
     "words": [
-        {"word": "Hej", "start": 0.0, "end": 0.4},
+        {"word": "Hej", "start": 0.0, "end": 0.4, "probability": 0.98},
         {"word": "och", "start": 0.5, "end": 0.7},
-        {"word": "välkomna.", "start": 0.8, "end": 1.4},
+        {"word": "välkomna.", "start": 0.8, "end": 1.4, "probability": 0.87},
         {"word": "Tack", "start": 2.0, "end": 2.2},
         {"word": "så", "start": 2.3, "end": 2.4},
-        {"word": "mycket.", "start": 2.45, "end": 2.6},
+        {"word": "mycket.", "start": 2.45, "end": 2.6, "probability": 0.31},
     ],
 }
 
@@ -191,3 +191,12 @@ def test_parse_verbose_json_nests_words_by_midpoint():
     assert len(words) == 6
     assert [w.word for w in segments[1].words] == ["Tack", "så", "mycket."]
     assert segments[0].speaker is None
+
+
+def test_parse_verbose_json_keeps_word_probability():
+    words, segments = parse_verbose_json(WORD_PAYLOAD)
+    assert words[0].probability == 0.98
+    # providers that omit probability (plain OpenAI) parse to None
+    assert words[1].probability is None
+    # nested segment words are the same objects and carry it too
+    assert segments[1].words[-1].probability == 0.31

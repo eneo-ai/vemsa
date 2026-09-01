@@ -199,7 +199,15 @@ def _words_from_alignments(speeches: list[Any]) -> list[Word]:
                 text = getattr(item, "word", None) or getattr(item, "text", None)
                 start = getattr(item, "start", None)
                 end = getattr(item, "end", None)
+                score = getattr(item, "score", None)
                 if text is None or start is None or end is None:
                     raise ValueError(f"unrecognized alignment shape: {item!r}")
-                words.append(Word(word=str(text).strip(), start=float(start), end=float(end)))
+                words.append(
+                    Word(
+                        word=str(text).strip(),
+                        start=float(start),
+                        end=float(end),
+                        probability=float(score) if score is not None else None,
+                    )
+                )
     return words

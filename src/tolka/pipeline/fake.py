@@ -27,11 +27,11 @@ class CannedEngine:
         if self._delay_s:
             time.sleep(self._delay_s)
         words = [
-            Word(word="detta", start=0.0, end=0.3),
-            Word(word="är", start=0.35, end=0.5),
+            Word(word="detta", start=0.0, end=0.3, probability=0.99),
+            Word(word="är", start=0.35, end=0.5, probability=0.97),
             Word(word="en", start=0.55, end=0.7),
-            Word(word="fejkad", start=0.75, end=1.1),
-            Word(word="transkribering", start=1.15, end=2.0),
+            Word(word="fejkad", start=0.75, end=1.1, probability=0.42),
+            Word(word="transkribering", start=1.15, end=2.0, probability=0.88),
         ]
         segment = Segment(
             start=0.0,

@@ -45,7 +45,7 @@ def make_result(diarize: bool = True) -> TranscriptionResult:
             speaker=speakers[0],
             text="hej och välkomna",
             words=[
-                Word(word="hej", start=0.0, end=0.4),
+                Word(word="hej", start=0.0, end=0.4, probability=0.98),
                 Word(word="och", start=0.5, end=0.7),
                 Word(word="välkomna", start=0.8, end=1.4),
             ],

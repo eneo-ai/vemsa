@@ -73,3 +73,49 @@ def test_emissions_models_entries_are_validated(tmp_path):
             database_url="postgresql://unused/unused",
             emissions_models="not-a-pair",
         )
+
+
+class FakeAlignedWord:
+    def __init__(self, text: str, start: float, end: float, score: float | None = None):
+        self.text = text
+        self.start = start
+        self.end = end
+        self.score = score
+
+
+class FakeAlignmentSegment:
+    def __init__(self, words):
+        self.words = words
+
+
+class FakeSpeechSegment:
+    def __init__(self, words):
+        self.alignments = [FakeAlignmentSegment(words)]
+
+
+def test_alignment_scores_become_word_probabilities():
+    from tolka.pipeline.align import _words_from_alignments
+
+    speech = FakeSpeechSegment(
+        [FakeAlignedWord("hej", 0.0, 0.4, score=0.91), FakeAlignedWord("då", 0.5, 0.7)]
+    )
+    words = _words_from_alignments([speech])
+    assert [word.probability for word in words] == [0.91, None]
+
+
+def test_transcribe_alignment_scores_become_word_probabilities():
+    from tolka.pipeline.transcribe import words_from_alignments
+
+    segment = FakeAlignmentSegment(
+        [FakeAlignedWord("hej", 0.0, 0.4, score=0.55), FakeAlignedWord("då", 0.5, 0.7)]
+    )
+    words = words_from_alignments([segment])
+    assert [word.probability for word in words] == [0.55, None]
+
+
+def test_word_validates_without_probability():
+    # results stored before the probability field existed must still deserialize
+    from tolka.jobs.models import Word
+
+    word = Word.model_validate({"word": "hej", "start": 0.0, "end": 0.4})
+    assert word.probability is None

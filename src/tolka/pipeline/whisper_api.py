@@ -86,10 +86,19 @@ def parse_verbose_json(payload: dict[str, Any]) -> tuple[list[Word], list[Segmen
 
     Either list may be empty: some servers return only segments even when word
     granularity was requested, and vice versa."""
-    words = [
-        Word(word=str(item["word"]).strip(), start=float(item["start"]), end=float(item["end"]))
-        for item in payload.get("words") or []
-    ]
+    words = []
+    for item in payload.get("words") or []:
+        # faster-whisper-derived servers include a per-word probability; plain
+        # OpenAI does not.
+        probability = item.get("probability")
+        words.append(
+            Word(
+                word=str(item["word"]).strip(),
+                start=float(item["start"]),
+                end=float(item["end"]),
+                probability=float(probability) if probability is not None else None,
+            )
+        )
     words.sort(key=lambda word: word.start)
 
     segments = []

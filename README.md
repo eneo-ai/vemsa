@@ -95,6 +95,13 @@ Who wins when several sources are available differs by task, deliberately:
 Fallbacks are logged (`alignment=forced words=<n>`, or `alignment=segment_only
 reason=<...>`), so the worker log always answers "did alignment run, and if not, why".
 
+Each word may also carry a `probability` — a confidence score whose meaning follows the
+rung: on `forced` it is the CTC forced-alignment score; on `provider_words` it is the ASR
+decoder's posterior probability, passed through when the provider or caller reports one
+(faster-whisper-derived servers do, plain OpenAI does not). It is `null` when the source
+reports none, and values are not comparable across rungs. The `segment_split` and
+`segment_only` rungs produce no words at all.
+
 ## Job API
 
 Submit a job with a source URL (JSON) or a direct upload (multipart):
@@ -153,7 +160,7 @@ worker returns `503`.
   "text": "[00:00:12 - 00:00:15] SPEAKER_00: ...",
   "segments": [
     {"start": 12.3, "end": 15.1, "speaker": "SPEAKER_00", "text": "...",
-     "words": [{"word": "...", "start": 12.3, "end": 12.6}]}
+     "words": [{"word": "...", "start": 12.3, "end": 12.6, "probability": 0.97}]}
   ]
 }
 ```

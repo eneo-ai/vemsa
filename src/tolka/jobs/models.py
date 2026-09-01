@@ -32,6 +32,11 @@ class Word(BaseModel):
     word: str
     start: float
     end: float
+    # Confidence for this word when the source reports one. Semantics follow the
+    # result's `alignment` field: provider_words = the ASR decoder's posterior
+    # probability, forced = the CTC forced-alignment score. Not comparable
+    # across rungs; None when the source reports no confidence.
+    probability: float | None = None
 
 
 class Segment(BaseModel):
