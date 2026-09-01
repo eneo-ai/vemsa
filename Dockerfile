@@ -24,12 +24,16 @@ ENV UV_LINK_MODE=copy
 
 # Dependency layer: cached until pyproject/lock change
 COPY pyproject.toml uv.lock README.md ./
-RUN EXTRA_FLAGS="--extra ${TORCH_VARIANT}"; \
+# The cache mount keeps uv's unpacked-wheel cache out of the image layers;
+# without it the layer carries a near-duplicate of the entire venv (~8GB for gpu)
+RUN --mount=type=cache,target=/root/.cache/uv \
+    EXTRA_FLAGS="--extra ${TORCH_VARIANT}"; \
     for extra in ${ML_EXTRAS}; do EXTRA_FLAGS="${EXTRA_FLAGS} --extra ${extra}"; done; \
     uv sync --frozen --no-dev --no-install-project ${EXTRA_FLAGS}
 
 COPY src/ src/
-RUN EXTRA_FLAGS="--extra ${TORCH_VARIANT}"; \
+RUN --mount=type=cache,target=/root/.cache/uv \
+    EXTRA_FLAGS="--extra ${TORCH_VARIANT}"; \
     for extra in ${ML_EXTRAS}; do EXTRA_FLAGS="${EXTRA_FLAGS} --extra ${extra}"; done; \
     uv sync --frozen --no-dev ${EXTRA_FLAGS}
 
@@ -39,7 +43,9 @@ ENV PATH=/app/.venv/bin:$PATH \
     TOLKA_WORK_DIR=/data/work \
     TOLKA_DB_PATH=/data/tolka.sqlite3
 
-RUN mkdir -p /models /data && chown -R 1000:1000 /models /data /app
+# /app (venv included) stays root-owned read-only; chowning it would copy the
+# whole venv into a new layer. The runtime user only writes /models and /data.
+RUN mkdir -p /models /data && chown -R 1000:1000 /models /data
 USER 1000:1000
 
 EXPOSE 8000
