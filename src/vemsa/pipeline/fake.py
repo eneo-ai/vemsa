@@ -1,12 +1,12 @@
-"""Canned-output engine for local smoke runs (TOLKA_ENGINE=fake) — never for production."""
+"""Canned-output engine for local smoke runs (VEMSA_ENGINE=fake) — never for production."""
 
 import time
 from pathlib import Path
 
-from tolka.jobs.models import JobStage, Segment, SpeakerBounds, TranscriptionResult, Word
-from tolka.pipeline.base import StageReporter, report_stage
-from tolka.pipeline.diarize import resolve_segments
-from tolka.pipeline.render import render_text
+from vemsa.jobs.models import JobStage, Segment, SpeakerBounds, TranscriptionResult, Word
+from vemsa.pipeline.base import StageReporter, report_stage
+from vemsa.pipeline.diarize import resolve_segments
+from vemsa.pipeline.render import render_text
 
 
 class CannedEngine:

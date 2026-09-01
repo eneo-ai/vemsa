@@ -14,8 +14,8 @@ from uuid import uuid4
 
 import httpx
 
-from tolka.config import Settings
-from tolka.jobs.models import (
+from vemsa.config import Settings
+from vemsa.jobs.models import (
     ALIGNMENT_RANK,
     EXTERNAL_MODEL,
     Job,
@@ -24,9 +24,9 @@ from tolka.jobs.models import (
     TranscriptionResult,
     WebhookOutboxEvent,
 )
-from tolka.jobs.store import JobStore
-from tolka.jobs.store_factory import open_job_store
-from tolka.observability import (
+from vemsa.jobs.store import JobStore
+from vemsa.jobs.store_factory import open_job_store
+from vemsa.observability import (
     JOB_ALIGNMENT,
     JOB_DURATION,
     JOB_STAGE_DURATION,
@@ -35,9 +35,9 @@ from tolka.observability import (
     WEBHOOK_DELIVERIES,
     job_id_var,
 )
-from tolka.pipeline.base import TranscriptionEngine
-from tolka.pipeline.fetch import fetch_url
-from tolka.security import ForbiddenUrlError, validate_outbound_url
+from vemsa.pipeline.base import TranscriptionEngine
+from vemsa.pipeline.fetch import fetch_url
+from vemsa.security import ForbiddenUrlError, validate_outbound_url
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ class JobLeaseLostError(RuntimeError):
 
 
 class AlignmentBelowFloorError(RuntimeError):
-    """The result's word-timestamp rung degraded below TOLKA_MIN_ALIGNMENT.
+    """The result's word-timestamp rung degraded below VEMSA_MIN_ALIGNMENT.
 
     Raised instead of completing so a quality-critical deployment fails loudly
     (and retryably) rather than shipping a coarser result. The message is safe
@@ -95,9 +95,9 @@ class JobQueue:
     async def start(self) -> None:
         self._stopping = False
         self._tasks = [
-            asyncio.create_task(self._worker_loop(), name="tolka-worker"),
-            asyncio.create_task(self._purge_loop(), name="tolka-purge"),
-            asyncio.create_task(self._webhook_loop(), name="tolka-webhook"),
+            asyncio.create_task(self._worker_loop(), name="vemsa-worker"),
+            asyncio.create_task(self._purge_loop(), name="vemsa-purge"),
+            asyncio.create_task(self._webhook_loop(), name="vemsa-webhook"),
         ]
         await self._start_control_thread()
         assert self._control_loop is not None
@@ -117,7 +117,7 @@ class JobQueue:
         self._control_thread = threading.Thread(
             target=self._run_control_loop,
             args=(ready, failures),
-            name="tolka-lease-control",
+            name="vemsa-lease-control",
             daemon=True,
         )
         self._control_thread.start()
@@ -150,7 +150,7 @@ class JobQueue:
         self.notify()
         self._webhook_wakeup.set()
         background_tasks = [
-            task for task in self._tasks if task.get_name() not in {"tolka-worker", "tolka-webhook"}
+            task for task in self._tasks if task.get_name() not in {"vemsa-worker", "vemsa-webhook"}
         ]
         for task in background_tasks:
             task.cancel()
@@ -340,7 +340,7 @@ class JobQueue:
                     words=job.request.words or [],
                     segments=job.request.segments or [],
                     language=job.request.language,
-                    # The result must never claim Tolka's default model ran.
+                    # The result must never claim Vemsa's default model ran.
                     model=job.request.model or EXTERNAL_MODEL,
                     speakers=job.request.speaker_bounds(),
                     on_stage=_report_stage,
@@ -479,7 +479,7 @@ class JobQueue:
             return
         raise AlignmentBelowFloorError(
             f"word-timestamp quality degraded to {result.alignment or 'none'},"
-            f" below the configured floor of {floor} (TOLKA_MIN_ALIGNMENT)"
+            f" below the configured floor of {floor} (VEMSA_MIN_ALIGNMENT)"
         )
 
     async def _heartbeat_lease(
@@ -560,8 +560,8 @@ class JobQueue:
             signature = hmac.new(
                 secret.encode(), timestamp.encode() + b"." + body, hashlib.sha256
             ).hexdigest()
-            headers["X-Tolka-Timestamp"] = timestamp
-            headers["X-Tolka-Signature-256"] = f"sha256={signature}"
+            headers["X-Vemsa-Timestamp"] = timestamp
+            headers["X-Vemsa-Signature-256"] = f"sha256={signature}"
         try:
             async with httpx.AsyncClient(timeout=self._settings.webhook_timeout_s) as client:
                 response = await client.post(event.url, content=body, headers=headers)

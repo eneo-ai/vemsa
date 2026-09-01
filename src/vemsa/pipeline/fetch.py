@@ -5,7 +5,7 @@ from uuid import uuid4
 import httpx
 from starlette.datastructures import UploadFile
 
-from tolka.security import ForbiddenUrlError, validate_outbound_url
+from vemsa.security import ForbiddenUrlError, validate_outbound_url
 
 _CHUNK_SIZE = 1024 * 1024
 _MAX_REDIRECTS = 5

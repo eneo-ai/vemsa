@@ -9,7 +9,7 @@ Production Compose runs three services:
 3. `postgres` stores jobs, results, worker heartbeats, and webhook outbox events.
 
 PostgreSQL is the only supported job store, in development and tests as well as production
-(`TOLKA_DATABASE_URL` is required). Claims use row locks with `SKIP LOCKED`, expiring leases,
+(`VEMSA_DATABASE_URL` is required). Claims use row locks with `SKIP LOCKED`, expiring leases,
 and heartbeats so multiple workers do not intentionally claim the same job.
 
 Audio files live on the shared `/data` Docker volume and are deleted after a terminal job.
@@ -18,7 +18,7 @@ before scheduling workers on multiple machines.
 
 ## Container images
 
-CI publishes images to `ghcr.io/eneo-ai/tolka` on every push to `main` and on `v*` release
+CI publishes images to `ghcr.io/eneo-ai/vemsa` on every push to `main` and on `v*` release
 tags (`.github/workflows/docker.yaml`). One image serves both the `api` and `worker`
 services; two flavors are built:
 
@@ -30,7 +30,7 @@ services; two flavors are built:
 There is no arm64 image: torchcodec (pyannote 4's audio decoder) publishes no linux/arm64
 wheels. On Apple silicon, develop natively via `uv sync` (macOS arm64 wheels exist).
 
-Both flavors bake in every ML extra (`diarize align local`), so `TOLKA_ENGINE` alone decides
+Both flavors bake in every ML extra (`diarize align local`), so `VEMSA_ENGINE` alone decides
 behavior at runtime. Slimmer builds (e.g. `ML_EXTRAS="diarize"` for remote-only) are a local
 `docker build --build-arg` away but are not published.
 
@@ -53,7 +53,7 @@ services:
 ```
 
 ```bash
-TOLKA_IMAGE=ghcr.io/eneo-ai/tolka:latest-cpu \
+VEMSA_IMAGE=ghcr.io/eneo-ai/vemsa:latest-cpu \
   docker compose -f compose.yaml -f compose.cpu.yaml up --no-build
 ```
 
@@ -66,12 +66,12 @@ and size job deadlines accordingly.
 
 ### Selecting an image
 
-`compose.yaml` names `${TOLKA_IMAGE:-ghcr.io/eneo-ai/tolka:latest}` on both services while
+`compose.yaml` names `${VEMSA_IMAGE:-ghcr.io/eneo-ai/vemsa:latest}` on both services while
 keeping `build: .`, so the default `docker compose up --build` workflow still builds from
 source. To run a published image instead:
 
 ```bash
-export TOLKA_IMAGE=ghcr.io/eneo-ai/tolka:v0.1.0        # or @sha256:… (preferred, see below)
+export VEMSA_IMAGE=ghcr.io/eneo-ai/vemsa:v0.1.0        # or @sha256:… (preferred, see below)
 docker compose pull api worker
 docker compose up --no-build
 ```
@@ -84,7 +84,7 @@ than by mutable tag.
 Production credentials must be named:
 
 ```text
-TOLKA_API_TOKENS=eneo=long-random-value,automation=another-long-random-value
+VEMSA_API_TOKENS=eneo=long-random-value,automation=another-long-random-value
 ```
 
 The name becomes `client_id` and owns the job. Tokens are internal server-to-server
@@ -98,40 +98,40 @@ Every engine tier serves both job kinds: `task=transcribe` runs the full engine 
 `task=diarize` labels speakers on a caller-supplied transcript, chosen per request. The
 expected topology is one full deployment where the consumer's request says what it wants.
 
-`TOLKA_ENGINE=diarize` is an optional lockdown for a deployment that should never
-transcribe: no ASR engine is constructed, `TOLKA_WHISPER_API_BASE` is not
+`VEMSA_ENGINE=diarize` is an optional lockdown for a deployment that should never
+transcribe: no ASR engine is constructed, `VEMSA_WHISPER_API_BASE` is not
 required, and `task=transcribe` submissions are rejected at admission with 422. The tier
 requires `HF_TOKEN` in production (gated pyannote models). Sizing: pyannote runs at roughly
 real time on CPU — fine for short recordings; use a GPU host when fan-in or recording length
 makes that untenable. Caller transcripts ride in `jobs.request_json`, so the retention purge
 and the "never log transcripts" rule now cover request payloads as well as results;
-`TOLKA_MAX_TRANSCRIPT_BYTES` (default 8 MiB) caps the accepted transcript size.
+`VEMSA_MAX_TRANSCRIPT_BYTES` (default 8 MiB) caps the accepted transcript size.
 
 ## Consumer integrations (eneo)
 
-The full responsibility split between eneo and Tolka — who owns identity, storage, ASR,
+The full responsibility split between eneo and Vemsa — who owns identity, storage, ASR,
 timestamps, and the output contract — is documented in
 [ARCHITECTURE.md](ARCHITECTURE.md); this section is the deployment checklist.
 
-Eneo integrates Tolka as the engine for its flow `transcribe_only` steps. Tolka exposes
+Eneo integrates Vemsa as the engine for its flow `transcribe_only` steps. Vemsa exposes
 authenticated readiness, coarse job stages, queue position, and idempotent cancellation.
 Eneo uploads the original audio as multipart to `POST /v1/jobs`, polls
 `GET /v1/jobs/{id}`, cancels through `DELETE /v1/jobs/{id}`, and passes `result.text`
 verbatim into the flow output. Deployment checklist:
 
-1. **Credential**: provision a named token, `TOLKA_API_TOKENS=eneo=<long-random-value>`;
+1. **Credential**: provision a named token, `VEMSA_API_TOKENS=eneo=<long-random-value>`;
    eneo stores it as `FLOW_TRANSCRIPTION_SERVICE_API_KEY`.
-2. **Reachability**: the Compose file publishes the API on loopback only. Set `TOLKA_BIND`
+2. **Reachability**: the Compose file publishes the API on loopback only. Set `VEMSA_BIND`
    to a private interface reachable by eneo's flow execution worker, or use
    `compose.eneo.yaml` to attach the API container to a shared Docker network. For local
-   development against eneo's devcontainer, `TOLKA_BIND=0.0.0.0` makes the port reachable
+   development against eneo's devcontainer, `VEMSA_BIND=0.0.0.0` makes the port reachable
    via `host.docker.internal` (loopback-published ports are not).
 3. **Admission control**: all eneo tenants share the one `eneo` client id, so
-   `TOLKA_MAX_QUEUED_JOBS_PER_CLIENT` (default 10) bounds eneo's total concurrent
+   `VEMSA_MAX_QUEUED_JOBS_PER_CLIENT` (default 10) bounds eneo's total concurrent
    submissions across tenants. Eneo runs up to 4 concurrent flow runs per tenant; size the
-   per-client limit (and `TOLKA_MAX_QUEUED_JOBS`) for the expected multi-tenant fan-in.
+   per-client limit (and `VEMSA_MAX_QUEUED_JOBS`) for the expected multi-tenant fan-in.
    Eneo treats the pre-body 429 as retryable.
-4. **Upload cap**: `TOLKA_MAX_AUDIO_BYTES` (default 2 GiB) binds on the original compressed
+4. **Upload cap**: `VEMSA_MAX_AUDIO_BYTES` (default 2 GiB) binds on the original compressed
    file eneo sends; keep it at or above eneo's maximum audio upload size.
 5. **Retention**: the 72-hour default is ample; eneo fetches results within the run (≤1h).
 6. **Readiness**: call authenticated `GET /v1/health/ready` before enabling the integration.
@@ -141,8 +141,8 @@ verbatim into the flow output. Deployment checklist:
    re-leased without an attempt cap, so the consumer deadline remains the backstop.
 8. **Diarize payload**: eneo's flow transcription sends `task=diarize` with one segment per
    transcription chunk, using chunk boundaries eneo measured itself — the only timestamps
-   in that flow that are certain. Tolka force-aligns the text inside those windows
-   (`TOLKA_DIARIZE_PREFER_ALIGN`, default on), so provider word timestamps are neither
+   in that flow that are certain. Vemsa force-aligns the text inside those windows
+   (`VEMSA_DIARIZE_PREFER_ALIGN`, default on), so provider word timestamps are neither
    needed nor wanted in the payload.
 
 The response contract eneo depends on (multipart part name `file`, status/stage enums,
@@ -163,14 +163,14 @@ and lease expiry. Cancel work that is no longer wanted; restart an unhealthy wor
 the lease expire for work that should retry. Do not edit job rows manually during ordinary
 recovery.
 
-Roll out the Tolka changes before updating consumers. Keep the consumer integration disabled
+Roll out the Vemsa changes before updating consumers. Keep the consumer integration disabled
 until authenticated readiness succeeds. Roll back by disabling consumer submissions,
 cancelling unwanted active jobs, and restoring the previous pinned image; existing terminal
 results remain readable until retention removes them.
 
 ## Outbound network policy
 
-Tolka rejects URL user information, non-HTTP schemes, private addresses by default, and an
+Vemsa rejects URL user information, non-HTTP schemes, private addresses by default, and an
 unapproved hostname when an allowlist is configured. Each source redirect is checked.
 Webhooks require HTTPS by default.
 
@@ -186,10 +186,10 @@ Completion and failure events are inserted transactionally with the terminal job
 Workers claim outbox rows, retry with exponential backoff, and retain exhausted events for
 operator inspection until the parent job's retention cleanup.
 
-When `TOLKA_WEBHOOK_SIGNING_SECRET` is set, requests include:
+When `VEMSA_WEBHOOK_SIGNING_SECRET` is set, requests include:
 
-- `X-Tolka-Timestamp`
-- `X-Tolka-Signature-256: sha256=<hex digest>`
+- `X-Vemsa-Timestamp`
+- `X-Vemsa-Signature-256: sha256=<hex digest>`
 
 The digest is HMAC-SHA256 over `<timestamp>.<raw request body>`. Consumers should reject stale
 timestamps and compare signatures in constant time.
@@ -207,14 +207,14 @@ cancellation ratio, per-stage duration, webhook exhaustion, missing worker heart
 usage, PostgreSQL availability, GPU OOM, and processing real-time factor.
 
 Quality is enforced, not monitored-only: the quality tiers (`local`/`hybrid`/`diarize`
-with `TOLKA_DIARIZE_PREFER_ALIGN=true`) fail a job loudly when forced alignment cannot
+with `VEMSA_DIARIZE_PREFER_ALIGN=true`) fail a job loudly when forced alignment cannot
 run — there is no silent degradation to provider timestamps or a segment-level merge.
-`tolka_job_alignment_total{alignment=...}` counts finished jobs by word-timestamp rung, and
+`vemsa_job_alignment_total{alignment=...}` counts finished jobs by word-timestamp rung, and
 `job.completed` log lines carry the `alignment` field. On those tiers every completed job
 reports `forced`; lower rungs can appear only on deployments that deliberately trust an
-external timestamp source (`TOLKA_ENGINE=remote`, or `PREFER_ALIGN=false`) — there,
+external timestamp source (`VEMSA_ENGINE=remote`, or `PREFER_ALIGN=false`) — there,
 alert on any sustained share of `segment_split`/`segment_only`, hold the provider to its
-timestamp-quality requirements, and consider `TOLKA_MIN_ALIGNMENT` as the enforcement
+timestamp-quality requirements, and consider `VEMSA_MIN_ALIGNMENT` as the enforcement
 floor (e.g. `provider_words`). Also alert on `align.language_fallback` warnings
 (a job language without a configured CTC model). Logs are JSON by
 default and include `request_id`, `job_id`, `client_id`, engine, task, stage, attempt, status,
@@ -224,7 +224,7 @@ participant names, complete source URLs, or webhook payloads.
 The worker narrates its own liveness: `store.opened` at startup names the store backend and
 a credential-free target (a worker on the wrong database is visible from the first line),
 `worker.ready` marks the queue loops running, `worker.heartbeat` reports queued and running
-counts every `TOLKA_LEASE_HEARTBEAT_S`, and each in-flight job emits `job.progress` with its
+counts every `VEMSA_LEASE_HEARTBEAT_S`, and each in-flight job emits `job.progress` with its
 stage and elapsed time on every lease renewal. A silent worker is therefore always a stopped
 or stuck one, never merely an idle one.
 
@@ -237,7 +237,7 @@ job; the store discards the original attempt's late result on commit).
 
 Back up PostgreSQL with the organization's standard encrypted backup and point-in-time recovery
 process. Exercise restore tests. The `/data` volume contains temporary source material and is
-not a substitute for a database backup. Results are deleted after `TOLKA_RETENTION_HOURS`;
+not a substitute for a database backup. Results are deleted after `VEMSA_RETENTION_HOURS`;
 confirm that setting against the organization's records and privacy policy.
 
 ## Release gate

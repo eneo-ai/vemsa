@@ -1,9 +1,9 @@
 from dataclasses import dataclass, field
 
-from tolka.config import Settings
-from tolka.jobs.queue import JobQueue
-from tolka.jobs.store import JobStore
-from tolka.pipeline.base import TranscriptionEngine
+from vemsa.config import Settings
+from vemsa.jobs.queue import JobQueue
+from vemsa.jobs.store import JobStore
+from vemsa.pipeline.base import TranscriptionEngine
 
 
 @dataclass

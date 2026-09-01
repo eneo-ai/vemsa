@@ -4,15 +4,15 @@ import os
 import pytest
 
 from conftest import make_result
-from tolka.jobs.models import JobRequest, JobStage, JobStatus, new_job
-from tolka.jobs.postgres_store import PostgresJobStore
+from vemsa.jobs.models import JobRequest, JobStage, JobStatus, new_job
+from vemsa.jobs.postgres_store import PostgresJobStore
 
 
 @pytest.fixture
 async def postgres_store():
-    database_url = os.getenv("TOLKA_TEST_POSTGRES_URL")
+    database_url = os.getenv("VEMSA_TEST_POSTGRES_URL")
     if not database_url:
-        pytest.skip("TOLKA_TEST_POSTGRES_URL is not configured")
+        pytest.skip("VEMSA_TEST_POSTGRES_URL is not configured")
     store = PostgresJobStore(database_url)
     await store.open()
     await store.pool.execute("TRUNCATE webhook_outbox, jobs, worker_heartbeats")

@@ -1,8 +1,8 @@
 from datetime import UTC, datetime, timedelta
 
 from conftest import make_result
-from tolka.jobs.models import Job, JobRequest, JobStatus
-from tolka.jobs.store import JobStore
+from vemsa.jobs.models import Job, JobRequest, JobStatus
+from vemsa.jobs.store import JobStore
 
 
 def job_at(seconds: int, **request_kwargs) -> Job:

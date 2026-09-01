@@ -13,9 +13,9 @@ import threading
 from pathlib import Path
 from typing import Any, Protocol
 
-from tolka.config import Settings
-from tolka.jobs.models import Segment, Word
-from tolka.pipeline.diarize import _decodable_audio, audio_duration
+from vemsa.config import Settings
+from vemsa.jobs.models import Segment, Word
+from vemsa.pipeline.diarize import _decodable_audio, audio_duration
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +104,7 @@ def _resolve_emissions_model(settings: Settings, language: str) -> str:
     if not matched and language.strip().lower() not in _UNSPECIFIC_LANGUAGES:
         logger.warning(
             "no emissions model configured for language %s; aligning with %s"
-            " (add a TOLKA_EMISSIONS_MODELS entry for word-precise quality)",
+            " (add a VEMSA_EMISSIONS_MODELS entry for word-precise quality)",
             language,
             emissions_model,
             extra={
@@ -128,7 +128,7 @@ def force_align_segments(
 
     easyaligner's pipeline steps hand data to each other through JSON/npy files,
     so each run gets a throwaway directory under work_dir. `language` picks the
-    CTC model via TOLKA_EMISSIONS_MODELS (falling back to TOLKA_EMISSIONS_MODEL
+    CTC model via VEMSA_EMISSIONS_MODELS (falling back to VEMSA_EMISSIONS_MODEL
     with a warning — an acoustic-model mismatch degrades word precision).
     Alignment errors propagate and fail the job: quality doctrine forbids
     silently degrading to provider timestamps or segment-level merging."""

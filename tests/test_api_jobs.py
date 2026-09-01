@@ -11,16 +11,16 @@ import respx
 from httpx import Response
 
 from conftest import FakeEngine, make_result, make_wav_bytes
-from tolka.config import Settings
-from tolka.jobs.models import (
+from vemsa.config import Settings
+from vemsa.jobs.models import (
     JobRequest,
     JobStage,
     SpeakerBounds,
     TranscriptionResult,
     new_job,
 )
-from tolka.main import create_app
-from tolka.pipeline.base import StageReporter, report_stage
+from vemsa.main import create_app
+from vemsa.pipeline.base import StageReporter, report_stage
 
 AUTH = {"Authorization": "Bearer secret-token"}
 
@@ -108,12 +108,12 @@ async def test_vocabulary_is_plumbed_to_the_engine(settings: Settings):
         response = await client.post(
             "/v1/jobs",
             files={"file": ("meeting.wav", b"fake bytes", "audio/wav")},
-            data={"language": "sv", "vocabulary": '["Anna Lindqvist", "Tolka"]'},
+            data={"language": "sv", "vocabulary": '["Anna Lindqvist", "Vemsa"]'},
             headers=AUTH,
         )
         assert response.status_code == 202
         await poll_until(client, response.json()["job_id"], "completed")
-        assert engine.calls[0]["vocabulary"] == ["Anna Lindqvist", "Tolka"]
+        assert engine.calls[0]["vocabulary"] == ["Anna Lindqvist", "Vemsa"]
 
 
 @respx.mock
@@ -142,7 +142,7 @@ async def test_vocabulary_validation_failures(settings: Settings):
                 headers=AUTH,
             )
 
-        # only meaningful when Tolka runs the ASR itself
+        # only meaningful when Vemsa runs the ASR itself
         words = '[{"word":"hej","start":0.0,"end":0.4}]'
         response = await submit_vocabulary('["Anna"]', task="diarize", words=words)
         assert response.status_code == 422

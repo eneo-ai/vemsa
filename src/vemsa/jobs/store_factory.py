@@ -1,9 +1,9 @@
 import logging
 from urllib.parse import urlsplit
 
-from tolka.config import Settings
-from tolka.jobs.postgres_store import PostgresJobStore
-from tolka.jobs.store import JobStore
+from vemsa.config import Settings
+from vemsa.jobs.postgres_store import PostgresJobStore
+from vemsa.jobs.store import JobStore
 
 logger = logging.getLogger(__name__)
 

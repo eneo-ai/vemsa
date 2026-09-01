@@ -6,7 +6,7 @@ import respx
 from fastapi import UploadFile
 from httpx import Response
 
-from tolka.pipeline.fetch import (
+from vemsa.pipeline.fetch import (
     AudioTooLargeError,
     ForbiddenUrlError,
     fetch_url,

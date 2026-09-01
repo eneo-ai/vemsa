@@ -1,7 +1,7 @@
 """Transcript-window selection for forced alignment."""
 
-from tolka.jobs.models import Segment
-from tolka.pipeline.align import alignment_transcript
+from vemsa.jobs.models import Segment
+from vemsa.pipeline.align import alignment_transcript
 
 
 def segment(start: float, end: float, text: str) -> Segment:
@@ -44,8 +44,8 @@ def test_empty_segments_fall_back_to_the_payload_text():
 
 
 def test_emissions_model_resolution(tmp_path):
-    from tolka.config import Settings
-    from tolka.pipeline.align import _resolve_emissions_model
+    from vemsa.config import Settings
+    from vemsa.pipeline.align import _resolve_emissions_model
 
     settings = Settings(
         _env_file=None,
@@ -65,7 +65,7 @@ def test_emissions_model_resolution(tmp_path):
 def test_emissions_models_entries_are_validated(tmp_path):
     import pytest
 
-    from tolka.config import Settings
+    from vemsa.config import Settings
 
     with pytest.raises(ValueError):
         Settings(
@@ -94,7 +94,7 @@ class FakeSpeechSegment:
 
 
 def test_alignment_scores_become_word_probabilities():
-    from tolka.pipeline.align import words_from_alignments
+    from vemsa.pipeline.align import words_from_alignments
 
     speech = FakeSpeechSegment(
         [FakeAlignedWord("hej", 0.0, 0.4, score=0.91), FakeAlignedWord("då", 0.5, 0.7)]
@@ -104,7 +104,7 @@ def test_alignment_scores_become_word_probabilities():
 
 
 def test_flat_alignment_shapes_are_tolerated():
-    from tolka.pipeline.align import words_from_alignments
+    from vemsa.pipeline.align import words_from_alignments
 
     segment = FakeAlignmentSegment(
         [FakeAlignedWord("hej", 0.0, 0.4, score=0.55), FakeAlignedWord("då", 0.5, 0.7)]
@@ -115,7 +115,7 @@ def test_flat_alignment_shapes_are_tolerated():
 
 def test_word_validates_without_probability():
     # results stored before the probability field existed must still deserialize
-    from tolka.jobs.models import Word
+    from vemsa.jobs.models import Word
 
     word = Word.model_validate({"word": "hej", "start": 0.0, "end": 0.4})
     assert word.probability is None

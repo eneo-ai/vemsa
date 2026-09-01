@@ -4,7 +4,7 @@ The ASR already happened somewhere else; this runs diarization on the audio and
 merges the turns into the caller's words or segments with the same heuristics the
 transcribe task uses, so both tasks render identical output. Whenever the caller's
 words are not trusted (absent, implausible, or set aside by
-TOLKA_DIARIZE_PREFER_ALIGN), the transcript is force-aligned into words — a failed
+VEMSA_DIARIZE_PREFER_ALIGN), the transcript is force-aligned into words — a failed
 or unavailable alignment fails the job rather than degrading to a segment-level
 merge: the service always runs with a GPU, and quality beats completing coarsely."""
 
@@ -12,10 +12,10 @@ import logging
 from pathlib import Path
 from typing import Protocol
 
-from tolka.jobs.models import Alignment, Segment, SpeakerBounds, TranscriptionResult, Word
-from tolka.pipeline.align import SegmentAligner
-from tolka.pipeline.diarize import AttributionTuning, Turn, audio_duration, resolve_segments
-from tolka.pipeline.render import render_text
+from vemsa.jobs.models import Alignment, Segment, SpeakerBounds, TranscriptionResult, Word
+from vemsa.pipeline.align import SegmentAligner
+from vemsa.pipeline.diarize import AttributionTuning, Turn, audio_duration, resolve_segments
+from vemsa.pipeline.render import render_text
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +133,7 @@ def label_speakers(
         # decoded.
         logger.info(
             "caller-supplied words set aside: forced alignment is preferred"
-            " (TOLKA_DIARIZE_PREFER_ALIGN)",
+            " (VEMSA_DIARIZE_PREFER_ALIGN)",
             extra={"event": "label.prefer_align", "words": len(words)},
         )
         words = []

@@ -2,7 +2,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol, TypeAlias
 
-from tolka.jobs.models import JobStage, Segment, SpeakerBounds, TranscriptionResult, Word
+from vemsa.jobs.models import JobStage, Segment, SpeakerBounds, TranscriptionResult, Word
 
 StageReporter: TypeAlias = Callable[[JobStage], None]
 

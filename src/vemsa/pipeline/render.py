@@ -1,4 +1,4 @@
-from tolka.jobs.models import Segment
+from vemsa.jobs.models import Segment
 
 
 def _hms(seconds: float) -> str:

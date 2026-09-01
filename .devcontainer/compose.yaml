@@ -6,11 +6,11 @@ services:
     command: sleep infinity
     volumes:
       - ..:/workspace:cached
-      - tolka-venv:/workspace/.venv
+      - vemsa-venv:/workspace/.venv
     environment:
       # Separate database so the TRUNCATE in the postgres store tests
-      # cannot touch dev jobs in the main `tolka` database.
-      TOLKA_TEST_POSTGRES_URL: postgresql://tolka:tolka@postgres/tolka_test
+      # cannot touch dev jobs in the main `vemsa` database.
+      VEMSA_TEST_POSTGRES_URL: postgresql://vemsa:vemsa@postgres/vemsa_test
     depends_on:
       postgres:
         condition: service_healthy
@@ -18,18 +18,18 @@ services:
   postgres:
     image: postgres:17-bookworm
     environment:
-      POSTGRES_DB: tolka
-      POSTGRES_USER: tolka
-      POSTGRES_PASSWORD: tolka
+      POSTGRES_DB: vemsa
+      POSTGRES_USER: vemsa
+      POSTGRES_PASSWORD: vemsa
     volumes:
-      - tolka-postgres-data:/var/lib/postgresql/data
+      - vemsa-postgres-data:/var/lib/postgresql/data
       - ./initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U tolka -d tolka"]
+      test: ["CMD-SHELL", "pg_isready -U vemsa -d vemsa"]
       interval: 5s
       timeout: 5s
       retries: 10
 
 volumes:
-  tolka-venv:
-  tolka-postgres-data:
+  vemsa-venv:
+  vemsa-postgres-data:

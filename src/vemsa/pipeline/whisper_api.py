@@ -1,7 +1,7 @@
 """Remote transcription via an OpenAI-compatible /audio/transcriptions endpoint
 (e.g. speaches / faster-whisper-server / vLLM hosting KBLab/kb-whisper-large).
 
-OpenAIWhisperEngine trusts the provider's timestamps (TOLKA_ENGINE=remote); the hybrid
+OpenAIWhisperEngine trusts the provider's timestamps (VEMSA_ENGINE=remote); the hybrid
 engine reuses request_transcription/parse_verbose_json from here and force-aligns the
 returned text locally instead. Diarization always runs locally via pyannote."""
 
@@ -12,13 +12,13 @@ from typing import Any
 
 import httpx
 
-from tolka.config import Settings
-from tolka.jobs.models import Alignment, JobStage, Segment, SpeakerBounds, TranscriptionResult, Word
-from tolka.pipeline.align import build_segment_aligner
-from tolka.pipeline.base import StageReporter, report_stage
-from tolka.pipeline.diarize import Diarizer, resolve_segments
-from tolka.pipeline.label import label_speakers, segment_merge_alignment, words_plausible
-from tolka.pipeline.render import render_text
+from vemsa.config import Settings
+from vemsa.jobs.models import Alignment, JobStage, Segment, SpeakerBounds, TranscriptionResult, Word
+from vemsa.pipeline.align import build_segment_aligner
+from vemsa.pipeline.base import StageReporter, report_stage
+from vemsa.pipeline.diarize import Diarizer, resolve_segments
+from vemsa.pipeline.label import label_speakers, segment_merge_alignment, words_plausible
+from vemsa.pipeline.render import render_text
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ def request_transcription(
     """Blocking POST to the whisper endpoint; verbose_json with word+segment granularity."""
     if not settings.whisper_api_base:
         raise RuntimeError(
-            "TOLKA_WHISPER_API_BASE is required (OpenAI-compatible base URL, e.g."
+            "VEMSA_WHISPER_API_BASE is required (OpenAI-compatible base URL, e.g."
             " http://whisper-host:8000/v1)"
         )
     data: dict[str, Any] = {
@@ -51,7 +51,7 @@ def request_transcription(
         data[key] = value
     if vocabulary:
         # OpenAI-compatible decoder hint; a per-job vocabulary overrides a static
-        # prompt from TOLKA_WHISPER_EXTRA_FORM.
+        # prompt from VEMSA_WHISPER_EXTRA_FORM.
         data["prompt"] = ", ".join(vocabulary)
     headers = {}
     if settings.whisper_api_key:
@@ -151,7 +151,7 @@ class OpenAIWhisperEngine:
     def __init__(self, settings: Settings, diarizer: Diarizer | None = None) -> None:
         if not settings.whisper_api_base:
             raise ValueError(
-                "TOLKA_WHISPER_API_BASE is required (OpenAI-compatible base URL, e.g."
+                "VEMSA_WHISPER_API_BASE is required (OpenAI-compatible base URL, e.g."
                 " http://whisper-host:8000/v1)"
             )
         self._settings = settings

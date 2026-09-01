@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Protocol
 
-from tolka.jobs.models import (
+from vemsa.jobs.models import (
     Job,
     JobStage,
     TranscriptionResult,

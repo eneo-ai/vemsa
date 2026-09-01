@@ -26,40 +26,40 @@ _NOISY_LOGGERS = (
     "filelock",
 )
 
-HTTP_REQUESTS = Counter("tolka_http_requests_total", "HTTP requests", ("method", "route", "status"))
+HTTP_REQUESTS = Counter("vemsa_http_requests_total", "HTTP requests", ("method", "route", "status"))
 HTTP_DURATION = Histogram(
-    "tolka_http_request_duration_seconds", "HTTP request duration", ("method", "route")
+    "vemsa_http_request_duration_seconds", "HTTP request duration", ("method", "route")
 )
-JOBS_SUBMITTED = Counter("tolka_jobs_submitted_total", "Submitted jobs", ("source_type",))
-JOBS_FINISHED = Counter("tolka_jobs_finished_total", "Terminal jobs", ("status", "engine", "task"))
+JOBS_SUBMITTED = Counter("vemsa_jobs_submitted_total", "Submitted jobs", ("source_type",))
+JOBS_FINISHED = Counter("vemsa_jobs_finished_total", "Terminal jobs", ("status", "engine", "task"))
 JOB_DURATION = Histogram(
-    "tolka_job_processing_seconds",
+    "vemsa_job_processing_seconds",
     "End-to-end worker processing time",
     ("status", "engine", "task"),
 )
 JOB_STAGE_DURATION = Histogram(
-    "tolka_job_stage_seconds",
+    "vemsa_job_stage_seconds",
     "Time spent in each persisted job stage",
     ("stage", "engine", "task"),
 )
 JOB_CANCELLATIONS = Counter(
-    "tolka_job_cancellations_total",
+    "vemsa_job_cancellations_total",
     "Cancellation requests by outcome",
     ("outcome",),
 )
 JOB_ALIGNMENT = Counter(
-    "tolka_job_alignment_total",
+    "vemsa_job_alignment_total",
     "Completed jobs by word-timestamp rung — anything but 'forced' is a quality degradation",
     ("alignment", "engine", "task"),
 )
 QUEUE_REJECTIONS = Counter(
-    "tolka_queue_rejections_total",
+    "vemsa_queue_rejections_total",
     "Jobs rejected at admission because a queue limit was reached",
     ("scope",),
 )
-QUEUE_DEPTH = Gauge("tolka_queue_depth", "Currently queued jobs")
+QUEUE_DEPTH = Gauge("vemsa_queue_depth", "Currently queued jobs")
 WEBHOOK_DELIVERIES = Counter(
-    "tolka_webhook_deliveries_total", "Webhook delivery attempts", ("outcome",)
+    "vemsa_webhook_deliveries_total", "Webhook delivery attempts", ("outcome",)
 )
 
 _STANDARD_LOG_RECORD_FIELDS = set(logging.makeLogRecord({}).__dict__)
@@ -118,7 +118,7 @@ async def request_observability_middleware(request: Request, call_next):
         elapsed = time.perf_counter() - started
         HTTP_REQUESTS.labels(request.method, route, str(status_code)).inc()
         HTTP_DURATION.labels(request.method, route).observe(elapsed)
-        logging.getLogger("tolka.access").info(
+        logging.getLogger("vemsa.access").info(
             "request completed",
             extra={
                 "event": "http.request",

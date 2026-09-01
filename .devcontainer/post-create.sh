@@ -10,7 +10,7 @@ sudo chown -R vscode:vscode /workspace/.venv
 
 echo "Syncing dependencies (dev + full CPU ML stack: diarize, align, local)..."
 cd /workspace
-uv sync --group dev --extra diarize --extra align --extra local --extra cpu --reinstall-package tolka
+uv sync --group dev --extra diarize --extra align --extra local --extra cpu --reinstall-package vemsa
 
 echo ""
 echo "Ready. Try:"

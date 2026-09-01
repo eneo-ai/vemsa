@@ -7,9 +7,9 @@ from fastmcp.server.auth import StaticTokenVerifier
 from fastmcp.server.dependencies import get_access_token
 from pydantic import ValidationError
 
-from tolka.deps import AppDeps
-from tolka.jobs.models import JobRequest, JobStatus, new_job
-from tolka.security import ForbiddenUrlError, validate_outbound_url
+from vemsa.deps import AppDeps
+from vemsa.jobs.models import JobRequest, JobStatus, new_job
+from vemsa.security import ForbiddenUrlError, validate_outbound_url
 
 INSTRUCTIONS = """Transcribe audio (Swedish-optimized) with word timestamps and speaker
 diarization. Use transcribe_audio for recordings that finish within minutes; for long
@@ -21,11 +21,11 @@ def build_mcp(deps: AppDeps) -> FastMCP:
     transcripts) is REST-only — see the Job API section of the README."""
     token_clients = deps.settings.token_clients
     if not token_clients:
-        raise ValueError("TOLKA_API_TOKENS must be configured before MCP can start")
+        raise ValueError("VEMSA_API_TOKENS must be configured before MCP can start")
     auth = StaticTokenVerifier(
         tokens={token: {"client_id": client_id} for token, client_id in token_clients.items()}
     )
-    mcp = FastMCP(name="tolka", instructions=INSTRUCTIONS, auth=auth)
+    mcp = FastMCP(name="vemsa", instructions=INSTRUCTIONS, auth=auth)
 
     def _client_id() -> str:
         access_token = get_access_token()

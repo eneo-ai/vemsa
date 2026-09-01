@@ -12,10 +12,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from tolka.jobs.models import Segment, SpeakerBounds, Word
+from vemsa.jobs.models import Segment, SpeakerBounds, Word
 
 if TYPE_CHECKING:
-    from tolka.config import Settings
+    from vemsa.config import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ class AttributionTuning:
     """Knobs for word→speaker attribution and segment shaping.
 
     Defaults are the tested behaviour; production overrides come from the
-    TOLKA_ATTR_* settings (Settings.attribution_tuning) so tuning against real
+    VEMSA_ATTR_* settings (Settings.attribution_tuning) so tuning against real
     audio does not need a code change."""
 
     # a winning turn overlap below this fraction of the word's duration counts

@@ -5,10 +5,10 @@ import respx
 from httpx import Response
 
 from conftest import FailingEngine, FakeEngine, wait_for_status
-from tolka.config import Settings
-from tolka.jobs.models import JobRequest, JobStatus, new_job
-from tolka.jobs.queue import JobQueue
-from tolka.jobs.store import JobStore
+from vemsa.config import Settings
+from vemsa.jobs.models import JobRequest, JobStatus, new_job
+from vemsa.jobs.queue import JobQueue
+from vemsa.jobs.store import JobStore
 
 
 @contextlib.asynccontextmanager
@@ -66,7 +66,7 @@ async def test_alignment_floor_fails_a_degraded_job(
         queue.notify()
         failed = await wait_for_status(store, job.id, JobStatus.FAILED)
 
-    assert failed.error is not None and "TOLKA_MIN_ALIGNMENT" in failed.error
+    assert failed.error is not None and "VEMSA_MIN_ALIGNMENT" in failed.error
     assert not audio.exists()
 
 
@@ -150,8 +150,8 @@ async def test_webhook_is_signed_when_secret_is_configured(
         await wait_for_status(store, job.id, JobStatus.COMPLETED)
 
     request = route.calls.last.request
-    assert request.headers["X-Tolka-Timestamp"]
-    assert request.headers["X-Tolka-Signature-256"].startswith("sha256=")
+    assert request.headers["X-Vemsa-Timestamp"]
+    assert request.headers["X-Vemsa-Signature-256"].startswith("sha256=")
 
 
 @respx.mock

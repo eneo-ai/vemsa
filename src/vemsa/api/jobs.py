@@ -9,15 +9,15 @@ from starlette.datastructures import UploadFile
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.formparsers import MultiPartException
 
-from tolka.api.health import ReadinessResponse, load_readiness
-from tolka.deps import AppDeps
-from tolka.jobs.models import Job, JobRequest, JobStage, JobStatus, TranscriptionResult, new_job
-from tolka.observability import (
+from vemsa.api.health import ReadinessResponse, load_readiness
+from vemsa.deps import AppDeps
+from vemsa.jobs.models import Job, JobRequest, JobStage, JobStatus, TranscriptionResult, new_job
+from vemsa.observability import (
     JOB_CANCELLATIONS,
     JOBS_SUBMITTED,
     QUEUE_REJECTIONS,
 )
-from tolka.pipeline.fetch import AudioTooLargeError, save_upload
+from vemsa.pipeline.fetch import AudioTooLargeError, save_upload
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

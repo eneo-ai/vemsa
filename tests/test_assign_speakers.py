@@ -1,6 +1,6 @@
-from tolka.config import Settings
-from tolka.jobs.models import Segment, Word
-from tolka.pipeline.diarize import (
+from vemsa.config import Settings
+from vemsa.jobs.models import Segment, Word
+from vemsa.pipeline.diarize import (
     Diarizer,
     Turn,
     assign_speakers,

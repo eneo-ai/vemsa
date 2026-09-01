@@ -1,5 +1,5 @@
 {
-  "name": "Tolka Devcontainer",
+  "name": "Vemsa Devcontainer",
   "dockerComposeFile": "compose.yaml",
   "service": "dev",
   "workspaceFolder": "/workspace",

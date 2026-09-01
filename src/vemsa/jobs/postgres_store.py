@@ -4,7 +4,7 @@ from typing import Any
 
 import asyncpg
 
-from tolka.jobs.models import (
+from vemsa.jobs.models import (
     Job,
     JobRequest,
     JobStage,
@@ -15,7 +15,7 @@ from tolka.jobs.models import (
 
 _MIGRATIONS = (
     """
-    CREATE TABLE IF NOT EXISTS tolka_schema_migrations (
+    CREATE TABLE IF NOT EXISTS vemsa_schema_migrations (
         version INTEGER PRIMARY KEY,
         applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
@@ -119,23 +119,23 @@ class PostgresJobStore:
         self._pool = await asyncpg.create_pool(self._database_url, min_size=1, max_size=10)
         async with self.pool.acquire() as connection, connection.transaction():
             await connection.execute(
-                "SELECT pg_advisory_xact_lock(hashtext('tolka_schema_migrations'))"
+                "SELECT pg_advisory_xact_lock(hashtext('vemsa_schema_migrations'))"
             )
             await connection.execute(_MIGRATIONS[0])
             await connection.execute(
-                "INSERT INTO tolka_schema_migrations (version) VALUES (1)"
+                "INSERT INTO vemsa_schema_migrations (version) VALUES (1)"
                 " ON CONFLICT (version) DO NOTHING"
             )
             for version, migration in enumerate(_MIGRATIONS[1:], start=2):
                 applied = await connection.fetchval(
-                    "SELECT EXISTS(SELECT 1 FROM tolka_schema_migrations WHERE version = $1)",
+                    "SELECT EXISTS(SELECT 1 FROM vemsa_schema_migrations WHERE version = $1)",
                     version,
                 )
                 if applied:
                     continue
                 await connection.execute(migration)
                 await connection.execute(
-                    "INSERT INTO tolka_schema_migrations (version) VALUES ($1)", version
+                    "INSERT INTO vemsa_schema_migrations (version) VALUES ($1)", version
                 )
 
     async def close(self) -> None:

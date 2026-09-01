@@ -1,1 +1,1 @@
-CREATE DATABASE tolka_test OWNER tolka;
+CREATE DATABASE vemsa_test OWNER vemsa;

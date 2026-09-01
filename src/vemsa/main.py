@@ -6,16 +6,16 @@ from fastapi import Depends, FastAPI, Response, status
 from fastmcp.utilities.lifespan import combine_lifespans
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
-from tolka.api.auth import require_token
-from tolka.api.jobs import router as jobs_router
-from tolka.config import Settings
-from tolka.deps import AppDeps
-from tolka.jobs.queue import JobQueue
-from tolka.jobs.store_factory import open_job_store
-from tolka.mcp.server import build_mcp
-from tolka.observability import QUEUE_DEPTH, configure_logging, request_observability_middleware
-from tolka.pipeline.base import TranscriptionEngine
-from tolka.pipeline.factory import build_engine
+from vemsa.api.auth import require_token
+from vemsa.api.jobs import router as jobs_router
+from vemsa.config import Settings
+from vemsa.deps import AppDeps
+from vemsa.jobs.queue import JobQueue
+from vemsa.jobs.store_factory import open_job_store
+from vemsa.mcp.server import build_mcp
+from vemsa.observability import QUEUE_DEPTH, configure_logging, request_observability_middleware
+from vemsa.pipeline.base import TranscriptionEngine
+from vemsa.pipeline.factory import build_engine
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ def create_app(settings: Settings | None = None, engine: TranscriptionEngine | N
         deps.queue = None
 
     app = FastAPI(
-        title="tolka",
+        title="vemsa",
         description="Transcription and speaker-diarization service",
         lifespan=combine_lifespans(app_lifespan, mcp_app.lifespan),
     )

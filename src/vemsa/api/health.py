@@ -4,14 +4,14 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from tolka.deps import AppDeps
+from vemsa.deps import AppDeps
 
 logger = logging.getLogger(__name__)
 
 
 def _service_version() -> str:
     try:
-        return version("tolka")
+        return version("vemsa")
     except PackageNotFoundError:
         return "unknown"
 

@@ -4,9 +4,9 @@ import pytest
 import respx
 from httpx import Response
 
-from tolka.config import Settings
-from tolka.pipeline.diarize import Turn
-from tolka.pipeline.whisper_api import OpenAIWhisperEngine, parse_verbose_json
+from vemsa.config import Settings
+from vemsa.pipeline.diarize import Turn
+from vemsa.pipeline.whisper_api import OpenAIWhisperEngine, parse_verbose_json
 
 API_BASE = "http://whisper.local/v1"
 ENDPOINT = f"{API_BASE}/audio/transcriptions"
@@ -72,7 +72,7 @@ def audio_file(tmp_path: Path) -> Path:
 
 def test_requires_api_base(settings: Settings):
     settings.whisper_api_base = ""
-    with pytest.raises(ValueError, match="TOLKA_WHISPER_API_BASE"):
+    with pytest.raises(ValueError, match="VEMSA_WHISPER_API_BASE"):
         OpenAIWhisperEngine(settings)
 
 
@@ -129,12 +129,12 @@ def test_vocabulary_is_sent_as_prompt(whisper_settings: Settings, audio_file: Pa
         language="sv",
         model="kb-whisper",
         diarize=False,
-        vocabulary=["Anna Lindqvist", "Tolka"],
+        vocabulary=["Anna Lindqvist", "Vemsa"],
     )
 
     body = route.calls.last.request.read()
     assert b'name="prompt"' in body
-    assert b"Anna Lindqvist, Tolka" in body
+    assert b"Anna Lindqvist, Vemsa" in body
 
 
 @respx.mock

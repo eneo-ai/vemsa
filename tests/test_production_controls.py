@@ -9,10 +9,10 @@ from httpx import Response
 from pydantic import ValidationError
 
 from conftest import FakeEngine, make_wav_bytes
-from tolka.config import Settings
-from tolka.jobs.models import JobRequest, new_job
-from tolka.main import create_app
-from tolka.observability import JsonFormatter
+from vemsa.config import Settings
+from vemsa.jobs.models import JobRequest, new_job
+from vemsa.main import create_app
+from vemsa.observability import JsonFormatter
 
 
 @contextlib.asynccontextmanager
@@ -32,7 +32,7 @@ def test_production_requires_named_credentials(tmp_path):
             api_tokens="bare-token",
             engine="remote",
             whisper_api_base="https://whisper.example/v1",
-            database_url="postgresql://tolka:tolka@localhost/tolka",
+            database_url="postgresql://vemsa:vemsa@localhost/vemsa",
         )
 
 
@@ -41,9 +41,9 @@ def test_mcp_fails_closed_without_credentials(tmp_path):
         _env_file=None,
         api_tokens="",
         engine="fake",
-        database_url="postgresql://tolka:tolka@localhost/tolka",
+        database_url="postgresql://vemsa:vemsa@localhost/vemsa",
     )
-    with pytest.raises(ValueError, match="TOLKA_API_TOKENS"):
+    with pytest.raises(ValueError, match="VEMSA_API_TOKENS"):
         create_app(settings=settings, engine=FakeEngine())
 
 
@@ -88,7 +88,7 @@ async def test_metrics_requires_auth(settings: Settings):
         assert (await client.get("/metrics")).status_code == 401
         response = await client.get("/metrics", headers={"Authorization": "Bearer secret-token"})
         assert response.status_code == 200
-        assert "tolka_jobs_submitted_total" in response.text
+        assert "vemsa_jobs_submitted_total" in response.text
 
 
 async def test_submission_and_cancellation_logs_exclude_sensitive_content(

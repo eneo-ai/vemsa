@@ -1,11 +1,11 @@
 import asyncio
 import signal
 
-from tolka.config import Settings
-from tolka.jobs.queue import JobQueue
-from tolka.jobs.store_factory import open_job_store
-from tolka.observability import configure_logging
-from tolka.pipeline.factory import build_engine
+from vemsa.config import Settings
+from vemsa.jobs.queue import JobQueue
+from vemsa.jobs.store_factory import open_job_store
+from vemsa.observability import configure_logging
+from vemsa.pipeline.factory import build_engine
 
 
 async def run_worker() -> None:

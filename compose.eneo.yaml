@@ -1,11 +1,11 @@
 # Optional override: attach the API to a pre-existing shared Docker network so a
-# consumer deployment (e.g. eneo's flow execution worker) reaches Tolka by container
+# consumer deployment (e.g. eneo's flow execution worker) reaches Vemsa by container
 # name instead of a published host port.
 #
 #   docker network create eneo-shared        # once, or reuse the consumer's network
 #   docker compose -f compose.yaml -f compose.eneo.yaml up -d
 #
-# Override the network name with TOLKA_SHARED_NETWORK. The worker and postgres stay
+# Override the network name with VEMSA_SHARED_NETWORK. The worker and postgres stay
 # off the shared network; only the API is reachable.
 services:
   api:
@@ -15,5 +15,5 @@ services:
 
 networks:
   shared:
-    name: ${TOLKA_SHARED_NETWORK:-eneo-shared}
+    name: ${VEMSA_SHARED_NETWORK:-eneo-shared}
     external: true

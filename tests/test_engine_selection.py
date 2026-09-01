@@ -1,11 +1,11 @@
 import pytest
 
-from tolka.config import Settings
-from tolka.pipeline.factory import build_engine
-from tolka.pipeline.fake import CannedEngine
-from tolka.pipeline.hybrid import HybridEngine
-from tolka.pipeline.transcribe import EasyTranscriberEngine
-from tolka.pipeline.whisper_api import OpenAIWhisperEngine
+from vemsa.config import Settings
+from vemsa.pipeline.factory import build_engine
+from vemsa.pipeline.fake import CannedEngine
+from vemsa.pipeline.hybrid import HybridEngine
+from vemsa.pipeline.transcribe import EasyTranscriberEngine
+from vemsa.pipeline.whisper_api import OpenAIWhisperEngine
 
 
 def test_auto_resolves_by_whisper_endpoint(settings: Settings):
@@ -44,5 +44,5 @@ def test_auto_without_endpoint_builds_local_engine(settings: Settings):
 @pytest.mark.parametrize("engine_cls", [HybridEngine, OpenAIWhisperEngine])
 def test_remote_backed_engines_require_api_base(settings: Settings, engine_cls):
     settings.whisper_api_base = ""
-    with pytest.raises(ValueError, match="TOLKA_WHISPER_API_BASE"):
+    with pytest.raises(ValueError, match="VEMSA_WHISPER_API_BASE"):
         engine_cls(settings)

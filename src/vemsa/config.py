@@ -7,14 +7,14 @@ from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 if TYPE_CHECKING:
-    from tolka.pipeline.diarize import AttributionTuning
+    from vemsa.pipeline.diarize import AttributionTuning
 
 GIB = 1024**3
 _CLIENT_ID = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$")
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="TOLKA_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="VEMSA_", env_file=".env", extra="ignore")
 
     # NoDecode: parsed from a comma-separated env value by the validator below,
     # not pydantic-settings' default JSON decoding
@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     log_format: Literal["json", "text"] = "json"
     hf_token: str | None = Field(
-        default=None, validation_alias=AliasChoices("TOLKA_HF_TOKEN", "HF_TOKEN")
+        default=None, validation_alias=AliasChoices("VEMSA_HF_TOKEN", "HF_TOKEN")
     )
 
     # auto: hybrid when a whisper endpoint is configured, local otherwise.
@@ -141,10 +141,10 @@ class Settings(BaseSettings):
         return "hybrid" if self.whisper_api_base else "local"
 
     def attribution_tuning(self) -> "AttributionTuning":
-        """The TOLKA_ATTR_* knobs as the pipeline's tuning object (imported lazily:
+        """The VEMSA_ATTR_* knobs as the pipeline's tuning object (imported lazily:
         pipeline.diarize is the pure attribution module and config must stay
         importable without it in the dependency picture)."""
-        from tolka.pipeline.diarize import AttributionTuning
+        from vemsa.pipeline.diarize import AttributionTuning
 
         return AttributionTuning(
             min_coverage=self.attr_min_coverage,
@@ -212,7 +212,7 @@ class Settings(BaseSettings):
                 raise ValueError("emissions_models entries must use language=model")
         if self.environment == "production":
             if not self.api_tokens:
-                raise ValueError("TOLKA_API_TOKENS is required in production")
+                raise ValueError("VEMSA_API_TOKENS is required in production")
             if any("=" not in value for value in self.api_tokens):
                 raise ValueError("production API credentials must be named using client_id=token")
             if self.engine == "fake":

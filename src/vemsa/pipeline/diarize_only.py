@@ -1,4 +1,4 @@
-"""Diarization-only tier (TOLKA_ENGINE=diarize): no ASR engine at all.
+"""Diarization-only tier (VEMSA_ENGINE=diarize): no ASR engine at all.
 
 For deployments where the consumer transcribes with its own models and only needs
 speaker labels. transcribe jobs are refused at submission on this tier. Segment-only
@@ -6,12 +6,12 @@ transcripts are still force-aligned locally when the `align` extra is installed.
 
 from pathlib import Path
 
-from tolka.config import Settings
-from tolka.jobs.models import JobStage, Segment, SpeakerBounds, TranscriptionResult, Word
-from tolka.pipeline.align import build_segment_aligner
-from tolka.pipeline.base import StageReporter, report_stage
-from tolka.pipeline.diarize import Diarizer
-from tolka.pipeline.label import SpeakerDiarizer, label_speakers
+from vemsa.config import Settings
+from vemsa.jobs.models import JobStage, Segment, SpeakerBounds, TranscriptionResult, Word
+from vemsa.pipeline.align import build_segment_aligner
+from vemsa.pipeline.base import StageReporter, report_stage
+from vemsa.pipeline.diarize import Diarizer
+from vemsa.pipeline.label import SpeakerDiarizer, label_speakers
 
 
 class DiarizeOnlyEngine:
@@ -32,7 +32,7 @@ class DiarizeOnlyEngine:
         vocabulary: list[str] | None = None,
         on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
-        raise RuntimeError("this deployment only labels speakers (TOLKA_ENGINE=diarize)")
+        raise RuntimeError("this deployment only labels speakers (VEMSA_ENGINE=diarize)")
 
     def label_speakers(
         self,

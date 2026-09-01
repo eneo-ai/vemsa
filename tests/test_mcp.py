@@ -8,11 +8,11 @@ from fastmcp.exceptions import ToolError
 from httpx import Response
 
 from conftest import FailingEngine, FakeEngine
-from tolka.config import Settings
-from tolka.deps import AppDeps
-from tolka.jobs.postgres_store import PostgresJobStore
-from tolka.jobs.queue import JobQueue
-from tolka.mcp.server import build_mcp
+from vemsa.config import Settings
+from vemsa.deps import AppDeps
+from vemsa.jobs.postgres_store import PostgresJobStore
+from vemsa.jobs.queue import JobQueue
+from vemsa.mcp.server import build_mcp
 
 AUDIO_URL = "https://example.org/meeting.mp3"
 
@@ -77,7 +77,7 @@ async def test_submit_vocabulary_reaches_the_engine(settings: Settings):
     engine = FakeEngine()
     async with mcp_client(settings, engine) as client:
         submitted = await client.call_tool(
-            "submit_transcription", {"url": AUDIO_URL, "vocabulary": ["Çagri", "Tolka"]}
+            "submit_transcription", {"url": AUDIO_URL, "vocabulary": ["Çagri", "Vemsa"]}
         )
         async with asyncio.timeout(5):
             while True:
@@ -85,7 +85,7 @@ async def test_submit_vocabulary_reaches_the_engine(settings: Settings):
                 if not result.data.startswith("status:"):
                     break
                 await asyncio.sleep(0.01)
-    assert engine.calls[0]["vocabulary"] == ["Çagri", "Tolka"]
+    assert engine.calls[0]["vocabulary"] == ["Çagri", "Vemsa"]
 
 
 async def test_submit_rejects_oversized_vocabulary(settings: Settings):

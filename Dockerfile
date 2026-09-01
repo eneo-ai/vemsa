@@ -1,7 +1,7 @@
 # Torch pip wheels bundle their own CUDA/cuDNN libraries, so a plain Python base
 # suffices — GPU use only needs the NVIDIA driver + container toolkit on the host.
 # ML_EXTRAS picks the engine tiers baked into the image:
-#   "diarize align local" (default) supports every TOLKA_ENGINE value;
+#   "diarize align local" (default) supports every VEMSA_ENGINE value;
 #   "diarize align" for hybrid/remote-only deployments (smaller, no easytranscriber);
 #   "diarize" for remote-only.
 ARG TORCH_VARIANT=gpu
@@ -39,9 +39,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 ENV PATH=/app/.venv/bin:$PATH \
     HF_HOME=/models \
-    TOLKA_MODEL_CACHE_DIR=/models \
-    TOLKA_WORK_DIR=/data/work \
-    TOLKA_DB_PATH=/data/tolka.sqlite3
+    VEMSA_MODEL_CACHE_DIR=/models \
+    VEMSA_WORK_DIR=/data/work \
+    VEMSA_DB_PATH=/data/vemsa.sqlite3
 
 # /app (venv included) stays root-owned read-only; chowning it would copy the
 # whole venv into a new layer. The runtime user only writes /models and /data.
@@ -51,4 +51,4 @@ USER 1000:1000
 EXPOSE 8000
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=5 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/readyz', timeout=3)"
-CMD ["uvicorn", "tolka.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
+CMD ["uvicorn", "vemsa.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]

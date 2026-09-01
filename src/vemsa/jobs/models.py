@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
 Language = Literal["sv", "en", "auto"]
 # transcribe: run the engine end to end. diarize: the caller supplies the transcript
-# (word timestamps in seconds from the start of the audio); Tolka adds speaker labels.
+# (word timestamps in seconds from the start of the audio); Vemsa adds speaker labels.
 JobTask = Literal["transcribe", "diarize"]
 EXTERNAL_MODEL = "external"
 
@@ -54,13 +54,13 @@ class Segment(BaseModel):
 
 
 # How the word timestamps behind the speaker labels were obtained, best to worst:
-# the caller/provider supplied words, Tolka force-aligned the text locally, segments
+# the caller/provider supplied words, Vemsa force-aligned the text locally, segments
 # were split proportionally at turn boundaries, or whole segments were labelled.
 Alignment = Literal["provider_words", "forced", "segment_split", "segment_only"]
 
 # Quality ranking of the rungs (highest is best): audio-derived forced alignment,
 # then provider-measured words, then the two segment-level approximations. Used by
-# the TOLKA_MIN_ALIGNMENT floor; a missing rung ranks below every floor.
+# the VEMSA_MIN_ALIGNMENT floor; a missing rung ranks below every floor.
 ALIGNMENT_RANK: dict[Alignment, int] = {
     "forced": 3,
     "provider_words": 2,

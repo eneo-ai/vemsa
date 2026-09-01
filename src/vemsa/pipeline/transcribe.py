@@ -1,4 +1,4 @@
-"""Fully local engine (TOLKA_ENGINE=local): easytranscriber whisper + forced alignment
+"""Fully local engine (VEMSA_ENGINE=local): easytranscriber whisper + forced alignment
 + pyannote diarization, all in-process. For deployments with their own GPU and no
 external whisper endpoint.
 
@@ -12,18 +12,18 @@ import tempfile
 import threading
 from pathlib import Path
 
-from tolka.config import Settings
-from tolka.jobs.models import JobStage, Segment, SpeakerBounds, TranscriptionResult, Word
-from tolka.pipeline.align import build_segment_aligner, words_from_alignments
-from tolka.pipeline.base import StageReporter, report_stage
-from tolka.pipeline.diarize import (
+from vemsa.config import Settings
+from vemsa.jobs.models import JobStage, Segment, SpeakerBounds, TranscriptionResult, Word
+from vemsa.pipeline.align import build_segment_aligner, words_from_alignments
+from vemsa.pipeline.base import StageReporter, report_stage
+from vemsa.pipeline.diarize import (
     Diarizer,
     assign_speakers,
     audio_duration,
     segments_without_speakers,
 )
-from tolka.pipeline.label import label_speakers
-from tolka.pipeline.render import render_text
+from vemsa.pipeline.label import label_speakers
+from vemsa.pipeline.render import render_text
 
 logger = logging.getLogger(__name__)
 

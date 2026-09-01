@@ -1,25 +1,25 @@
-x-tolka-environment: &tolka-environment
-  TOLKA_ENVIRONMENT: production
-  TOLKA_API_TOKENS: ${TOLKA_API_TOKENS:?set named credentials as client_id=token}
-  TOLKA_DATABASE_URL: postgresql://tolka:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres/tolka
-  TOLKA_ENGINE: ${TOLKA_ENGINE:-auto}
-  TOLKA_WHISPER_API_BASE: ${TOLKA_WHISPER_API_BASE:-}
-  TOLKA_WHISPER_API_KEY: ${TOLKA_WHISPER_API_KEY:-}
+x-vemsa-environment: &vemsa-environment
+  VEMSA_ENVIRONMENT: production
+  VEMSA_API_TOKENS: ${VEMSA_API_TOKENS:?set named credentials as client_id=token}
+  VEMSA_DATABASE_URL: postgresql://vemsa:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres/vemsa
+  VEMSA_ENGINE: ${VEMSA_ENGINE:-auto}
+  VEMSA_WHISPER_API_BASE: ${VEMSA_WHISPER_API_BASE:-}
+  VEMSA_WHISPER_API_KEY: ${VEMSA_WHISPER_API_KEY:-}
   # provider model ids differ (e.g. Berget: KBLab/kb-whisper-large, GDM: kb-whisper-large)
-  TOLKA_DEFAULT_MODEL: ${TOLKA_DEFAULT_MODEL:-KBLab/kb-whisper-large}
-  TOLKA_WHISPER_EXTRA_FORM: ${TOLKA_WHISPER_EXTRA_FORM:-}
-  TOLKA_WHISPER_AUTO_LANGUAGE: ${TOLKA_WHISPER_AUTO_LANGUAGE:-}
+  VEMSA_DEFAULT_MODEL: ${VEMSA_DEFAULT_MODEL:-KBLab/kb-whisper-large}
+  VEMSA_WHISPER_EXTRA_FORM: ${VEMSA_WHISPER_EXTRA_FORM:-}
+  VEMSA_WHISPER_AUTO_LANGUAGE: ${VEMSA_WHISPER_AUTO_LANGUAGE:-}
   HF_TOKEN: ${HF_TOKEN:-}
-  TOLKA_RETENTION_HOURS: ${TOLKA_RETENTION_HOURS:-72}
-  TOLKA_MAX_AUDIO_BYTES: ${TOLKA_MAX_AUDIO_BYTES:-2147483648}
-  TOLKA_MAX_TRANSCRIPT_BYTES: ${TOLKA_MAX_TRANSCRIPT_BYTES:-8388608}
-  TOLKA_MAX_QUEUED_JOBS: ${TOLKA_MAX_QUEUED_JOBS:-100}
-  TOLKA_MAX_QUEUED_JOBS_PER_CLIENT: ${TOLKA_MAX_QUEUED_JOBS_PER_CLIENT:-10}
-  TOLKA_PRELOAD_MODELS: ${TOLKA_PRELOAD_MODELS:-true}
-  TOLKA_WEBHOOK_SIGNING_SECRET: ${TOLKA_WEBHOOK_SIGNING_SECRET:-}
-  TOLKA_SHUTDOWN_GRACE_S: ${TOLKA_SHUTDOWN_GRACE_S:-540}
+  VEMSA_RETENTION_HOURS: ${VEMSA_RETENTION_HOURS:-72}
+  VEMSA_MAX_AUDIO_BYTES: ${VEMSA_MAX_AUDIO_BYTES:-2147483648}
+  VEMSA_MAX_TRANSCRIPT_BYTES: ${VEMSA_MAX_TRANSCRIPT_BYTES:-8388608}
+  VEMSA_MAX_QUEUED_JOBS: ${VEMSA_MAX_QUEUED_JOBS:-100}
+  VEMSA_MAX_QUEUED_JOBS_PER_CLIENT: ${VEMSA_MAX_QUEUED_JOBS_PER_CLIENT:-10}
+  VEMSA_PRELOAD_MODELS: ${VEMSA_PRELOAD_MODELS:-true}
+  VEMSA_WEBHOOK_SIGNING_SECRET: ${VEMSA_WEBHOOK_SIGNING_SECRET:-}
+  VEMSA_SHUTDOWN_GRACE_S: ${VEMSA_SHUTDOWN_GRACE_S:-540}
 
-x-tolka-security: &tolka-security
+x-vemsa-security: &vemsa-security
   restart: unless-stopped
   security_opt:
     - no-new-privileges:true
@@ -36,14 +36,14 @@ x-tolka-security: &tolka-security
 
 services:
   api:
-    <<: *tolka-security
-    # published variants: ghcr.io/eneo-ai/tolka:<tag> (CUDA) and <tag>-cpu;
+    <<: *vemsa-security
+    # published variants: ghcr.io/eneo-ai/vemsa:<tag> (CUDA) and <tag>-cpu;
     # default behavior still builds from source — see docs/PRODUCTION.md
-    image: ${TOLKA_IMAGE:-ghcr.io/eneo-ai/tolka:latest}
+    image: ${VEMSA_IMAGE:-ghcr.io/eneo-ai/vemsa:latest}
     build: .
     command:
       - uvicorn
-      - tolka.main:create_app
+      - vemsa.main:create_app
       - --factory
       - --host
       - 0.0.0.0
@@ -52,12 +52,12 @@ services:
       - --no-access-log
     ports:
       # Loopback-only by default; consumers on the same host (or an ingress) connect via
-      # 127.0.0.1. Set TOLKA_BIND to a private interface (or 0.0.0.0 behind a firewall)
+      # 127.0.0.1. Set VEMSA_BIND to a private interface (or 0.0.0.0 behind a firewall)
       # when a consumer such as eneo runs off-host or inside another Docker network.
-      - "${TOLKA_BIND:-127.0.0.1}:${TOLKA_PORT:-8000}:8000"
+      - "${VEMSA_BIND:-127.0.0.1}:${VEMSA_PORT:-8000}:8000"
     environment:
-      <<: *tolka-environment
-      TOLKA_RUN_WORKER: "false"
+      <<: *vemsa-environment
+      VEMSA_RUN_WORKER: "false"
     volumes:
       - data:/data
     depends_on:
@@ -77,19 +77,19 @@ services:
       start_period: 30s
 
   worker:
-    <<: *tolka-security
-    image: ${TOLKA_IMAGE:-ghcr.io/eneo-ai/tolka:latest}
+    <<: *vemsa-security
+    image: ${VEMSA_IMAGE:-ghcr.io/eneo-ai/vemsa:latest}
     build: .
-    command: ["tolka-worker"]
+    command: ["vemsa-worker"]
     environment:
-      <<: *tolka-environment
+      <<: *vemsa-environment
     volumes:
       - models:/models
       - data:/data
     depends_on:
       postgres:
         condition: service_healthy
-    stop_grace_period: ${TOLKA_STOP_GRACE_PERIOD:-10m}
+    stop_grace_period: ${VEMSA_STOP_GRACE_PERIOD:-10m}
     healthcheck:
       disable: true
     deploy:
@@ -104,13 +104,13 @@ services:
     image: postgres:17-bookworm
     restart: unless-stopped
     environment:
-      POSTGRES_DB: tolka
-      POSTGRES_USER: tolka
+      POSTGRES_DB: vemsa
+      POSTGRES_USER: vemsa
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U tolka -d tolka"]
+      test: ["CMD-SHELL", "pg_isready -U vemsa -d vemsa"]
       interval: 5s
       timeout: 5s
       retries: 10

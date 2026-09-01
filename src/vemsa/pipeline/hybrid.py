@@ -6,19 +6,19 @@ timestamps. Diarization runs locally via pyannote.
 Forced alignment is mandatory on this tier: an alignment failure fails the job
 loudly instead of degrading to the provider's decoder timestamps — the service
 always runs with a GPU and the align extra, and quality beats completing coarsely.
-Deployments that deliberately trust a provider's timestamps use TOLKA_ENGINE=remote."""
+Deployments that deliberately trust a provider's timestamps use VEMSA_ENGINE=remote."""
 
 import logging
 from pathlib import Path
 from typing import Any
 
-from tolka.config import Settings
-from tolka.jobs.models import JobStage, Segment, SpeakerBounds, TranscriptionResult, Word
-from tolka.pipeline.align import build_segment_aligner, force_align_segments
-from tolka.pipeline.base import StageReporter, report_stage
-from tolka.pipeline.diarize import Diarizer, resolve_segments
-from tolka.pipeline.label import alignment_input, label_speakers, words_plausible
-from tolka.pipeline.whisper_api import build_result, parse_verbose_json, request_transcription
+from vemsa.config import Settings
+from vemsa.jobs.models import JobStage, Segment, SpeakerBounds, TranscriptionResult, Word
+from vemsa.pipeline.align import build_segment_aligner, force_align_segments
+from vemsa.pipeline.base import StageReporter, report_stage
+from vemsa.pipeline.diarize import Diarizer, resolve_segments
+from vemsa.pipeline.label import alignment_input, label_speakers, words_plausible
+from vemsa.pipeline.whisper_api import build_result, parse_verbose_json, request_transcription
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +29,8 @@ class HybridEngine:
     def __init__(self, settings: Settings, diarizer: Diarizer | None = None) -> None:
         if not settings.whisper_api_base:
             raise ValueError(
-                "TOLKA_WHISPER_API_BASE is required for the hybrid engine (or set"
-                " TOLKA_ENGINE=local to run whisper in-process)"
+                "VEMSA_WHISPER_API_BASE is required for the hybrid engine (or set"
+                " VEMSA_ENGINE=local to run whisper in-process)"
             )
         self._settings = settings
         self._diarizer = diarizer or Diarizer(settings)

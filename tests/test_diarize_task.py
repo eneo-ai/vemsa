@@ -12,15 +12,15 @@ import respx
 from httpx import Response
 
 from conftest import FakeEngine
-from tolka.config import Settings
-from tolka.jobs.models import Segment, SpeakerBounds, Word
-from tolka.main import create_app
-from tolka.pipeline import align
-from tolka.pipeline.diarize import Turn, _decodable_audio
-from tolka.pipeline.diarize_only import DiarizeOnlyEngine
-from tolka.pipeline.fake import CannedEngine
-from tolka.pipeline.label import label_speakers, words_plausible
-from tolka.pipeline.whisper_api import OpenAIWhisperEngine
+from vemsa.config import Settings
+from vemsa.jobs.models import Segment, SpeakerBounds, Word
+from vemsa.main import create_app
+from vemsa.pipeline import align
+from vemsa.pipeline.diarize import Turn, _decodable_audio
+from vemsa.pipeline.diarize_only import DiarizeOnlyEngine
+from vemsa.pipeline.fake import CannedEngine
+from vemsa.pipeline.label import label_speakers, words_plausible
+from vemsa.pipeline.whisper_api import OpenAIWhisperEngine
 
 AUTH = {"Authorization": "Bearer secret-token"}
 WORDS = [
@@ -294,7 +294,7 @@ def test_caller_words_win_over_the_aligner(tmp_path: Path):
 
 
 def test_prefer_alignment_sets_caller_words_aside(tmp_path: Path):
-    # TOLKA_DIARIZE_PREFER_ALIGN: plausible caller words are set aside and the
+    # VEMSA_DIARIZE_PREFER_ALIGN: plausible caller words are set aside and the
     # transcript is force-aligned anyway; the (plausible) windows anchor it
     received: list[list[Segment]] = []
 
@@ -592,7 +592,7 @@ def test_decodable_audio_transcodes_compressed_formats(tmp_path: Path, monkeypat
         Path(cmd[-1]).write_bytes(b"")
         return subprocess.CompletedProcess(cmd, 0, b"", b"")
 
-    monkeypatch.setattr("tolka.pipeline.diarize.subprocess.run", fake_ffmpeg)
+    monkeypatch.setattr("vemsa.pipeline.diarize.subprocess.run", fake_ffmpeg)
 
     resolved, is_temp = _decodable_audio(path)
 

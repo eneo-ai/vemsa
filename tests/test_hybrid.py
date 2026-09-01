@@ -5,9 +5,9 @@ import respx
 from httpx import Response
 
 from test_whisper_api import API_BASE, ENDPOINT, WORD_PAYLOAD, FakeDiarizer
-from tolka.config import Settings
-from tolka.jobs.models import JobStage, Word
-from tolka.pipeline.hybrid import HybridEngine
+from vemsa.config import Settings
+from vemsa.jobs.models import JobStage, Word
+from vemsa.pipeline.hybrid import HybridEngine
 
 ALIGNED_WORDS = [
     Word(word="Hej", start=0.05, end=0.38),
@@ -63,7 +63,7 @@ def test_uses_locally_aligned_words_when_alignment_succeeds(
 def test_alignment_failure_fails_the_job(hybrid_settings: Settings, audio_file: Path, monkeypatch):
     # doctrine: the hybrid tier never degrades to provider timestamps — a broken
     # alignment stack fails the job loudly (deployments that deliberately trust
-    # the provider use TOLKA_ENGINE=remote)
+    # the provider use VEMSA_ENGINE=remote)
     respx.post(ENDPOINT).mock(return_value=Response(200, json=WORD_PAYLOAD))
     engine = HybridEngine(hybrid_settings, diarizer=FakeDiarizer())
 

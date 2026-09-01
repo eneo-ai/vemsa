@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from tolka.config import Settings
-from tolka.jobs.models import (
+from vemsa.config import Settings
+from vemsa.jobs.models import (
     Job,
     JobStage,
     JobStatus,
@@ -16,11 +16,11 @@ from tolka.jobs.models import (
     TranscriptionResult,
     Word,
 )
-from tolka.jobs.postgres_store import PostgresJobStore
-from tolka.jobs.store import JobStore
-from tolka.pipeline.base import StageReporter, report_stage
+from vemsa.jobs.postgres_store import PostgresJobStore
+from vemsa.jobs.store import JobStore
+from vemsa.pipeline.base import StageReporter, report_stage
 
-TEST_DATABASE_URL = os.getenv("TOLKA_TEST_POSTGRES_URL")
+TEST_DATABASE_URL = os.getenv("VEMSA_TEST_POSTGRES_URL")
 
 
 def make_wav_bytes(duration_ms: int = 50) -> bytes:
@@ -163,7 +163,7 @@ class FailingEngine:
 @pytest.fixture
 async def settings(tmp_path: Path) -> Settings:
     if not TEST_DATABASE_URL:
-        pytest.skip("TOLKA_TEST_POSTGRES_URL is not configured")
+        pytest.skip("VEMSA_TEST_POSTGRES_URL is not configured")
     settings = Settings(
         _env_file=None,
         api_tokens="secret-token",

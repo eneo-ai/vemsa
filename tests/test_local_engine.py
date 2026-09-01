@@ -11,8 +11,8 @@ import types
 from pathlib import Path
 
 from test_align import FakeAlignedWord, FakeSpeechSegment
-from tolka.config import Settings
-from tolka.pipeline.transcribe import EasyTranscriberEngine
+from vemsa.config import Settings
+from vemsa.pipeline.transcribe import EasyTranscriberEngine
 
 
 def stub_easytranscriber(monkeypatch, calls: dict) -> None:

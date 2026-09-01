@@ -12,18 +12,18 @@ jobs:
       postgres:
         image: postgres:17-bookworm
         env:
-          POSTGRES_DB: tolka_test
-          POSTGRES_USER: tolka
-          POSTGRES_PASSWORD: tolka-test
+          POSTGRES_DB: vemsa_test
+          POSTGRES_USER: vemsa
+          POSTGRES_PASSWORD: vemsa-test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U tolka -d tolka_test"
+          --health-cmd "pg_isready -U vemsa -d vemsa_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
     env:
-      TOLKA_TEST_POSTGRES_URL: postgresql://tolka:tolka-test@localhost:5432/tolka_test
+      VEMSA_TEST_POSTGRES_URL: postgresql://vemsa:vemsa-test@localhost:5432/vemsa_test
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5

@@ -1,6 +1,6 @@
 from conftest import make_result
-from tolka.jobs.models import Segment, Word
-from tolka.pipeline.render import render_text
+from vemsa.jobs.models import Segment, Word
+from vemsa.pipeline.render import render_text
 
 
 def test_render_with_speakers():
