@@ -423,8 +423,11 @@ class JobQueue:
             logger.warning("job %s interrupted; its lease will expire for retry", job.id)
             raise
         except Exception as exc:
+            # the client-visible error below hides internals; the worker log is
+            # the only place the real failure can land, so keep the traceback
             logger.error(
                 "job failed",
+                exc_info=True,
                 extra={
                     "event": "job.failed",
                     "job_id": job.id,
