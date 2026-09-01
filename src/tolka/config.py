@@ -49,7 +49,11 @@ class Settings(BaseSettings):
     emissions_models: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["sv=KBLab/wav2vec2-large-voxrex-swedish"]
     )
-    diarization_model: str = "pyannote/speaker-diarization-3.1"
+    diarization_model: str = "pyannote/speaker-diarization-community-1"
+    # prefer the pipeline's exclusive diarization (one speaker active at a time,
+    # chosen to match what an ASR system would transcribe) for word attribution;
+    # disable to label against the raw, possibly overlapping turns instead
+    diarize_exclusive: bool = True
     # task=diarize with segments but no words: force-align the text locally for
     # word-precise speaker changes (requires the `align` extra; falls back to
     # segment-level labelling when unavailable or when alignment fails)

@@ -1,5 +1,7 @@
+from tolka.config import Settings
 from tolka.jobs.models import Segment, Word
 from tolka.pipeline.diarize import (
+    Diarizer,
     Turn,
     assign_speakers,
     assign_speakers_to_segments,
@@ -178,3 +180,30 @@ def test_silence_between_turns_joins_the_preceding_speaker():
     labelled = assign_speakers_to_segments(segments, turns)
     assert [s.speaker for s in labelled] == ["SPEAKER_00", "SPEAKER_01"]
     assert labelled[0].end == 6.0 and labelled[1].start == 6.0
+
+
+def _diarizer(**overrides) -> "Diarizer":
+    settings = Settings(_env_file=None, database_url="postgresql://unused/test", **overrides)
+    return Diarizer(settings)
+
+
+class _DiarizeOutput:
+    def __init__(self, regular: object, exclusive: object | None):
+        self.speaker_diarization = regular
+        self.exclusive_speaker_diarization = exclusive
+
+
+def test_pick_annotation_prefers_exclusive():
+    annotation, exclusive = _diarizer()._pick_annotation(_DiarizeOutput("regular", "exclusive"))
+    assert (annotation, exclusive) == ("exclusive", True)
+
+
+def test_pick_annotation_respects_disabled_exclusive():
+    diarizer = _diarizer(diarize_exclusive=False)
+    annotation, exclusive = diarizer._pick_annotation(_DiarizeOutput("regular", "exclusive"))
+    assert (annotation, exclusive) == ("regular", False)
+
+
+def test_pick_annotation_falls_back_to_bare_annotation():
+    annotation, exclusive = _diarizer()._pick_annotation("bare-annotation")
+    assert (annotation, exclusive) == ("bare-annotation", False)

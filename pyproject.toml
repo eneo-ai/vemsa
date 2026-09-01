@@ -27,9 +27,9 @@ start = "tolka.dev:main"
 
 [project.optional-dependencies]
 diarize = [
-    "pyannote-audio>=3.3.1,<4",
-    # pyannote 3.x still passes use_auth_token into huggingface_hub, which 1.x removed
-    "huggingface-hub>=0.24,<1",
+    # 4.x for speaker-diarization-community-1 (exclusive diarization); capped at
+    # <4.0.4 to stay co-installable with easyaligner/easytranscriber, which pin that
+    "pyannote-audio>=4,<4.0.4",
 ]
 align = [
     "easyaligner>=0,<1",

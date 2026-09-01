@@ -217,6 +217,8 @@ All settings via environment variables with the `TOLKA_` prefix (see `src/tolka/
 | `TOLKA_DEFAULT_MODEL` | `KBLab/kb-whisper-large` | Whisper model (name passed to the endpoint, or loaded locally) |
 | `TOLKA_EMISSIONS_MODEL` | `KBLab/wav2vec2-large-voxrex-swedish` | Fallback CTC model for forced alignment when the job language has no `TOLKA_EMISSIONS_MODELS` entry |
 | `TOLKA_EMISSIONS_MODELS` | `sv=KBLab/wav2vec2-large-voxrex-swedish` | Per-language CTC alignment models, comma-separated `lang=model`; an unmapped explicit language aligns with the fallback under a logged warning (`align.language_fallback`) |
+| `TOLKA_DIARIZATION_MODEL` | `pyannote/speaker-diarization-community-1` | pyannote diarization pipeline (HF-gated; accept its license) |
+| `TOLKA_DIARIZE_EXCLUSIVE` | `true` | Attribute words against the pipeline's exclusive diarization (one speaker at a time, matching what an ASR system would transcribe) instead of the raw overlapping turns |
 | `TOLKA_DIARIZE_FORCE_ALIGN` | `true` | Force-align segment-only `task=diarize` transcripts when the `align` extra is installed |
 | `TOLKA_DIARIZE_PREFER_ALIGN` | `true` | `task=diarize`: force-align even when the caller supplied words (segment-level merge is the fallback). Set `false` only for callers whose word timestamps are honestly measured |
 | `TOLKA_MIN_ALIGNMENT` | – | Quality floor (`forced` / `provider_words` / `segment_split` / `segment_only`): fail a job whose word-timestamp rung degrades below it instead of completing with a coarser result |
@@ -236,9 +238,9 @@ All settings via environment variables with the `TOLKA_` prefix (see `src/tolka/
 | `TOLKA_RUN_WORKER` | `true` | Run a worker in this process; production separates API and worker |
 | `TOLKA_LOG_FORMAT` | `json` | Structured `json` or human-readable `text` logs |
 
-`HF_TOKEN` is also honored for the Hugging Face hub. You must accept the pyannote model licenses
-on Hugging Face (`pyannote/speaker-diarization-3.1` and `pyannote/segmentation-3.0`) for the
-diarization stage to download them.
+`HF_TOKEN` is also honored for the Hugging Face hub. You must accept the pyannote model license
+on Hugging Face (`pyannote/speaker-diarization-community-1`) for the diarization stage to
+download it.
 
 ## Development
 

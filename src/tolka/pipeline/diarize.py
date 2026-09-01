@@ -342,8 +342,8 @@ def _decodable_audio(audio_path: Path) -> tuple[Path, bool]:
 
 
 class Diarizer:
-    """pyannote speaker diarization; models are HF-gated (accept the licenses for
-    pyannote/speaker-diarization-3.1 and pyannote/segmentation-3.0, provide HF_TOKEN)."""
+    """pyannote speaker diarization; models are HF-gated (accept the license for
+    pyannote/speaker-diarization-community-1, provide HF_TOKEN)."""
 
     def __init__(self, settings: "Settings") -> None:
         self._settings = settings
@@ -357,9 +357,10 @@ class Diarizer:
             import torch
             from pyannote.audio import Pipeline
 
-            # torch >= 2.6 defaults torch.load to weights_only=True; the official
-            # pyannote checkpoints pickle these classes, so allowlist them rather
-            # than disabling the safety check wholesale
+            # torch >= 2.6 defaults torch.load to weights_only=True; older pyannote
+            # checkpoints (e.g. speaker-diarization-3.1, still configurable) pickle
+            # these classes, so allowlist them rather than disabling the safety
+            # check wholesale
             from pyannote.audio.core.task import Problem, Resolution, Specifications
             from torch.torch_version import TorchVersion
 
@@ -371,7 +372,7 @@ class Diarizer:
             load_started = time.perf_counter()
             pipeline = Pipeline.from_pretrained(
                 self._settings.diarization_model,
-                use_auth_token=self._settings.hf_token,
+                token=self._settings.hf_token,
                 cache_dir=str(self._settings.model_cache_dir),
             )
             if pipeline is None:
@@ -400,10 +401,11 @@ class Diarizer:
         try:
             # GPU-VERIFY(milestone-2): tune against real output. pyannote over-splits
             # without a prior; callers can bound it via num/min/max_speakers.
-            annotation = self._pipeline(str(decodable), **bounds)
+            output = self._pipeline(str(decodable), **bounds)
         finally:
             if is_temp:
                 decodable.unlink(missing_ok=True)
+        annotation, exclusive = self._pick_annotation(output)
         turns = [
             Turn(start=segment.start, end=segment.end, speaker=str(label))
             for segment, _, label in annotation.itertracks(yield_label=True)
@@ -415,9 +417,22 @@ class Diarizer:
                 "duration_ms": round((time.perf_counter() - started) * 1000, 2),
                 "turns": len(turns),
                 "speakers": len({turn.speaker for turn in turns}),
+                "exclusive": exclusive,
             },
         )
         return turns
+
+    def _pick_annotation(self, output: Any) -> tuple[Any, bool]:
+        """The Annotation to derive turns from, and whether it is the exclusive one.
+
+        pyannote 4.x pipelines return a DiarizeOutput whose exclusive variant keeps
+        exactly one speaker active at a time — the one an ASR system would have
+        transcribed — which is what word attribution wants during crosstalk. A
+        custom pipeline may still return a bare Annotation; use it as-is."""
+        exclusive = getattr(output, "exclusive_speaker_diarization", None)
+        if self._settings.diarize_exclusive and exclusive is not None:
+            return exclusive, True
+        return getattr(output, "speaker_diarization", output), False
 
 
 def _group_labelled(
