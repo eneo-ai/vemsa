@@ -182,14 +182,17 @@ def force_align_segments(
         if is_temp:
             decodable.unlink(missing_ok=True)
 
-    words = _words_from_alignments(aligned[0])
+    words = words_from_alignments(aligned[0])
     words.sort(key=lambda word: word.start)
     return words
 
 
-def _words_from_alignments(speeches: list[Any]) -> list[Word]:
+def words_from_alignments(speeches: list[Any]) -> list[Word]:
     """Flatten easyaligner output (SpeechSegment -> AlignmentSegment -> WordSegment)
-    into Words, tolerating flatter shapes from older/newer versions."""
+    into Words, tolerating flatter shapes from older/newer versions.
+
+    Shared with the local engine: easytranscriber's pipeline returns the same
+    easyaligner shapes."""
     words: list[Word] = []
     for speech in speeches:
         containers = getattr(speech, "alignments", None) or [speech]

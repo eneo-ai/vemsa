@@ -94,17 +94,17 @@ class FakeSpeechSegment:
 
 
 def test_alignment_scores_become_word_probabilities():
-    from tolka.pipeline.align import _words_from_alignments
+    from tolka.pipeline.align import words_from_alignments
 
     speech = FakeSpeechSegment(
         [FakeAlignedWord("hej", 0.0, 0.4, score=0.91), FakeAlignedWord("då", 0.5, 0.7)]
     )
-    words = _words_from_alignments([speech])
+    words = words_from_alignments([speech])
     assert [word.probability for word in words] == [0.91, None]
 
 
-def test_transcribe_alignment_scores_become_word_probabilities():
-    from tolka.pipeline.transcribe import words_from_alignments
+def test_flat_alignment_shapes_are_tolerated():
+    from tolka.pipeline.align import words_from_alignments
 
     segment = FakeAlignmentSegment(
         [FakeAlignedWord("hej", 0.0, 0.4, score=0.55), FakeAlignedWord("då", 0.5, 0.7)]

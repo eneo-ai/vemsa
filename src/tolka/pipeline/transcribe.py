@@ -8,13 +8,13 @@ verified without a GPU box are marked GPU-VERIFY(milestone-2).
 """
 
 import logging
+import tempfile
 import threading
 from pathlib import Path
-from typing import Any
 
 from tolka.config import Settings
 from tolka.jobs.models import JobStage, Segment, SpeakerBounds, TranscriptionResult, Word
-from tolka.pipeline.align import build_segment_aligner
+from tolka.pipeline.align import build_segment_aligner, words_from_alignments
 from tolka.pipeline.base import StageReporter, report_stage
 from tolka.pipeline.diarize import (
     Diarizer,
@@ -26,34 +26,6 @@ from tolka.pipeline.label import label_speakers
 from tolka.pipeline.render import render_text
 
 logger = logging.getLogger(__name__)
-
-
-def words_from_alignments(aligned_segments: list[Any]) -> list[Word]:
-    """Normalize easytranscriber's per-file alignment output into flat Word lists.
-
-    Handles both shapes we may get back: segments carrying a word list attribute, and
-    flat word-level segments. GPU-VERIFY(milestone-2): confirm the exact SpeechSegment
-    field names against real pipeline output and drop the fallbacks.
-    """
-    words: list[Word] = []
-    for segment in aligned_segments:
-        nested = getattr(segment, "words", None) or getattr(segment, "word_alignments", None)
-        for item in nested if nested is not None else [segment]:
-            text = getattr(item, "word", None) or getattr(item, "text", None)
-            start = getattr(item, "start", None)
-            end = getattr(item, "end", None)
-            score = getattr(item, "score", None)
-            if text is None or start is None or end is None:
-                raise ValueError(f"unrecognized alignment shape: {item!r}")
-            words.append(
-                Word(
-                    word=str(text).strip(),
-                    start=float(start),
-                    end=float(end),
-                    probability=float(score) if score is not None else None,
-                )
-            )
-    return sorted(words, key=lambda word: word.start)
 
 
 class EasyTranscriberEngine:
@@ -82,11 +54,13 @@ class EasyTranscriberEngine:
                 len(vocabulary),
             )
 
+        import torch
         from easytranscriber.pipelines import pipeline
 
         # GPU-VERIFY(milestone-2): confirm easytranscriber accepts language=None for
         # whisper auto-detect; otherwise require an explicit language in the API.
         lang = None if language == "auto" else language
+        device = "cuda" if torch.cuda.is_available() else "cpu"
 
         report_stage(on_stage, JobStage.TRANSCRIBING)
         with self._lock:
@@ -97,15 +71,34 @@ class EasyTranscriberEngine:
             # GPU-VERIFY(milestone-2): tokenizer for forced alignment — easyaligner's
             # load_tokenizer() Swedish support is unverified; the emissions model default
             # is KBLab/wav2vec2-large-voxrex-swedish (see Settings.emissions_model).
-            aligned = pipeline(
-                transcription_model=model,
-                emissions_model=self._settings.emissions_model,
-                audio_paths=[str(audio_path)],
-                language=lang,
-                cache_dir=str(self._settings.model_cache_dir),
-                save_json=False,
-                return_alignments=True,
-            )
+            Path(self._settings.work_dir).mkdir(parents=True, exist_ok=True)
+            with tempfile.TemporaryDirectory(
+                prefix="transcribe-", dir=str(self._settings.work_dir)
+            ) as tmp:
+                aligned = pipeline(
+                    # silero to match the alignment stack in align.py; pyannote VAD
+                    # would additionally need the HF token
+                    vad_model="silero",
+                    emissions_model=self._settings.emissions_model,
+                    transcription_model=model,
+                    # names relative to audio_dir: the pipeline steps locate their
+                    # intermediate files by these names
+                    audio_paths=[audio_path.name],
+                    audio_dir=str(audio_path.parent),
+                    language=lang,
+                    cache_dir=str(self._settings.model_cache_dir),
+                    # the VAD -> transcribe -> emissions -> align steps hand data to
+                    # each other through JSON files, so saving must stay on; the
+                    # throwaway directory discards them
+                    save_json=True,
+                    return_alignments=True,
+                    delete_emissions=True,
+                    output_vad_dir=f"{tmp}/vad",
+                    output_transcriptions_dir=f"{tmp}/transcriptions",
+                    output_emissions_dir=f"{tmp}/emissions",
+                    output_alignments_dir=f"{tmp}/alignments",
+                    device=device,
+                )
 
         words = words_from_alignments(aligned[0])
         duration = audio_duration(audio_path, fallback=words[-1].end if words else 0.0)
