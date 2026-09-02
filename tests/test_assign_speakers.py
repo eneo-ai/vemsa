@@ -234,6 +234,86 @@ def test_orphan_finishing_the_previous_sentence_joins_it():
     ]
 
 
+def test_turn_initial_word_clipped_to_previous_speaker_is_snapped():
+    # the deployed dialogisk case: "Tack, kul att vara här. Jag | har sett..."
+    # — the new turn's first word rode along on the previous speaker's
+    # diarization turn; the change must snap back to the sentence boundary
+    turns = [Turn(0.0, 2.2, "SPEAKER_01"), Turn(2.2, 6.0, "SPEAKER_00")]
+    words = [
+        word("Tack,", 0.0, 0.3),
+        word("kul", 0.4, 0.6),
+        word("att", 0.7, 0.9),
+        word("vara", 1.0, 1.2),
+        word("här.", 1.3, 1.6),
+        word("Jag", 1.9, 2.1),
+        word("har", 2.3, 2.5),
+        word("sett", 2.6, 2.9),
+        word("fram", 3.0, 3.3),
+        word("emot", 3.4, 3.7),
+    ]
+    segments = assign_speakers(words, turns)
+    assert [(s.speaker, s.text) for s in segments] == [
+        ("SPEAKER_01", "Tack, kul att vara här."),
+        ("SPEAKER_00", "Jag har sett fram emot"),
+    ]
+
+
+def test_sentence_final_words_clipped_to_next_speaker_are_snapped():
+    # mirror case: the sentence's last words landed in the next speaker's turn
+    turns = [Turn(0.0, 1.3, "SPEAKER_00"), Turn(1.3, 4.0, "SPEAKER_01")]
+    words = [
+        word("Det", 0.0, 0.2),
+        word("var", 0.3, 0.5),
+        word("spot", 0.6, 0.9),
+        word("on", 1.35, 1.6),
+        word("alltså.", 1.65, 2.0),
+        word("Nästa", 2.2, 2.5),
+        word("fråga", 2.6, 2.9),
+    ]
+    segments = assign_speakers(words, turns)
+    assert [(s.speaker, s.text) for s in segments] == [
+        ("SPEAKER_00", "Det var spot on alltså."),
+        ("SPEAKER_01", "Nästa fråga"),
+    ]
+
+
+def test_interruption_starting_a_new_sentence_is_not_snapped():
+    # a genuine interruption: the next speaker starts a new sentence
+    # (uppercase), so the mid-sentence cut on the left is real and stays
+    turns = [Turn(0.0, 2.0, "SPEAKER_00"), Turn(2.0, 5.0, "SPEAKER_01")]
+    words = [
+        word("Den", 0.0, 0.2),
+        word("här", 0.3, 0.5),
+        word("känslan", 0.6, 1.0),
+        word("av", 1.1, 1.3),
+        word("att", 1.4, 1.6),
+        word("Expressens,", 2.1, 2.6),
+        word("Brottscentralen", 2.7, 3.4),
+    ]
+    segments = assign_speakers(words, turns)
+    assert [(s.speaker, s.text) for s in segments] == [
+        ("SPEAKER_00", "Den här känslan av att"),
+        ("SPEAKER_01", "Expressens, Brottscentralen"),
+    ]
+
+
+def test_no_snap_without_a_nearby_sentence_boundary():
+    # a mid-sentence speaker change with no sentence end within reach on either
+    # side carries no grammar signal about where the true boundary is: leave it
+    turns = [Turn(0.0, 1.0, "SPEAKER_00"), Turn(1.0, 4.0, "SPEAKER_01")]
+    words = [
+        word("vi", 0.0, 0.2),
+        word("pratade", 0.3, 0.6),
+        word("om", 0.7, 0.9),
+        word("och", 1.1, 1.3),
+        word("sedan", 1.4, 1.7),
+        word("vidare", 1.8, 2.1),
+        word("framåt", 2.2, 2.5),
+    ]
+    segments = assign_speakers(words, turns)
+    assert [s.speaker for s in segments] == ["SPEAKER_00", "SPEAKER_01"]
+
+
 def test_long_island_is_not_absorbed():
     # four words over well more than a second is a real speaker turn
     turns = [

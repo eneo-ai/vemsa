@@ -57,6 +57,12 @@ class AttributionTuning:
     # a word without turn overlap inherits the previous word's speaker only
     # across a gap this short; beyond it the nearest turn wins
     inherit_max_gap_s: float = 2.0
+    # a speaker change sitting mid-sentence is moved to the nearest sentence
+    # boundary within this many words (a turn's first words routinely overlap
+    # the previous speaker's diarization turn); no move across a silence longer
+    # than boundary_max_gap_s
+    boundary_max_words: int = 3
+    boundary_max_gap_s: float = 1.0
     # a pause longer than this ends a segment when it coincides with a sentence end
     gap_split_s: float = 1.0
     # a silence longer than this ends a segment even mid-sentence
@@ -178,6 +184,76 @@ def _smooth_islands(
     return smoothed
 
 
+def _snap_boundaries(
+    words: list[Word],
+    labels: list[str],
+    *,
+    max_words: int,
+    max_gap_s: float,
+) -> list[str]:
+    """Move a few words across a speaker change so the change lands on a sentence
+    boundary.
+
+    Attribution routinely clips a turn's first words onto the previous speaker
+    (or a sentence's last words onto the next): the diarization turn starts a
+    beat late or early relative to the aligned words. When a label change sits
+    mid-sentence — the word before it carries no sentence-final punctuation and
+    the word after continues lowercase — a human transcriber would put the
+    change at the nearest sentence boundary instead, so the words between that
+    boundary and the change are relabelled towards the side they grammatically
+    belong to. With no sentence end within reach on either side, an uppercase
+    start (a genuine interruption), or a long silence at the change, nothing
+    moves."""
+    snapped = list(labels)
+    for boundary in range(1, len(words)):
+        if snapped[boundary - 1] == snapped[boundary]:
+            continue
+        if _ends_sentence(words[boundary - 1].word):
+            continue
+        if not _continues_sentence(words[boundary].word):
+            continue
+        if words[boundary].start - words[boundary - 1].end > max_gap_s:
+            continue
+        behind = _sentence_end_behind(words, snapped, boundary, max_words)
+        ahead = _sentence_end_ahead(words, snapped, boundary, max_words)
+        if behind is not None and (ahead is None or boundary - 1 - behind <= ahead - boundary + 1):
+            snapped[behind + 1 : boundary] = [snapped[boundary]] * (boundary - 1 - behind)
+        elif ahead is not None:
+            snapped[boundary : ahead + 1] = [snapped[boundary - 1]] * (ahead - boundary + 1)
+    return snapped
+
+
+def _sentence_end_behind(
+    words: list[Word], labels: list[str], boundary: int, max_words: int
+) -> int | None:
+    """Index of a sentence-ending word before the boundary, at most max_words back
+    and still inside the left-hand run (so the run keeps that word); None otherwise."""
+    left = labels[boundary - 1]
+    for index in range(boundary - 2, boundary - 2 - max_words, -1):
+        if index < 0 or labels[index] != left:
+            return None
+        if _ends_sentence(words[index].word):
+            return index
+    return None
+
+
+def _sentence_end_ahead(
+    words: list[Word], labels: list[str], boundary: int, max_words: int
+) -> int | None:
+    """Index of the sentence-ending word at or after the boundary, at most max_words
+    ahead, with the right-hand run continuing past it (so the run survives); None
+    otherwise."""
+    right = labels[boundary]
+    for index in range(boundary, boundary + max_words):
+        if index >= len(words) or labels[index] != right:
+            return None
+        if _ends_sentence(words[index].word):
+            if index + 1 < len(words) and labels[index + 1] == right:
+                return index
+            return None
+    return None
+
+
 def assign_speakers(
     words: list[Word], turns: list[Turn], *, tuning: AttributionTuning | None = None
 ) -> list[Segment]:
@@ -205,6 +281,12 @@ def assign_speakers(
         max_words=tuning.island_max_words,
         max_duration_s=tuning.island_max_duration_s,
         max_span_s=tuning.island_max_span_s,
+    )
+    labels = _snap_boundaries(
+        words,
+        labels,
+        max_words=tuning.boundary_max_words,
+        max_gap_s=tuning.boundary_max_gap_s,
     )
     segments = _group_labelled(
         words, labels, tuning.gap_split_s, hard_gap_split_s=tuning.hard_gap_split_s

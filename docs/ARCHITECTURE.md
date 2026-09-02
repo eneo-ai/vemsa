@@ -162,6 +162,12 @@ CI-tested without torch) applies, in order:
   unless the island reads as glued into the following words mid-sentence (no punctuation of
   its own, next word continues lowercase), which is a sentence's first word caught in a
   backchannel window, not an interjection.
+- **Boundary snapping**: a speaker change sitting mid-sentence (no sentence-final
+  punctuation before it, lowercase continuation after it) is moved to the nearest sentence
+  boundary within a few words — diarization turns routinely start a beat late or early
+  relative to the aligned words, clipping a turn's first words onto the previous speaker
+  ("...vara här. Jag | har sett..."). An uppercase start (a genuine interruption), a long
+  silence at the change, or no sentence end within reach leaves the change untouched.
 - **Segment grouping**: labelled words become output segments the way a human lines a
   transcript — break at speaker changes, and at pauses over 1 s only when they coincide
   with sentence-final punctuation (a >15 s silence breaks regardless).

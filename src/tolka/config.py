@@ -78,6 +78,8 @@ class Settings(BaseSettings):
     attr_island_max_duration_s: float = 1.0
     attr_island_max_span_s: float = 3.0
     attr_inherit_max_gap_s: float = 2.0
+    attr_boundary_max_words: int = 3
+    attr_boundary_max_gap_s: float = 1.0
     attr_gap_split_s: float = 1.0
     attr_hard_gap_split_s: float = 15.0
     attr_min_segment_words: int = 1
@@ -150,6 +152,8 @@ class Settings(BaseSettings):
             island_max_duration_s=self.attr_island_max_duration_s,
             island_max_span_s=self.attr_island_max_span_s,
             inherit_max_gap_s=self.attr_inherit_max_gap_s,
+            boundary_max_words=self.attr_boundary_max_words,
+            boundary_max_gap_s=self.attr_boundary_max_gap_s,
             gap_split_s=self.attr_gap_split_s,
             hard_gap_split_s=self.attr_hard_gap_split_s,
             min_segment_words=self.attr_min_segment_words,
@@ -236,6 +240,8 @@ class Settings(BaseSettings):
             "attr_island_max_duration_s",
             "attr_island_max_span_s",
             "attr_inherit_max_gap_s",
+            "attr_boundary_max_words",
+            "attr_boundary_max_gap_s",
             "attr_gap_split_s",
             "attr_hard_gap_split_s",
             "attr_min_segment_words",
