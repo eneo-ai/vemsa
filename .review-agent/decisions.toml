@@ -1,0 +1,9 @@
+version = 1
+
+[[decision]]
+id = "ADR-0001"
+adr_path = ".review-agent/decisions/ADR-0001-timestamp-plausibility.md"
+applies_to = [
+  "src/vemsa/pipeline/label.py",
+  "tests/test_diarize_task.py",
+]

@@ -1,0 +1,7 @@
+version = 1
+enabled = true
+
+# Review Agent reads these files in order from the pull request base commit.
+context = [
+  "context/vemsa-quality.md",
+]
