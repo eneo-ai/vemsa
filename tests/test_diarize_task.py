@@ -190,6 +190,9 @@ def test_label_speakers_reuses_the_engine_diarizer(settings: Settings, tmp_path:
     settings.whisper_api_base = "http://whisper.local/v1"
     diarizer = FakeDiarizer()
     engine = OpenAIWhisperEngine(settings, diarizer=diarizer)
+    # the engine prefers alignment (words are set aside and realigned); stub the
+    # aligner so the test runs without the ML stack
+    engine._segment_aligner = fake_aligner
     audio = tmp_path / "a.wav"
     audio.write_bytes(b"fake audio")
     engine.label_speakers(
