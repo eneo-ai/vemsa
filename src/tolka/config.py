@@ -1,10 +1,13 @@
 import hashlib
 import re
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Literal
 
 from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+if TYPE_CHECKING:
+    from tolka.pipeline.diarize import AttributionTuning
 
 GIB = 1024**3
 _CLIENT_ID = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$")
@@ -54,20 +57,31 @@ class Settings(BaseSettings):
     # chosen to match what an ASR system would transcribe) for word attribution;
     # disable to label against the raw, possibly overlapping turns instead
     diarize_exclusive: bool = True
-    # task=diarize with segments but no words: force-align the text locally for
-    # word-precise speaker changes (requires the `align` extra; falls back to
-    # segment-level labelling when unavailable or when alignment fails)
-    diarize_force_align: bool = True
     # task=diarize with caller-supplied words: set the words aside and force-align
     # the transcript locally anyway — word timestamps derived from the audio beat
     # whatever a provider's decoder heuristics produced. Disable only for callers
-    # that measure their word timestamps honestly.
+    # that measure their word timestamps honestly. Whenever alignment is needed
+    # it is mandatory: a missing align extra or a failed alignment fails the job
+    # instead of degrading to a segment-level merge.
     diarize_prefer_align: bool = True
     # quality floor: fail a job whose word-timestamp rung degrades below this
     # instead of completing with a coarser result (unset = degrade, never fail)
     min_alignment: Literal["forced", "provider_words", "segment_split", "segment_only"] | None = (
         None
     )
+
+    # word→speaker attribution tuning (see AttributionTuning in pipeline/diarize.py
+    # for what each knob does); defaults mirror the tested behaviour so these only
+    # need touching when tuning against real audio
+    attr_min_coverage: float = 0.25
+    attr_island_max_words: int = 2
+    attr_island_max_duration_s: float = 1.0
+    attr_island_max_span_s: float = 3.0
+    attr_inherit_max_gap_s: float = 2.0
+    attr_gap_split_s: float = 1.0
+    attr_hard_gap_split_s: float = 15.0
+    attr_min_segment_words: int = 1
+    attr_min_segment_duration_s: float = 0.6
 
     model_cache_dir: Path = Path("data/models")
     work_dir: Path = Path("data/work")
@@ -123,6 +137,24 @@ class Settings(BaseSettings):
         if self.engine != "auto":
             return self.engine
         return "hybrid" if self.whisper_api_base else "local"
+
+    def attribution_tuning(self) -> "AttributionTuning":
+        """The TOLKA_ATTR_* knobs as the pipeline's tuning object (imported lazily:
+        pipeline.diarize is the pure attribution module and config must stay
+        importable without it in the dependency picture)."""
+        from tolka.pipeline.diarize import AttributionTuning
+
+        return AttributionTuning(
+            min_coverage=self.attr_min_coverage,
+            island_max_words=self.attr_island_max_words,
+            island_max_duration_s=self.attr_island_max_duration_s,
+            island_max_span_s=self.attr_island_max_span_s,
+            inherit_max_gap_s=self.attr_inherit_max_gap_s,
+            gap_split_s=self.attr_gap_split_s,
+            hard_gap_split_s=self.attr_hard_gap_split_s,
+            min_segment_words=self.attr_min_segment_words,
+            min_segment_duration_s=self.attr_min_segment_duration_s,
+        )
 
     @property
     def emissions_model_overrides(self) -> dict[str, str]:
@@ -197,6 +229,20 @@ class Settings(BaseSettings):
                 raise ValueError(f"{name} must be greater than zero")
         if self.max_transcript_bytes <= 0:
             raise ValueError("max_transcript_bytes must be greater than zero")
+        if not 0.0 <= self.attr_min_coverage <= 1.0:
+            raise ValueError("attr_min_coverage must be between 0 and 1")
+        for name in (
+            "attr_island_max_words",
+            "attr_island_max_duration_s",
+            "attr_island_max_span_s",
+            "attr_inherit_max_gap_s",
+            "attr_gap_split_s",
+            "attr_hard_gap_split_s",
+            "attr_min_segment_words",
+            "attr_min_segment_duration_s",
+        ):
+            if getattr(self, name) <= 0:
+                raise ValueError(f"{name} must be greater than zero")
         if self.max_queued_jobs <= 0 or self.max_queued_jobs_per_client <= 0:
             raise ValueError("queue limits must be greater than zero")
         if self.max_queued_jobs_per_client > self.max_queued_jobs:

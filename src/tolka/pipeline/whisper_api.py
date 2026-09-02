@@ -185,7 +185,9 @@ class OpenAIWhisperEngine:
         if diarize:
             report_stage(on_stage, JobStage.DIARIZING)
         turns = self._diarizer.diarize(audio_path, speakers=speakers) if diarize else None
-        segments = resolve_segments(words, plain_segments, turns)
+        segments = resolve_segments(
+            words, plain_segments, turns, tuning=self._settings.attribution_tuning()
+        )
         alignment: Alignment = (
             "provider_words" if words else segment_merge_alignment(plain_segments, segments)
         )
@@ -215,6 +217,7 @@ class OpenAIWhisperEngine:
             aligner=self._segment_aligner,
             speakers=speakers,
             prefer_alignment=self._settings.diarize_prefer_align,
+            tuning=self._settings.attribution_tuning(),
         )
 
     def warm_up(self) -> None:

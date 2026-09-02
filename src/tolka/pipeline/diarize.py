@@ -38,9 +38,48 @@ _TRAILING_CLOSERS = "\"'”’»)]"
 HARD_GAP_SPLIT_S = 15.0
 
 
+@dataclass(frozen=True)
+class AttributionTuning:
+    """Knobs for word→speaker attribution and segment shaping.
+
+    Defaults are the tested behaviour; production overrides come from the
+    TOLKA_ATTR_* settings (Settings.attribution_tuning) so tuning against real
+    audio does not need a code change."""
+
+    # a winning turn overlap below this fraction of the word's duration counts
+    # as no overlap (forced-alignment jitter clips boundary words)
+    min_coverage: float = 0.25
+    # islands at most this many words AND spanning at most island_max_span_s
+    # (or crammed into island_max_duration_s regardless of count) are absorbed
+    island_max_words: int = 2
+    island_max_duration_s: float = 1.0
+    island_max_span_s: float = 3.0
+    # a word without turn overlap inherits the previous word's speaker only
+    # across a gap this short; beyond it the nearest turn wins
+    inherit_max_gap_s: float = 2.0
+    # a pause longer than this ends a segment when it coincides with a sentence end
+    gap_split_s: float = 1.0
+    # a silence longer than this ends a segment even mid-sentence
+    hard_gap_split_s: float = HARD_GAP_SPLIT_S
+    # a segment at most this many words and this short whose speaker appears on
+    # neither side is merged into the neighbour it reads mid-sentence with
+    min_segment_words: int = 1
+    min_segment_duration_s: float = 0.6
+
+
 def _ends_sentence(text: str) -> bool:
     stripped = text.rstrip(_TRAILING_CLOSERS)
     return bool(stripped) and stripped[-1] in _SENTENCE_END_CHARS
+
+
+def _continues_sentence(text: str) -> bool:
+    """Whether a word reads as a mid-sentence continuation: its first letter is
+    lowercase. Words without letters (numbers, bare punctuation) give no signal
+    and count as not continuing."""
+    for char in text:
+        if char.isalpha():
+            return char.islower()
+    return False
 
 
 def _overlap(word: Word, turn: Turn) -> float:
@@ -52,15 +91,23 @@ def _nearest_turn(word: Word | Segment, turns: list[Turn]) -> Turn:
     return min(turns, key=lambda turn: abs((turn.start + turn.end) / 2 - midpoint))
 
 
-def _label_words(words: list[Word], turns: list[Turn], *, min_coverage: float = 0.25) -> list[str]:
+def _label_words(
+    words: list[Word],
+    turns: list[Turn],
+    *,
+    min_coverage: float,
+    inherit_max_gap_s: float,
+) -> list[str]:
     """Per word, the speaker of the maximally overlapping turn; a winning overlap
     below min_coverage of the word's duration counts as no overlap — forced-alignment
     jitter can land a sliver of a boundary word inside the neighbouring turn. Words
-    without a (sufficient) overlap inherit the previous word's speaker (nearest turn
-    by midpoint for the first word)."""
+    without a (sufficient) overlap inherit the previous word's speaker across a gap
+    of at most inherit_max_gap_s; beyond that (and for the first word) the nearest
+    turn by midpoint wins — a speaker should not stretch across a long silence just
+    because they spoke last."""
     labels: list[str] = []
     first_candidate = 0
-    for word in words:
+    for position, word in enumerate(words):
         while first_candidate < len(turns) and turns[first_candidate].end <= word.start:
             first_candidate += 1
         best: str | None = None
@@ -75,7 +122,11 @@ def _label_words(words: list[Word], turns: list[Turn], *, min_coverage: float = 
         if best_overlap < min_coverage * (word.end - word.start):
             best = None
         if best is None:
-            best = labels[-1] if labels else _nearest_turn(word, turns).speaker
+            gap = word.start - words[position - 1].end if position > 0 else None
+            if labels and gap is not None and gap <= inherit_max_gap_s:
+                best = labels[-1]
+            else:
+                best = _nearest_turn(word, turns).speaker
         labels.append(best)
     return labels
 
@@ -84,8 +135,9 @@ def _smooth_islands(
     words: list[Word],
     labels: list[str],
     *,
-    max_words: int = 2,
-    max_duration_s: float = 1.0,
+    max_words: int,
+    max_duration_s: float,
+    max_span_s: float,
 ) -> list[str]:
     """Relabel a short run of words whose neighbours on both sides agree on a
     different speaker.
@@ -93,8 +145,13 @@ def _smooth_islands(
     An untranscribed backchannel ("mm") flips the exclusive diarization track to
     the other speaker for a moment, and alignment jitter can drop a mid-sentence
     word into that window — a human transcriber would never credit one word
-    mid-sentence to another speaker. A run beginning right after sentence-final
-    punctuation is kept: a short interjection ("Ja.") legitimately starts there."""
+    mid-sentence to another speaker. A run counts as short with at most max_words
+    words inside max_span_s, or any word count inside max_duration_s; a few words
+    stretched over a long span are a real turn. A run beginning right after
+    sentence-final punctuation is kept — a short interjection ("Ja.") legitimately
+    starts there — unless the run reads as glued into the following words
+    mid-sentence (it carries no sentence-final punctuation of its own and the next
+    word continues lowercase), where a human would keep the sentence on one line."""
     smoothed = list(labels)
     run_start = 0
     for index in range(1, len(smoothed) + 1):
@@ -104,11 +161,17 @@ def _smooth_islands(
             neighbour = smoothed[run_start - 1]
             count = index - run_start
             duration = words[index - 1].end - words[run_start].start
+            short_run = (
+                count <= max_words and duration <= max_span_s
+            ) or duration <= max_duration_s
+            glued_to_following = not _ends_sentence(words[index - 1].word) and _continues_sentence(
+                words[index].word
+            )
             if (
                 neighbour == smoothed[index]
                 and neighbour != smoothed[run_start]
-                and (count <= max_words or duration <= max_duration_s)
-                and not _ends_sentence(words[run_start - 1].word)
+                and short_run
+                and (not _ends_sentence(words[run_start - 1].word) or glued_to_following)
             ):
                 smoothed[run_start:index] = [neighbour] * count
         run_start = index
@@ -116,20 +179,41 @@ def _smooth_islands(
 
 
 def assign_speakers(
-    words: list[Word], turns: list[Turn], *, gap_split_s: float = 1.0
+    words: list[Word], turns: list[Turn], *, tuning: AttributionTuning | None = None
 ) -> list[Segment]:
     """Assign speakers to aligned words by maximal temporal overlap with diarization
-    turns, smooth away single-word islands surrounded by another speaker, then group
+    turns, smooth away single-word islands surrounded by another speaker, group
     consecutive same-speaker words into segments (splitting where a pause longer
-    than gap_split_s coincides with a sentence end — see _group_labelled)."""
+    than tuning.gap_split_s coincides with a sentence end — see _group_labelled),
+    then merge away tiny orphan segments glued mid-sentence to a neighbour."""
     if not words:
         return []
+    tuning = tuning or AttributionTuning()
     words = sorted(words, key=lambda word: word.start)
     if not turns:
-        return segments_without_speakers(words, gap_split_s=gap_split_s)
+        return segments_without_speakers(words, gap_split_s=tuning.gap_split_s)
     turns = sorted(turns, key=lambda turn: turn.start)
-    labels = _smooth_islands(words, _label_words(words, turns))
-    return _group_labelled(words, labels, gap_split_s)
+    labels = _label_words(
+        words,
+        turns,
+        min_coverage=tuning.min_coverage,
+        inherit_max_gap_s=tuning.inherit_max_gap_s,
+    )
+    labels = _smooth_islands(
+        words,
+        labels,
+        max_words=tuning.island_max_words,
+        max_duration_s=tuning.island_max_duration_s,
+        max_span_s=tuning.island_max_span_s,
+    )
+    segments = _group_labelled(
+        words, labels, tuning.gap_split_s, hard_gap_split_s=tuning.hard_gap_split_s
+    )
+    return _merge_short_orphans(
+        segments,
+        max_words=tuning.min_segment_words,
+        max_duration_s=tuning.min_segment_duration_s,
+    )
 
 
 def assign_speakers_to_segments(
@@ -292,14 +376,18 @@ def _dominant_speaker(spans: list[tuple[float, float, str]], start: float, end: 
 
 
 def resolve_segments(
-    words: list[Word], plain_segments: list[Segment], turns: list[Turn] | None
+    words: list[Word],
+    plain_segments: list[Segment],
+    turns: list[Turn] | None,
+    *,
+    tuning: AttributionTuning | None = None,
 ) -> list[Segment]:
     """Best segment construction for the available inputs: word-level speaker merge
     when words exist, segment-level merge otherwise; without diarization (turns=None),
     provider segments verbatim or gap-grouped words."""
     if turns is not None:
         if words:
-            return assign_speakers(words, turns)
+            return assign_speakers(words, turns, tuning=tuning)
         return assign_speakers_to_segments(plain_segments, turns)
     if plain_segments:
         return plain_segments
@@ -486,13 +574,17 @@ class Diarizer:
 
 
 def _group_labelled(
-    words: list[Word], labels: list[str | None], gap_split_s: float
+    words: list[Word],
+    labels: list[str | None],
+    gap_split_s: float,
+    *,
+    hard_gap_split_s: float = HARD_GAP_SPLIT_S,
 ) -> list[Segment]:
     """Group consecutive same-speaker words into segments the way a human lines
     a transcript: a segment ends at a speaker change, at a pause longer than
     gap_split_s that coincides with sentence-final punctuation (a pause
     mid-sentence keeps the sentence together), or at a silence longer than
-    HARD_GAP_SPLIT_S regardless of punctuation."""
+    hard_gap_split_s regardless of punctuation."""
     segments: list[Segment] = []
     start_index = 0
     for index in range(1, len(words) + 1):
@@ -501,7 +593,7 @@ def _group_labelled(
             speaker_changed = labels[index] != labels[start_index]
             gap = words[index].start - words[index - 1].end
             sentence_break = gap > gap_split_s and _ends_sentence(words[index - 1].word)
-            if not speaker_changed and not sentence_break and gap <= HARD_GAP_SPLIT_S:
+            if not speaker_changed and not sentence_break and gap <= hard_gap_split_s:
                 continue
         group = words[start_index:index]
         segments.append(
@@ -515,3 +607,73 @@ def _group_labelled(
         )
         start_index = index
     return segments
+
+
+def _merge_short_orphans(
+    segments: list[Segment], *, max_words: int, max_duration_s: float
+) -> list[Segment]:
+    """Merge a tiny orphan segment into the neighbour it reads mid-sentence with.
+
+    An orphan's speaker appears on neither side, so island smoothing never saw
+    agreeing neighbours (three-speaker A/B/C jitter, or the transcript's edge).
+    A one-word line credited to a third voice mid-sentence is attribution noise,
+    not a turn: when the orphan carries no sentence-final punctuation and the
+    following segment continues lowercase it joins that segment; when instead it
+    finishes the previous segment's unfinished sentence (continues lowercase and
+    carries the sentence-final punctuation) it joins that one. An orphan without
+    such grammatical glue — a bounded interjection ("Ja."), or a bare word with
+    no grammar signal at all — is left alone."""
+    if len(segments) < 2:
+        return segments
+    merged: list[Segment] = []
+    index = 0
+    while index < len(segments):
+        segment = segments[index]
+        previous = merged[-1] if merged else None
+        following = segments[index + 1] if index + 1 < len(segments) else None
+        if _orphan(segment, previous, following, max_words, max_duration_s):
+            if following is not None and (
+                not _ends_sentence(segment.words[-1].word)
+                and _continues_sentence(following.words[0].word)
+            ):
+                segments[index + 1] = _join_segments(segment, following)
+                index += 1
+                continue
+            if previous is not None and (
+                not _ends_sentence(previous.words[-1].word)
+                and _continues_sentence(segment.words[0].word)
+                and _ends_sentence(segment.words[-1].word)
+            ):
+                merged[-1] = _join_segments(previous, segment, speaker=previous.speaker)
+                index += 1
+                continue
+        merged.append(segment)
+        index += 1
+    return merged
+
+
+def _orphan(
+    segment: Segment,
+    previous: Segment | None,
+    following: Segment | None,
+    max_words: int,
+    max_duration_s: float,
+) -> bool:
+    if not segment.words or len(segment.words) > max_words:
+        return False
+    if segment.end - segment.start > max_duration_s:
+        return False
+    neighbours = [other for other in (previous, following) if other is not None]
+    return bool(neighbours) and all(
+        other.speaker != segment.speaker and other.words for other in neighbours
+    )
+
+
+def _join_segments(first: Segment, second: Segment, *, speaker: str | None = None) -> Segment:
+    return Segment(
+        start=first.start,
+        end=second.end,
+        speaker=speaker if speaker is not None else second.speaker,
+        text=f"{first.text} {second.text}",
+        words=[*first.words, *second.words],
+    )

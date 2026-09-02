@@ -106,7 +106,7 @@ class EasyTranscriberEngine:
         if diarize:
             report_stage(on_stage, JobStage.DIARIZING)
             turns = self._diarizer.diarize(audio_path, speakers=speakers)
-            segments = assign_speakers(words, turns)
+            segments = assign_speakers(words, turns, tuning=self._settings.attribution_tuning())
         else:
             segments = segments_without_speakers(words)
 
@@ -146,6 +146,7 @@ class EasyTranscriberEngine:
             aligner=self._segment_aligner,
             speakers=speakers,
             prefer_alignment=self._settings.diarize_prefer_align,
+            tuning=self._settings.attribution_tuning(),
         )
 
     def warm_up(self) -> None:

@@ -35,13 +35,17 @@ def alignment_available() -> bool:
     return importlib.util.find_spec("easyaligner") is not None
 
 
-def build_segment_aligner(settings: Settings) -> SegmentAligner | None:
-    """Aligner for task=diarize jobs, or None when disabled or not installed.
-
-    The None short-circuit keeps tiers without the `align` extra (e.g. remote)
-    quiet: no per-job import attempt, no warning spam."""
-    if not settings.diarize_force_align or not alignment_available():
-        return None
+def build_segment_aligner(settings: Settings) -> SegmentAligner:
+    """Aligner for task=diarize jobs. Forced alignment is mandatory — the service
+    always runs with a GPU and the `align` extra — so there is no disabled state:
+    without easyaligner installed, every job needing alignment fails loudly at
+    run time (the error below flags the misconfiguration at engine build)."""
+    if not alignment_available():
+        logger.error(
+            "easyaligner is not installed but forced alignment is mandatory;"
+            " every job needing alignment will fail until the 'align' extra is"
+            " installed"
+        )
 
     def aligner(audio_path: Path, segments: list[Segment], language: str) -> list[Word]:
         return force_align_segments(settings, audio_path, segments, language)
@@ -125,9 +129,9 @@ def force_align_segments(
     easyaligner's pipeline steps hand data to each other through JSON/npy files,
     so each run gets a throwaway directory under work_dir. `language` picks the
     CTC model via TOLKA_EMISSIONS_MODELS (falling back to TOLKA_EMISSIONS_MODEL
-    with a warning — an acoustic-model mismatch degrades word precision);
-    callers keep this behind a runtime fallback and must never fail a job on
-    alignment errors."""
+    with a warning — an acoustic-model mismatch degrades word precision).
+    Alignment errors propagate and fail the job: quality doctrine forbids
+    silently degrading to provider timestamps or segment-level merging."""
     import torch
     from easyaligner.data.datamodel import SpeechSegment
     from easyaligner.pipelines import pipeline as align_pipeline

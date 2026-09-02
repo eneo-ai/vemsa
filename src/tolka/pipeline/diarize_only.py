@@ -19,6 +19,7 @@ class DiarizeOnlyEngine:
         self._diarizer = diarizer or Diarizer(settings)
         self._segment_aligner = build_segment_aligner(settings)
         self._prefer_align = settings.diarize_prefer_align
+        self._tuning = settings.attribution_tuning()
 
     def transcribe(
         self,
@@ -57,6 +58,7 @@ class DiarizeOnlyEngine:
             aligner=self._segment_aligner,
             speakers=speakers,
             prefer_alignment=self._prefer_align,
+            tuning=self._tuning,
         )
 
     def warm_up(self) -> None:

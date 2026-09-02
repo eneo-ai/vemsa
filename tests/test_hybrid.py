@@ -60,9 +60,10 @@ def test_uses_locally_aligned_words_when_alignment_succeeds(
 
 
 @respx.mock
-def test_falls_back_to_provider_timestamps_when_alignment_fails(
-    hybrid_settings: Settings, audio_file: Path, monkeypatch
-):
+def test_alignment_failure_fails_the_job(hybrid_settings: Settings, audio_file: Path, monkeypatch):
+    # doctrine: the hybrid tier never degrades to provider timestamps — a broken
+    # alignment stack fails the job loudly (deployments that deliberately trust
+    # the provider use TOLKA_ENGINE=remote)
     respx.post(ENDPOINT).mock(return_value=Response(200, json=WORD_PAYLOAD))
     engine = HybridEngine(hybrid_settings, diarizer=FakeDiarizer())
 
@@ -71,37 +72,36 @@ def test_falls_back_to_provider_timestamps_when_alignment_fails(
 
     monkeypatch.setattr(engine, "_force_align", boom)
 
-    result = engine.transcribe(audio_file, language="sv", model="kb-whisper", diarize=True)
-
-    # provider word timestamps survive the fallback
-    assert result.segments[0].words[0].start == 0.0
-    assert [s.speaker for s in result.segments] == ["SPEAKER_00", "SPEAKER_01"]
+    with pytest.raises(ImportError, match="easyaligner"):
+        engine.transcribe(audio_file, language="sv", model="kb-whisper", diarize=True)
 
 
 @respx.mock
-def test_implausible_provider_words_fall_back_to_segments_not_words(
+def test_implausible_provider_words_distrust_the_segment_windows(
     hybrid_settings: Settings, audio_file: Path, monkeypatch
 ):
-    # ~10 words/s decoder-heuristic timeline alongside segments; alignment also
-    # fails — the segment merge must win over the garbage word timeline
+    # ~10 words/s decoder-heuristic timeline alongside segments: the segment
+    # windows come from the same broken timeline, so the aligner must receive
+    # one whole-audio window instead of the suspect windows
     compressed = dict(WORD_PAYLOAD)
     compressed["words"] = [
         {"word": f"w{i}", "start": i * 0.1, "end": i * 0.1 + 0.08} for i in range(26)
     ]
     respx.post(ENDPOINT).mock(return_value=Response(200, json=compressed))
     engine = HybridEngine(hybrid_settings, diarizer=FakeDiarizer())
+    received: list[list] = []
 
-    def boom(*args, **kwargs):
-        raise ImportError("No module named 'easyaligner'")
+    def recording_align(audio_path, payload, segments, language):
+        received.append(segments)
+        return ALIGNED_WORDS
 
-    monkeypatch.setattr(engine, "_force_align", boom)
+    monkeypatch.setattr(engine, "_force_align", recording_align)
 
     result = engine.transcribe(audio_file, language="sv", model="kb-whisper", diarize=True)
 
-    assert result.alignment in ("segment_only", "segment_split")
-    # output segments come from the provider segments, not the compressed words
-    assert [s.text for s in result.segments] == ["Hej och välkomna.", "Tack så mycket."]
-    assert [s.speaker for s in result.segments] == ["SPEAKER_00", "SPEAKER_01"]
+    assert result.alignment == "forced"
+    assert len(received[0]) == 1
+    assert result.segments[0].words[0].start == 0.05
 
 
 @respx.mock

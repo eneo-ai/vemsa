@@ -57,10 +57,12 @@ TOLKA_IMAGE=ghcr.io/eneo-ai/tolka:latest-cpu \
   docker compose -f compose.yaml -f compose.cpu.yaml up --no-build
 ```
 
-**Production deployments are expected to run on a GPU host.** CPU-only deployments (and
-the `hybrid`/`remote` offload tiers) exist for local testing with small audio files and
-are expected to be slow: plan on CPU diarization and forced alignment at roughly real
-time, and size job deadlines accordingly.
+**Production deployments run on a GPU host — that is a requirement, not a preference.**
+Forced alignment is mandatory on the quality tiers: a job whose transcript cannot be
+aligned fails loudly rather than completing with provider timestamps or a segment-level
+merge. CPU-only deployments exist for local testing with small audio files and are
+expected to be slow: plan on CPU diarization and forced alignment at roughly real time,
+and size job deadlines accordingly.
 
 ### Selecting an image
 
@@ -106,6 +108,10 @@ and the "never log transcripts" rule now cover request payloads as well as resul
 `TOLKA_MAX_TRANSCRIPT_BYTES` (default 8 MiB) caps the accepted transcript size.
 
 ## Consumer integrations (eneo)
+
+The full responsibility split between eneo and Tolka — who owns identity, storage, ASR,
+timestamps, and the output contract — is documented in
+[ARCHITECTURE.md](ARCHITECTURE.md); this section is the deployment checklist.
 
 Eneo integrates Tolka as the engine for its flow `transcribe_only` steps. Tolka exposes
 authenticated readiness, coarse job stages, queue position, and idempotent cancellation.
@@ -200,14 +206,17 @@ Alert at minimum on oldest queued-job age, queue depth, queue rejection rate, fa
 cancellation ratio, per-stage duration, webhook exhaustion, missing worker heartbeats, disk
 usage, PostgreSQL availability, GPU OOM, and processing real-time factor.
 
-Quality degradation is deliberate, silent-by-default behavior — make it loud in production:
+Quality is enforced, not monitored-only: the quality tiers (`local`/`hybrid`/`diarize`
+with `TOLKA_DIARIZE_PREFER_ALIGN=true`) fail a job loudly when forced alignment cannot
+run — there is no silent degradation to provider timestamps or a segment-level merge.
 `tolka_job_alignment_total{alignment=...}` counts finished jobs by word-timestamp rung, and
-`job.completed` log lines carry the `alignment` field. On a healthy GPU deployment
-effectively every job should be `forced`; alert on any sustained share of
-`provider_words`/`segment_split`/`segment_only`, and on `align.language_fallback` warnings
-(a job language without a configured CTC model). Deployments that would rather retry than
-ship a coarse result can set `TOLKA_MIN_ALIGNMENT=forced`, which fails such jobs with a
-client-visible error instead of completing them. Logs are JSON by
+`job.completed` log lines carry the `alignment` field. On those tiers every completed job
+reports `forced`; lower rungs can appear only on deployments that deliberately trust an
+external timestamp source (`TOLKA_ENGINE=remote`, or `PREFER_ALIGN=false`) — there,
+alert on any sustained share of `segment_split`/`segment_only`, hold the provider to its
+timestamp-quality requirements, and consider `TOLKA_MIN_ALIGNMENT` as the enforcement
+floor (e.g. `provider_words`). Also alert on `align.language_fallback` warnings
+(a job language without a configured CTC model). Logs are JSON by
 default and include `request_id`, `job_id`, `client_id`, engine, task, stage, attempt, status,
 and duration where applicable. They must never contain credentials, audio, transcripts,
 participant names, complete source URLs, or webhook payloads.

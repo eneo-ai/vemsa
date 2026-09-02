@@ -256,21 +256,22 @@ def test_whole_file_segment_is_force_aligned(tmp_path: Path):
     ]
 
 
-def test_alignment_failure_falls_back_to_segment_merge(tmp_path: Path):
+def test_alignment_failure_fails_the_job(tmp_path: Path):
+    # doctrine: never degrade to a segment-level merge — a broken alignment
+    # stack must surface as a loud failure, not a coarser transcript
     def broken_aligner(audio_path: Path, segments: list[Segment], language: str) -> list[Word]:
         raise RuntimeError("no tokenizer for this language")
 
-    result = label_speakers(
-        FakeDiarizer(),
-        tmp_path / "a.wav",
-        words=[],
-        segments=SEGMENT_ONLY,
-        language="sv",
-        model="external",
-        aligner=broken_aligner,
-    )
-    assert result.alignment == "segment_only"
-    assert [s.speaker for s in result.segments] == ["SPEAKER_00"]
+    with pytest.raises(RuntimeError, match="no tokenizer"):
+        label_speakers(
+            FakeDiarizer(),
+            tmp_path / "a.wav",
+            words=[],
+            segments=SEGMENT_ONLY,
+            language="sv",
+            model="external",
+            aligner=broken_aligner,
+        )
 
 
 def test_caller_words_win_over_the_aligner(tmp_path: Path):
@@ -313,56 +314,38 @@ def test_prefer_alignment_sets_caller_words_aside(tmp_path: Path):
     assert "hej och" in result.text
 
 
-def test_prefer_alignment_falls_back_to_segment_merge(tmp_path: Path):
-    # when alignment fails, the segment-level merge wins over the set-aside
-    # caller words: coarser speakers, but the text order cannot be corrupted
+def test_prefer_alignment_failure_fails_the_job(tmp_path: Path):
+    # set-aside caller words are never resurrected: a failed alignment fails
+    # the job rather than shipping timestamps the config said not to trust
     def broken_aligner(audio_path: Path, segments: list[Segment], language: str) -> list[Word]:
         raise RuntimeError("no tokenizer for this language")
 
-    result = label_speakers(
-        FakeDiarizer(),
-        tmp_path / "a.wav",
-        words=[Word(**w) for w in WORDS],
-        segments=SEGMENT_ONLY,
-        language="sv",
-        model="external",
-        aligner=broken_aligner,
-        prefer_alignment=True,
-    )
-    assert result.alignment == "segment_only"
-    assert [s.text for s in result.segments] == ["hej och tack"]
+    with pytest.raises(RuntimeError, match="no tokenizer"):
+        label_speakers(
+            FakeDiarizer(),
+            tmp_path / "a.wav",
+            words=[Word(**w) for w in WORDS],
+            segments=SEGMENT_ONLY,
+            language="sv",
+            model="external",
+            aligner=broken_aligner,
+            prefer_alignment=True,
+        )
 
 
-def test_prefer_alignment_without_an_aligner_keeps_caller_words(tmp_path: Path):
-    result = label_speakers(
-        FakeDiarizer(),
-        tmp_path / "a.wav",
-        words=[Word(**w) for w in WORDS],
-        segments=SEGMENT_ONLY,
-        language="sv",
-        model="external",
-        aligner=None,
-        prefer_alignment=True,
-    )
-    assert result.alignment == "provider_words"
-
-
-def test_segment_split_is_reported_in_alignment(tmp_path: Path):
-    # no words, no aligner, and the merge splits the segment at the turn boundary
-    class TwoTurnDiarizer(FakeDiarizer):
-        def diarize(self, audio_path: Path, *, speakers=None) -> list[Turn]:
-            return [Turn(0.0, 6.0, "SPEAKER_00"), Turn(6.0, 10.0, "SPEAKER_01")]
-
-    result = label_speakers(
-        TwoTurnDiarizer(),
-        tmp_path / "a.wav",
-        words=[],
-        segments=[Segment(start=0.0, end=10.0, text="ett två tre fyra fem sex")],
-        language="sv",
-        model="external",
-    )
-    assert result.alignment == "segment_split"
-    assert [s.speaker for s in result.segments] == ["SPEAKER_00", "SPEAKER_01"]
+def test_missing_aligner_fails_when_alignment_is_needed(tmp_path: Path):
+    # segment-only input cannot be labelled word-precisely without alignment;
+    # a missing align extra is a deployment error, not a reason to go coarse
+    with pytest.raises(RuntimeError, match="align"):
+        label_speakers(
+            FakeDiarizer(),
+            tmp_path / "a.wav",
+            words=[],
+            segments=SEGMENT_ONLY,
+            language="sv",
+            model="external",
+            aligner=None,
+        )
 
 
 def compressed_words(count: int = 30, spacing: float = 0.1) -> list[Word]:
@@ -466,8 +449,16 @@ def test_locally_compressed_segment_windows_align_as_one_window(tmp_path: Path):
     assert [(s.start, s.end) for s in received[0]] == [(0.0, 60.0)]
 
 
-def test_implausible_words_without_segments_are_still_used(tmp_path: Path):
-    # nothing better exists: keep the words rather than returning nothing
+def test_implausible_words_without_segments_are_realigned_from_their_text(tmp_path: Path):
+    # words-only input with a garbage timeline: the text survives in order and
+    # is force-aligned against the whole audio — never shipped with the broken
+    # timestamps, never dropped
+    received: list[list[Segment]] = []
+
+    def recording_aligner(audio_path: Path, segments: list[Segment], language: str) -> list[Word]:
+        received.append(segments)
+        return [Word(**w) for w in WORDS]
+
     result = label_speakers(
         FakeDiarizer(),
         tmp_path / "a.wav",
@@ -475,18 +466,20 @@ def test_implausible_words_without_segments_are_still_used(tmp_path: Path):
         segments=[],
         language="sv",
         model="external",
+        aligner=recording_aligner,
     )
-    assert result.alignment == "provider_words"
+    assert result.alignment == "forced"
+    assert len(received[0]) == 1
+    assert received[0][0].text.split() == [f"w{i}" for i in range(30)]
 
 
-def test_build_segment_aligner_respects_the_config_gate(settings: Settings, monkeypatch):
+def test_build_segment_aligner_is_unconditional(settings: Settings, monkeypatch):
+    # forced alignment is mandatory: no config gate, and a missing easyaligner
+    # only logs at build time (jobs needing alignment then fail loudly at run time)
     monkeypatch.setattr(align, "alignment_available", lambda: True)
     assert align.build_segment_aligner(settings) is not None
-    settings.diarize_force_align = False
-    assert align.build_segment_aligner(settings) is None
-    settings.diarize_force_align = True
     monkeypatch.setattr(align, "alignment_available", lambda: False)
-    assert align.build_segment_aligner(settings) is None
+    assert align.build_segment_aligner(settings) is not None
 
 
 def test_diarize_only_engine_aligns_and_passes_speaker_bounds(settings: Settings, tmp_path: Path):

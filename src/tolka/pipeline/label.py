@@ -2,9 +2,11 @@
 
 The ASR already happened somewhere else; this runs diarization on the audio and
 merges the turns into the caller's words or segments with the same heuristics the
-transcribe task uses, so both tasks render identical output. Segment-only input is
-force-aligned into words first when an aligner is available, so speaker changes
-inside one segment survive."""
+transcribe task uses, so both tasks render identical output. Whenever the caller's
+words are not trusted (absent, implausible, or set aside by
+TOLKA_DIARIZE_PREFER_ALIGN), the transcript is force-aligned into words — a failed
+or unavailable alignment fails the job rather than degrading to a segment-level
+merge: the service always runs with a GPU, and quality beats completing coarsely."""
 
 import logging
 from pathlib import Path
@@ -12,7 +14,7 @@ from typing import Protocol
 
 from tolka.jobs.models import Alignment, Segment, SpeakerBounds, TranscriptionResult, Word
 from tolka.pipeline.align import SegmentAligner
-from tolka.pipeline.diarize import Turn, audio_duration, resolve_segments
+from tolka.pipeline.diarize import AttributionTuning, Turn, audio_duration, resolve_segments
 from tolka.pipeline.render import render_text
 
 logger = logging.getLogger(__name__)
@@ -109,77 +111,69 @@ def label_speakers(
     aligner: SegmentAligner | None = None,
     speakers: SpeakerBounds | None = None,
     prefer_alignment: bool = False,
+    tuning: AttributionTuning | None = None,
 ) -> TranscriptionResult:
     plain_segments = [segment.model_copy(update={"speaker": None}) for segment in segments]
     if not words:
         words = [word for segment in plain_segments for word in segment.words]
+    # the caller's text in order, kept before any word discard: alignment can
+    # recover timestamps from the audio, but the text itself only exists here
+    caller_text = " ".join(word.word for word in words)
     words_discarded = False
-    if words and plain_segments and not words_plausible(words):
+    if words and not words_plausible(words):
         logger.warning(
-            "supplied word timestamps are implausible (%d words); ignoring them in"
-            " favour of alignment or segment-level merging",
+            "supplied word timestamps are implausible (%d words); discarding them"
+            " in favour of forced alignment",
             len(words),
         )
         words = []
         words_discarded = True
-    if words and plain_segments and aligner is not None and prefer_alignment:
+    if words and prefer_alignment:
         # Timestamps derived from the audio beat whatever the caller's provider
-        # decoded. Should alignment fail, the segment-level merge is the fallback:
-        # coarser speakers, but the text order can never be corrupted the way a
-        # broken word timeline corrupts it.
+        # decoded.
         logger.info(
             "caller-supplied words set aside: forced alignment is preferred"
             " (TOLKA_DIARIZE_PREFER_ALIGN)",
             extra={"event": "label.prefer_align", "words": len(words)},
         )
         words = []
-    alignment: Alignment | None = "provider_words" if words else None
-    fallback_reason = "no word timestamps supplied"
-    if not words and plain_segments and aligner is None:
-        fallback_reason = (
-            "no aligner configured (align extra not installed or TOLKA_DIARIZE_FORCE_ALIGN=false)"
-        )
-    if not words and plain_segments and aligner is not None:
-        # windows from the same timeline as discarded words cannot anchor alignment
-        align_segments = alignment_input(
-            plain_segments,
-            windows_trusted=not words_discarded,
-            total_duration=audio_duration(
-                audio_path, fallback=max(segment.end for segment in plain_segments)
-            ),
-        )
-        if align_segments is not plain_segments:
-            logger.info("segment windows are untrusted; aligning the whole audio in one window")
-        try:
-            words = aligner(audio_path, align_segments, language)
-            alignment = "forced" if words else None
-            fallback_reason = "aligner returned no words"
-        except Exception as exc:
-            logger.warning(
-                "forced alignment of the supplied segments failed; falling back to"
-                " segment-level speaker labelling",
-                exc_info=True,
+    alignment: Alignment = "provider_words"
+    if not words:
+        # doctrine: word timestamps must be derived from the audio; a missing
+        # aligner or a failed alignment fails the job instead of degrading to
+        # a segment-level merge
+        if aligner is None:
+            raise RuntimeError(
+                "forced alignment is required to label this transcript but no"
+                " aligner is available (install the 'align' extra)"
             )
-            words = []
-            alignment = None
-            fallback_reason = f"alignment failed: {exc!r}"
+        total_duration = audio_duration(
+            audio_path, fallback=max((segment.end for segment in plain_segments), default=0.0)
+        )
+        if plain_segments:
+            # windows from the same timeline as discarded words cannot anchor alignment
+            align_segments = alignment_input(
+                plain_segments,
+                windows_trusted=not words_discarded,
+                total_duration=total_duration,
+            )
+            if align_segments is not plain_segments:
+                logger.info("segment windows are untrusted; aligning the whole audio in one window")
+        else:
+            # words-only input whose timestamps were discarded: the text survives
+            align_segments = [Segment(start=0.0, end=total_duration, text=caller_text)]
+        words = aligner(audio_path, align_segments, language)
+        if not words:
+            raise RuntimeError("forced alignment produced no words for the supplied transcript")
+        alignment = "forced"
     turns = diarizer.diarize(audio_path, speakers=speakers)
-    labelled = resolve_segments(words, plain_segments, turns)
-    if alignment is None:
-        alignment = segment_merge_alignment(plain_segments, labelled)
-    if alignment == "forced":
-        logger.info(
-            "speaker labels merged per word: alignment=forced words=%d",
-            len(words),
-            extra={"event": "label.align", "alignment": "forced", "words": len(words)},
-        )
-    elif alignment != "provider_words":
-        logger.info(
-            "speaker labels merged per segment: alignment=%s reason=%s",
-            alignment,
-            fallback_reason,
-            extra={"event": "label.align", "alignment": alignment, "reason": fallback_reason},
-        )
+    labelled = resolve_segments(words, plain_segments, turns, tuning=tuning)
+    logger.info(
+        "speaker labels merged per word: alignment=%s words=%d",
+        alignment,
+        len(words),
+        extra={"event": "label.align", "alignment": alignment, "words": len(words)},
+    )
     last_end = max((segment.end for segment in labelled), default=0.0)
     return TranscriptionResult(
         language=language if language != "auto" else "unknown",

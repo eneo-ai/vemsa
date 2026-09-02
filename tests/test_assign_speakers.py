@@ -35,6 +35,19 @@ def test_word_in_gap_inherits_previous_speaker():
     assert segments[0].text == "a b"  # gap word b inherited SPEAKER_00
 
 
+def test_word_after_long_gap_uses_nearest_turn():
+    # b has no turn overlap and sits >2s after the previous word: the previous
+    # speaker must not stretch across a long silence just because they spoke
+    # last — the nearest turn (SPEAKER_01) wins
+    turns = [Turn(0.0, 1.0, "SPEAKER_00"), Turn(6.0, 7.0, "SPEAKER_01")]
+    words = [word("a.", 0.2, 0.8), word("Nu", 4.9, 5.2), word("då", 6.1, 6.4)]
+    segments = assign_speakers(words, turns)
+    assert [(s.speaker, s.text) for s in segments] == [
+        ("SPEAKER_00", "a."),
+        ("SPEAKER_01", "Nu då"),
+    ]
+
+
 def test_first_word_in_gap_uses_nearest_turn():
     turns = [Turn(2.0, 3.0, "SPEAKER_00"), Turn(10.0, 11.0, "SPEAKER_01")]
     segments = assign_speakers([word("a", 0.0, 0.5)], turns)
@@ -129,6 +142,98 @@ def test_island_after_sentence_end_is_kept():
     ]
 
 
+def test_island_after_sentence_end_glued_into_next_sentence_is_absorbed():
+    # the observed dialogisk case: "...You got the talent. | Det | är inte helt
+    # lätt..." — a backchannel window flips the track for exactly the sentence's
+    # first word. The island sits right after sentence-final punctuation, but it
+    # carries none of its own and the next word continues lowercase: it is glued
+    # into the following sentence and must stay with that speaker
+    turns = [
+        Turn(0.0, 2.0, "SPEAKER_01"),
+        Turn(2.0, 2.4, "SPEAKER_00"),
+        Turn(2.4, 6.0, "SPEAKER_01"),
+    ]
+    words = [
+        word("You", 0.0, 0.3),
+        word("got", 0.4, 0.6),
+        word("the", 0.7, 0.9),
+        word("talent.", 1.0, 1.5),
+        word("Det", 2.05, 2.35),
+        word("är", 2.5, 2.7),
+        word("inte", 2.8, 3.1),
+        word("helt", 3.2, 3.5),
+        word("lätt", 3.6, 4.0),
+    ]
+    segments = assign_speakers(words, turns)
+    assert [(s.speaker, s.text) for s in segments] == [
+        ("SPEAKER_01", "You got the talent. Det är inte helt lätt")
+    ]
+
+
+def test_two_word_island_spanning_a_long_time_is_not_absorbed():
+    # two words stretched over many seconds are a real (sparse) turn, not
+    # attribution jitter — the word count alone must not admit absorption
+    turns = [
+        Turn(0.0, 1.0, "SPEAKER_00"),
+        Turn(1.0, 9.0, "SPEAKER_01"),
+        Turn(9.0, 12.0, "SPEAKER_00"),
+    ]
+    words = [
+        word("a", 0.1, 0.4),
+        word("b", 0.5, 0.9),
+        word("c", 1.5, 2.0),
+        word("d", 7.5, 8.0),
+        word("e", 9.2, 9.6),
+        word("f", 9.7, 10.1),
+    ]
+    segments = assign_speakers(words, turns)
+    assert [s.speaker for s in segments] == ["SPEAKER_00", "SPEAKER_01", "SPEAKER_00"]
+
+
+def test_orphan_between_two_other_speakers_joins_its_sentence():
+    # neighbours disagree, so island smoothing never fires; the grouping guard
+    # merges the one-word orphan into the segment it forms a sentence with
+    turns = [
+        Turn(0.0, 2.0, "SPEAKER_00"),
+        Turn(2.0, 2.4, "SPEAKER_02"),
+        Turn(2.4, 5.0, "SPEAKER_01"),
+    ]
+    words = [
+        word("Hej", 0.1, 0.5),
+        word("där.", 0.6, 1.0),
+        word("Det", 2.05, 2.35),
+        word("är", 2.5, 2.7),
+        word("kul", 2.8, 3.1),
+    ]
+    segments = assign_speakers(words, turns)
+    assert [(s.speaker, s.text) for s in segments] == [
+        ("SPEAKER_00", "Hej där."),
+        ("SPEAKER_01", "Det är kul"),
+    ]
+
+
+def test_orphan_finishing_the_previous_sentence_joins_it():
+    # the flipped word is the sentence's last: it continues the previous
+    # segment's unfinished sentence and joins that side
+    turns = [
+        Turn(0.0, 1.4, "SPEAKER_00"),
+        Turn(1.4, 1.8, "SPEAKER_02"),
+        Turn(1.8, 4.0, "SPEAKER_01"),
+    ]
+    words = [
+        word("Vi", 0.0, 0.4),
+        word("ses", 0.5, 0.9),
+        word("imorgon.", 1.45, 1.75),
+        word("Hej", 1.9, 2.3),
+        word("då", 2.4, 2.8),
+    ]
+    segments = assign_speakers(words, turns)
+    assert [(s.speaker, s.text) for s in segments] == [
+        ("SPEAKER_00", "Vi ses imorgon."),
+        ("SPEAKER_01", "Hej då"),
+    ]
+
+
 def test_long_island_is_not_absorbed():
     # four words over well more than a second is a real speaker turn
     turns = [
@@ -150,11 +255,22 @@ def test_long_island_is_not_absorbed():
 
 
 def test_island_at_the_edges_is_kept():
-    # no neighbour on one side: nothing to absorb into
+    # no neighbour on one side: nothing to absorb into, and a sentence-bounded
+    # interjection at the very start is a legitimate turn
     turns = [Turn(0.0, 0.6, "SPEAKER_01"), Turn(0.6, 3.0, "SPEAKER_00")]
-    words = [word("a", 0.0, 0.5), word("b", 0.7, 1.2), word("c", 1.3, 1.8)]
+    words = [word("Ja.", 0.0, 0.5), word("Och", 0.7, 1.2), word("sedan", 1.3, 1.8)]
     segments = assign_speakers(words, turns)
     assert [s.speaker for s in segments] == ["SPEAKER_01", "SPEAKER_00"]
+
+
+def test_edge_orphan_glued_mid_sentence_is_merged():
+    # a one-word segment at the transcript edge whose sentence continues in the
+    # next speaker's words is attribution noise, not a turn: it joins the
+    # segment it reads as one sentence with
+    turns = [Turn(0.0, 0.6, "SPEAKER_01"), Turn(0.6, 3.0, "SPEAKER_00")]
+    words = [word("Vi", 0.0, 0.5), word("ses", 0.7, 1.2), word("imorgon", 1.3, 1.8)]
+    segments = assign_speakers(words, turns)
+    assert [(s.speaker, s.text) for s in segments] == [("SPEAKER_00", "Vi ses imorgon")]
 
 
 def test_sliver_overlap_inherits_previous_speaker():
