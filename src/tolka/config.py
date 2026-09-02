@@ -79,7 +79,7 @@ class Settings(BaseSettings):
     attr_island_max_span_s: float = 3.0
     attr_inherit_max_gap_s: float = 2.0
     attr_boundary_max_words: int = 3
-    attr_boundary_max_gap_s: float = 1.0
+    attr_boundary_max_gap_s: float = 3.0
     attr_gap_split_s: float = 1.0
     attr_hard_gap_split_s: float = 15.0
     attr_min_segment_words: int = 1

@@ -59,14 +59,14 @@ def test_grouping_splits_on_speaker_change_and_sentence_pause():
     words = [
         word("a", 0.0, 0.5),
         word("b", 0.6, 1.0),
-        word("c.", 2.5, 3.0),  # speaker change
-        word("d", 5.0, 5.5),  # same speaker, >1s pause after a sentence end
+        word("Okej.", 2.5, 3.0),  # speaker change
+        word("Sedan", 5.0, 5.5),  # same speaker, >1s pause after a sentence end
     ]
     segments = assign_speakers(words, turns)
     assert [(s.speaker, s.text) for s in segments] == [
         ("SPEAKER_00", "a b"),
-        ("SPEAKER_01", "c."),
-        ("SPEAKER_01", "d"),
+        ("SPEAKER_01", "Okej."),
+        ("SPEAKER_01", "Sedan"),
     ]
     assert segments[0].start == 0.0
     assert segments[0].end == 1.0
@@ -294,6 +294,31 @@ def test_interruption_starting_a_new_sentence_is_not_snapped():
     assert [(s.speaker, s.text) for s in segments] == [
         ("SPEAKER_00", "Den här känslan av att"),
         ("SPEAKER_01", "Expressens, Brottscentralen"),
+    ]
+
+
+def test_snap_direction_follows_the_handover_pause():
+    # the deployed case: "...till samhället. Det är en | skön känsla. En gång..."
+    # — sentence boundaries exist in both directions, and the label change sits
+    # at a pause. The larger silence sits before "Det" (the real handover), so
+    # "Det är en" belongs to the following speaker, even though moving
+    # "skön känsla." left would touch fewer words
+    turns = [Turn(0.0, 3.2, "SPEAKER_00"), Turn(3.2, 10.0, "SPEAKER_01")]
+    words = [
+        word("till", 0.0, 0.2),
+        word("samhället.", 0.3, 0.9),
+        word("Det", 1.4, 1.6),
+        word("är", 1.7, 1.8),
+        word("en", 1.9, 2.1),
+        word("skön", 3.4, 3.8),
+        word("känsla.", 3.9, 4.4),
+        word("En", 4.6, 4.8),
+        word("gång", 4.9, 5.1),
+    ]
+    segments = assign_speakers(words, turns)
+    assert [(s.speaker, s.text) for s in segments] == [
+        ("SPEAKER_00", "till samhället."),
+        ("SPEAKER_01", "Det är en skön känsla. En gång"),
     ]
 
 
