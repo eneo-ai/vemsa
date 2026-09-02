@@ -36,7 +36,7 @@ def segment_merge_alignment(inputs: list[Segment], outputs: list[Segment]) -> Al
 # compressed timeline (observed from a vLLM-hosted kb-whisper-large: ~7 words/s
 # with a 19.5 s hole in a 56 s recording). Merging speakers against such a
 # timeline puts every turn in the wrong place, so segment-level fallbacks beat it.
-PLAUSIBLE_MAX_WORDS_PER_SECOND = 4.5
+PLAUSIBLE_MAX_WORDS_PER_SECOND = 5.5
 PLAUSIBLE_PAUSE_GAP_S = 1.0
 PLAUSIBLE_MIN_WORDS = 5
 
