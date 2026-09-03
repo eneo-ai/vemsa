@@ -52,6 +52,12 @@ JOB_ALIGNMENT = Counter(
     "Completed jobs by word-timestamp rung — anything but 'forced' is a quality degradation",
     ("alignment", "engine", "task"),
 )
+ALIGNMENT_INTERPOLATED_WORDS = Counter(
+    "vemsa_alignment_interpolated_words_total",
+    "Words whose forced-alignment timestamps were linearly interpolated because the"
+    " window's text could not be aligned (reported with probability 0.0)",
+    ("task",),
+)
 QUEUE_REJECTIONS = Counter(
     "vemsa_queue_rejections_total",
     "Jobs rejected at admission because a queue limit was reached",

@@ -144,6 +144,14 @@ verbatim into the flow output. Deployment checklist:
    in that flow that are certain. Vemsa force-aligns the text inside those windows
    (`VEMSA_DIARIZE_PREFER_ALIGN`, default on), so provider word timestamps are neither
    needed nor wanted in the payload.
+9. **Correction payload**: to re-time a transcript a human corrected, eneo sends
+   `task=align` with the audio and the corrected segments (`start`, `end`, `speaker`,
+   `text`) — the windows from the previous result, a split sentence as two segments over
+   one window. Word timestamps come back re-derived from the audio with speakers verbatim;
+   words with `probability` 0.0 were interpolated (the edit no longer fits its audio) and
+   deserve a review flag. Sending the same labelled segments as `task=diarize` re-runs
+   speaker identification while keeping the names. Both are additive contract changes:
+   a new `task` value, and `Segment.speaker` honoured on input.
 
 The response contract eneo depends on (multipart part name `file`, status/stage enums,
 cancellation semantics, `TranscriptionResult`, and the rendered

@@ -23,6 +23,7 @@ from vemsa.pipeline.diarize import (
     segments_without_speakers,
 )
 from vemsa.pipeline.label import label_speakers
+from vemsa.pipeline.realign import align_transcript
 from vemsa.pipeline.render import render_text
 
 logger = logging.getLogger(__name__)
@@ -146,6 +147,25 @@ class EasyTranscriberEngine:
             aligner=self._segment_aligner,
             speakers=speakers,
             prefer_alignment=self._settings.diarize_prefer_align,
+            tuning=self._settings.attribution_tuning(),
+        )
+
+    def align_transcript(
+        self,
+        audio_path: Path,
+        *,
+        segments: list[Segment],
+        language: str,
+        model: str,
+        on_stage: StageReporter | None = None,
+    ) -> TranscriptionResult:
+        report_stage(on_stage, JobStage.ALIGNING)
+        return align_transcript(
+            self._segment_aligner,
+            audio_path,
+            segments=segments,
+            language=language,
+            model=model,
             tuning=self._settings.attribution_tuning(),
         )
 

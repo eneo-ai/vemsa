@@ -41,4 +41,17 @@ class TranscriptionEngine(Protocol):
         """Diarize the audio and attach speakers to a transcript produced elsewhere."""
         ...
 
+    def align_transcript(
+        self,
+        audio_path: Path,
+        *,
+        segments: list[Segment],
+        language: str,
+        model: str,
+        on_stage: StageReporter | None = None,
+    ) -> TranscriptionResult:
+        """Re-derive word timestamps for a speaker-labelled transcript (task=align):
+        text and speakers verbatim, windows tightened, no ASR or diarization."""
+        ...
+
     def warm_up(self) -> None: ...

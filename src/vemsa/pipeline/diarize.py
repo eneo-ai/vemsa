@@ -73,6 +73,20 @@ class AttributionTuning:
     # neither side is merged into the neighbour it reads mid-sentence with
     min_segment_words: int = 1
     min_segment_duration_s: float = 0.6
+    # task=align: consecutive caller segments overlapping or separated by at most
+    # this gap are force-aligned as one window, so a sentence a human split
+    # between two speakers is timed as a whole and the split lands where the
+    # audio says (each half aligned alone would be stretched over the shared window)
+    align_merge_gap_s: float = 0.5
+    # task=align: slack added on both sides of every alignment window (clamped to
+    # the audio and to the neighbouring windows). Segment windows hug the words,
+    # and easyaligner mis-times a word that ends exactly at its window's end
+    # (observed: the final word stretched to the nominal chunk end)
+    align_window_pad_s: float = 0.5
+    # task=diarize with caller speaker labels: a diarization cluster takes the
+    # caller label holding at least this share of the cluster's overlap with
+    # labelled speech; a cluster split between labels below it is a new speaker
+    relabel_min_share: float = 0.5
 
 
 def _ends_sentence(text: str) -> bool:
@@ -266,6 +280,63 @@ def _sentence_end_ahead(
                 return index
             return None
     return None
+
+
+def relabel_turns(
+    turns: list[Turn], reference: list[Segment], *, min_share: float = 0.5
+) -> list[Turn]:
+    """Rename diarization clusters after the caller's speaker labelling.
+
+    A re-run of pyannote numbers its clusters afresh, so without this a human's
+    earlier speaker corrections would be scrambled. Each cluster takes the caller
+    label that holds at least ``min_share`` of the cluster's overlap with labelled
+    speech (its purity — measured against labelled time, not the cluster's own
+    duration, because reference segments hug the words while diarization turns
+    carry silence around them). Several clusters may land on one caller label
+    (the diarizer over-split a speaker the human had already merged). A cluster
+    that overlaps no labelled speech, or is split between labels below the
+    floor, is treated as a speaker the caller did not label: it gets a fresh
+    ``SPEAKER_NN`` colliding with neither the caller's labels nor another fresh
+    one. Turns come back in the input order with only ``speaker`` changed;
+    without any labelled reference span they are returned unchanged."""
+    spans = [
+        (segment.start, segment.end, segment.speaker) for segment in reference if segment.speaker
+    ]
+    if not spans or not turns:
+        return turns
+    speaking_time: dict[str, float] = {}
+    overlap_by_label: dict[str, dict[str, float]] = {}
+    for turn in turns:
+        speaking_time[turn.speaker] = speaking_time.get(turn.speaker, 0.0) + (turn.end - turn.start)
+        shares = overlap_by_label.setdefault(turn.speaker, {})
+        for start, end, label in spans:
+            assert label is not None
+            overlap = max(0.0, min(turn.end, end) - max(turn.start, start))
+            if overlap > 0:
+                shares[label] = shares.get(label, 0.0) + overlap
+    caller_labels = {label for _, _, label in spans}
+    mapping: dict[str, str] = {}
+    unmatched: list[str] = []
+    for cluster in sorted(speaking_time, key=lambda name: (-speaking_time[name], name)):
+        shares = overlap_by_label[cluster]
+        labelled_time = sum(shares.values())
+        best = max(shares, key=lambda label: (shares[label], label)) if shares else None
+        if best is not None and shares[best] >= min_share * labelled_time:
+            mapping[cluster] = best
+        else:
+            unmatched.append(cluster)
+    taken = set(caller_labels) | set(mapping.values())
+    fresh_index = 0
+    for cluster in unmatched:
+        while f"SPEAKER_{fresh_index:02d}" in taken:
+            fresh_index += 1
+        mapping[cluster] = f"SPEAKER_{fresh_index:02d}"
+        taken.add(mapping[cluster])
+    logger.info(
+        "diarization clusters mapped onto caller speaker labels",
+        extra={"event": "label.relabel", "mapping": mapping, "unmatched": unmatched},
+    )
+    return [Turn(turn.start, turn.end, mapping[turn.speaker]) for turn in turns]
 
 
 def assign_speakers(

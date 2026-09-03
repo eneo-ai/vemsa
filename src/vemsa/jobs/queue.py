@@ -27,6 +27,7 @@ from vemsa.jobs.models import (
 from vemsa.jobs.store import JobStore
 from vemsa.jobs.store_factory import open_job_store
 from vemsa.observability import (
+    ALIGNMENT_INTERPOLATED_WORDS,
     JOB_ALIGNMENT,
     JOB_DURATION,
     JOB_STAGE_DURATION,
@@ -35,6 +36,7 @@ from vemsa.observability import (
     WEBHOOK_DELIVERIES,
     job_id_var,
 )
+from vemsa.pipeline.align import interpolated_words
 from vemsa.pipeline.base import TranscriptionEngine
 from vemsa.pipeline.fetch import fetch_url
 from vemsa.security import ForbiddenUrlError, validate_outbound_url
@@ -345,6 +347,15 @@ class JobQueue:
                     speakers=job.request.speaker_bounds(),
                     on_stage=_report_stage,
                 )
+            elif job.request.task == "align":
+                result = await asyncio.to_thread(
+                    self._engine.align_transcript,
+                    audio_path,
+                    segments=job.request.segments or [],
+                    language=job.request.language,
+                    model=job.request.model or EXTERNAL_MODEL,
+                    on_stage=_report_stage,
+                )
             else:
                 result = await asyncio.to_thread(
                     self._engine.transcribe,
@@ -360,6 +371,7 @@ class JobQueue:
             # rung distribution
             JOB_ALIGNMENT.labels(result.alignment or "none", engine, job.request.task).inc()
             self._check_alignment_floor(result)
+            self._check_interpolated_share(result, task=job.request.task)
             await _persist_stage(JobStage.FINALIZING)
             JOB_STAGE_DURATION.labels(current_stage.value, engine, job.request.task).observe(
                 time.perf_counter() - stage_started
@@ -481,6 +493,27 @@ class JobQueue:
             f"word-timestamp quality degraded to {result.alignment or 'none'},"
             f" below the configured floor of {floor} (VEMSA_MIN_ALIGNMENT)"
         )
+
+    def _check_interpolated_share(self, result: TranscriptionResult, *, task: str) -> None:
+        """Forced alignment can quietly spread a window's words evenly over its
+        audio (probability 0.0) when the text cannot be aligned; count those and,
+        past the configured share, fail the job rather than report timestamps
+        that were never derived from the audio."""
+        if result.alignment != "forced":
+            return
+        words = [word for segment in result.segments for word in segment.words]
+        interpolated = interpolated_words(words)
+        if not interpolated:
+            return
+        ALIGNMENT_INTERPOLATED_WORDS.labels(task).inc(interpolated)
+        share = interpolated / len(words)
+        if share > self._settings.align_max_interpolated_share:
+            raise AlignmentBelowFloorError(
+                f"{interpolated} of {len(words)} words ({share:.0%}) got interpolated"
+                " timestamps because their text could not be aligned against the audio,"
+                f" above the configured share of {self._settings.align_max_interpolated_share:.0%}"
+                " (VEMSA_ALIGN_MAX_INTERPOLATED_SHARE)"
+            )
 
     async def _heartbeat_lease(
         self,

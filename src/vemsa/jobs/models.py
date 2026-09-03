@@ -8,7 +8,10 @@ from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 Language = Literal["sv", "en", "auto"]
 # transcribe: run the engine end to end. diarize: the caller supplies the transcript
 # (word timestamps in seconds from the start of the audio); Vemsa adds speaker labels.
-JobTask = Literal["transcribe", "diarize"]
+# align: the caller supplies a speaker-labelled transcript (e.g. after a human
+# corrected it) and Vemsa re-derives word timestamps from the audio — no ASR, no
+# diarization, speakers and text kept verbatim.
+JobTask = Literal["transcribe", "diarize", "align"]
 EXTERNAL_MODEL = "external"
 
 # Whisper's prompt window is ~224 tokens; cap the vocabulary well under it so the
@@ -48,6 +51,9 @@ class Word(BaseModel):
 class Segment(BaseModel):
     start: float
     end: float
+    # On input, an opaque caller label: task=align keeps it verbatim; task=diarize
+    # treats it as the reference labelling that new diarization clusters are
+    # mapped onto (so names a human already assigned survive a re-run).
     speaker: str | None = None
     text: str
     words: list[Word] = Field(default_factory=list)
@@ -96,9 +102,9 @@ class JobRequest(BaseModel):
     model: str | None = None
     diarize: bool = True
     webhook_url: HttpUrl | None = None
-    # task=diarize only: the externally produced transcript to label. Word-level
-    # timestamps give word-precise speaker changes; segments alone fall back to
-    # whole-segment labelling.
+    # task=diarize: the externally produced transcript to label (words and/or
+    # segments). task=align: the speaker-labelled segments to re-time against the
+    # audio (segments only; their windows anchor the alignment).
     words: list[Word] | None = None
     segments: list[Segment] | None = None
     # Speaker-count prior for diarization: exact count, or an expected range.
@@ -149,12 +155,21 @@ class JobRequest(BaseModel):
             raise ValueError("vocabulary is only accepted for task=transcribe")
         if self.task == "transcribe":
             if self.words is not None or self.segments is not None:
-                raise ValueError("words and segments are only accepted for task=diarize")
+                raise ValueError(
+                    "words and segments are only accepted for task=diarize or task=align"
+                )
             return self
-        if not self.words and not self.segments:
+        if self.task == "align":
+            if self.words is not None:
+                raise ValueError("words are not accepted for task=align (send segments)")
+            if not self.segments or not any(segment.text.strip() for segment in self.segments):
+                raise ValueError("task=align requires a non-empty segments list with text")
+            if self.speaker_bounds() is not None:
+                raise ValueError("speaker bounds are not accepted for task=align (no diarization)")
+        elif not self.words and not self.segments:
             raise ValueError("task=diarize requires a non-empty words or segments list")
         if not self.diarize:
-            raise ValueError("task=diarize cannot set diarize=false")
+            raise ValueError(f"task={self.task} cannot set diarize=false")
         spans = [(word.start, word.end) for word in self.words or []] + [
             (segment.start, segment.end) for segment in self.segments or []
         ]

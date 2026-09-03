@@ -6,7 +6,11 @@ transcribe task uses, so both tasks render identical output. Whenever the caller
 words are not trusted (absent, implausible, or set aside by
 VEMSA_DIARIZE_PREFER_ALIGN), the transcript is force-aligned into words — a failed
 or unavailable alignment fails the job rather than degrading to a segment-level
-merge: the service always runs with a GPU, and quality beats completing coarsely."""
+merge: the service always runs with a GPU, and quality beats completing coarsely.
+
+Caller segments may carry speaker labels; they are not trusted as attribution (the
+audio decides who spoke when) but the new clusters are renamed after them by
+overlap, so a re-run keeps the names a human already assigned."""
 
 import logging
 from pathlib import Path
@@ -14,7 +18,13 @@ from typing import Protocol
 
 from vemsa.jobs.models import Alignment, Segment, SpeakerBounds, TranscriptionResult, Word
 from vemsa.pipeline.align import SegmentAligner
-from vemsa.pipeline.diarize import AttributionTuning, Turn, audio_duration, resolve_segments
+from vemsa.pipeline.diarize import (
+    AttributionTuning,
+    Turn,
+    audio_duration,
+    relabel_turns,
+    resolve_segments,
+)
 from vemsa.pipeline.render import render_text
 
 logger = logging.getLogger(__name__)
@@ -113,6 +123,9 @@ def label_speakers(
     prefer_alignment: bool = False,
     tuning: AttributionTuning | None = None,
 ) -> TranscriptionResult:
+    # caller labels are the reference a fresh clustering is mapped onto (a
+    # human's earlier corrections must survive a re-run), never attribution input
+    reference = [segment for segment in segments if segment.speaker]
     plain_segments = [segment.model_copy(update={"speaker": None}) for segment in segments]
     if not words:
         words = [word for segment in plain_segments for word in segment.words]
@@ -167,6 +180,10 @@ def label_speakers(
             raise RuntimeError("forced alignment produced no words for the supplied transcript")
         alignment = "forced"
     turns = diarizer.diarize(audio_path, speakers=speakers)
+    if reference:
+        turns = relabel_turns(
+            turns, reference, min_share=(tuning or AttributionTuning()).relabel_min_share
+        )
     labelled = resolve_segments(words, plain_segments, turns, tuning=tuning)
     logger.info(
         "speaker labels merged per word: alignment=%s words=%d",

@@ -78,5 +78,49 @@ class CannedEngine:
             segments=labelled,
         )
 
+    def align_transcript(
+        self,
+        audio_path: Path,
+        *,
+        segments: list[Segment],
+        language: str,
+        model: str,
+        on_stage: StageReporter | None = None,
+    ) -> TranscriptionResult:
+        """Spread evenly spaced words over each segment's window, speakers and
+        text verbatim, so consumers can test the align contract end to end."""
+        report_stage(on_stage, JobStage.ALIGNING)
+        if self._delay_s:
+            time.sleep(self._delay_s)
+        aligned: list[Segment] = []
+        for segment in sorted(segments, key=lambda item: item.start):
+            tokens = segment.text.split()
+            if not tokens:
+                aligned.append(segment.model_copy(update={"words": []}))
+                continue
+            step = (segment.end - segment.start) / len(tokens)
+            words = [
+                Word(
+                    word=token,
+                    start=round(segment.start + index * step, 3),
+                    end=round(segment.start + (index + 1) * step, 3),
+                    probability=0.9,
+                )
+                for index, token in enumerate(tokens)
+            ]
+            aligned.append(
+                segment.model_copy(
+                    update={"start": words[0].start, "end": words[-1].end, "words": words}
+                )
+            )
+        return TranscriptionResult(
+            language=language if language != "auto" else "unknown",
+            duration_seconds=max((segment.end for segment in aligned), default=0.0),
+            model=model,
+            text=render_text(aligned),
+            segments=aligned,
+            alignment="forced",
+        )
+
     def warm_up(self) -> None:
         pass

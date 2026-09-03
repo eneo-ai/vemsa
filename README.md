@@ -114,6 +114,14 @@ decoder's posterior probability, passed through when the provider or caller repo
 reports none, and values are not comparable across rungs. The `segment_split` and
 `segment_only` rungs produce no words at all.
 
+On the `forced` rung, a `probability` of exactly `0.0` means the word's timestamps were
+**interpolated, not aligned**: the aligner could not fit a window's text to its audio
+(text much longer than the window, or characters the CTC vocabulary lacks — digits and
+symbols are not spelled out) and spread the words evenly over the window instead.
+Consumers should flag such words for review. The worker logs every such window
+(`align.interpolated`), counts them in `vemsa_alignment_interpolated_words_total`, and
+`VEMSA_ALIGN_MAX_INTERPOLATED_SHARE` fails a job whose interpolated share exceeds it.
+
 ## Job API
 
 Submit a job with a source URL (JSON) or a direct upload (multipart):
@@ -217,11 +225,48 @@ to `"external"` so the result never claims one of Vemsa's models transcribed. Sp
 priors (`num_speakers`, or `min_speakers`/`max_speakers`, all ≥ 1) are accepted on both
 tasks, multipart or JSON.
 
-Every engine tier accepts both tasks — one full deployment serves transcription and
-diarize-only jobs side by side, and each request chooses. Optionally,
-`VEMSA_ENGINE=diarize` locks a deployment down to diarize-only: no whisper endpoint needed,
-and `task=transcribe` submissions are rejected with 422. The MCP tools remain
-transcribe-only.
+Caller segments may carry `speaker` labels. They never decide attribution — the audio
+does — but a fresh pyannote run numbers its clusters arbitrarily, so each new cluster is
+renamed after the caller label holding most of its overlap with labelled speech
+(`VEMSA_ATTR_RELABEL_MIN_SHARE`, default 0.5). Names a human already assigned therefore
+survive a re-run; two clusters may land on one label (the diarizer over-split a speaker
+the human had merged), and a cluster matching no label gets a fresh `SPEAKER_NN` that
+collides with nothing. This is how a consumer offers "rerun speaker identification" on a
+transcript that has already been corrected.
+
+### Realign a corrected transcript (`task=align`)
+
+When a human has corrected words or moved sentences between speakers, the timestamps
+must follow the text again. `task=align` takes the audio plus the corrected,
+speaker-labelled segments and re-derives word timestamps from the audio — no ASR, no
+diarization, one alignment pass:
+
+```bash
+curl -X POST http://localhost:8000/v1/jobs \
+  -H "Authorization: Bearer $TOKEN" \
+  -F file=@meeting.mp3 -F task=align -F language=sv \
+  -F 'segments=[{"start":12.3,"end":15.1,"speaker":"Anna","text":"Hej och välkomna."},
+                {"start":15.1,"end":19.8,"speaker":"Björn","text":"Vi ses imorgon"},
+                {"start":15.1,"end":19.8,"speaker":"Anna","text":"ja det gör vi."}]'
+```
+
+Guarantees: `speaker` and `text` come back verbatim, in time order; every segment's
+window is tightened to its first and last aligned word and carries `words` with CTC
+scores; `alignment` is always `forced`; `model` is echoed (default `external`). Segment
+windows are the alignment anchors, so send the windows from the previous result — a
+sentence split between two speakers is sent as two segments over the *same* window
+(as above), and consecutive segments that overlap or sit within
+`VEMSA_ATTR_ALIGN_MERGE_GAP_S` (default 0.5 s) are aligned as one window so the audio
+decides where the split lands; every window gets `VEMSA_ATTR_ALIGN_WINDOW_PAD_S` of slack
+on each side, so tight windows are fine. Interpolated words (`probability` 0.0, see above) are the
+signal that an edit no longer fits its audio. `words`, speaker-count priors, and
+`vocabulary` are rejected (422). Accepted on every tier, including `VEMSA_ENGINE=diarize`.
+
+Every engine tier accepts all three tasks — one full deployment serves transcription,
+diarize-only, and realignment jobs side by side, and each request chooses. Optionally,
+`VEMSA_ENGINE=diarize` locks a deployment down to caller-supplied transcripts: no whisper
+endpoint needed, and `task=transcribe` submissions are rejected with 422. The MCP tools
+remain transcribe-only.
 
 Auth is fail-closed static bearer authentication intended for internal server-to-server use.
 `VEMSA_API_TOKENS` takes comma-separated `client_id=token` credentials in production, for
@@ -251,6 +296,10 @@ All settings via environment variables with the `VEMSA_` prefix (see `src/vemsa/
 | `VEMSA_DIARIZE_PREFER_ALIGN` | `true` | `task=diarize`: force-align even when the caller supplied words; a failed alignment fails the job. Set `false` only for callers whose word timestamps are honestly measured |
 | `VEMSA_MIN_ALIGNMENT` | – | Quality floor (`forced` / `provider_words` / `segment_split` / `segment_only`): fail a job whose word-timestamp rung degrades below it instead of completing with a coarser result |
 | `VEMSA_ATTR_*` | see `AttributionTuning` | Word→speaker attribution tuning (coverage floor, island smoothing limits, inheritance gap, segment splitting/merging thresholds) — one env knob per field of `AttributionTuning` in `pipeline/diarize.py`; defaults are the tested behaviour |
+| `VEMSA_ATTR_ALIGN_MERGE_GAP_S` | `0.5` | `task=align`: consecutive segments overlapping or closer than this are aligned as one window (a sentence split between speakers is timed as a whole) |
+| `VEMSA_ATTR_ALIGN_WINDOW_PAD_S` | `0.5` | `task=align`: slack added on both sides of every alignment window, clamped to the audio and to neighbouring windows (the aligner mis-times a word ending exactly at its window's edge) |
+| `VEMSA_ATTR_RELABEL_MIN_SHARE` | `0.5` | `task=diarize` with caller speaker labels: a new cluster takes the caller label holding at least this share of its overlap with labelled speech; below it the cluster is a new speaker |
+| `VEMSA_ALIGN_MAX_INTERPOLATED_SHARE` | `1.0` | Fail a `forced`-rung job whose share of interpolated words (`probability` 0.0) exceeds this; `1.0` only logs and counts |
 | `VEMSA_HF_TOKEN` | – | Hugging Face token (pyannote models are gated) |
 | `VEMSA_MODEL_CACHE_DIR` | `./data/models` | Model cache (mount a volume) |
 | `VEMSA_WORK_DIR` | `./data/work` | Temp audio storage |
@@ -354,6 +403,9 @@ responsibility split between Vemsa and its consumers (eneo).
 - ✅ Forced alignment (easyaligner: silero VAD + wav2vec2 CTC) and pyannote diarization with
   speaker bounds, verified end to end on CPU in the devcontainer — a whole-file Swedish
   segment came back word-precise with correct alternating speakers (`alignment: "forced"`)
+- ✅ `task=align` (re-time a corrected, speaker-labelled transcript) and caller-label
+  preservation on `task=diarize` re-runs — verified on CPU against a synthesized Swedish
+  clip; GPU runs pending with the rest of the GPU gate
 - ⏳ `local` engine (easytranscriber whisper) verification on a GPU box: Swedish sample
   end-to-end, auto-detect language
 - ⏳ CUDA runs of alignment and diarization (verified on CPU only); non-Swedish alignment

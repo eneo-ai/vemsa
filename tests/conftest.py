@@ -19,6 +19,7 @@ from vemsa.jobs.models import (
 from vemsa.jobs.postgres_store import PostgresJobStore
 from vemsa.jobs.store import JobStore
 from vemsa.pipeline.base import StageReporter, report_stage
+from vemsa.pipeline.fake import CannedEngine
 
 TEST_DATABASE_URL = os.getenv("VEMSA_TEST_POSTGRES_URL")
 
@@ -125,6 +126,29 @@ class FakeEngine:
         result = make_result(True)
         return result.model_copy(update={"model": model})
 
+    def align_transcript(
+        self,
+        audio_path: Path,
+        *,
+        segments: list[Segment],
+        language: str,
+        model: str,
+        on_stage: StageReporter | None = None,
+    ) -> TranscriptionResult:
+        report_stage(on_stage, JobStage.ALIGNING)
+        self.calls.append(
+            {
+                "task": "align",
+                "audio_path": audio_path,
+                "segments": segments,
+                "language": language,
+                "model": model,
+            }
+        )
+        return CannedEngine().align_transcript(
+            audio_path, segments=segments, language=language, model=model
+        )
+
     def warm_up(self) -> None:
         pass
 
@@ -152,6 +176,17 @@ class FailingEngine:
         language: str,
         model: str,
         speakers: SpeakerBounds | None = None,
+        on_stage: StageReporter | None = None,
+    ) -> TranscriptionResult:
+        raise RuntimeError("pipeline exploded")
+
+    def align_transcript(
+        self,
+        audio_path: Path,
+        *,
+        segments: list[Segment],
+        language: str,
+        model: str,
         on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
         raise RuntimeError("pipeline exploded")

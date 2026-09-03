@@ -78,15 +78,16 @@ src/vemsa/
     ├── align.py        easyaligner wrapper: wav2vec2 CTC forced alignment
     ├── diarize.py      pyannote Diarizer + pure word↔speaker assignment logic
     ├── label.py        task=diarize: label an externally produced transcript
+    ├── realign.py      task=align: re-time a corrected, speaker-labelled transcript
     ├── diarize_only.py diarize tier: no ASR constructed at all
     ├── render.py       [HH:MM:SS - HH:MM:SS] SPEAKER_00: line rendering
     └── fake.py         canned engine for dev/tests
 ```
 
 The split inside `pipeline/` mirrors the quality doctrine: everything that decides *where
-words land in time and who said them* (`align.py`, `diarize.py`, `label.py`) is local code
-under Vemsa's control, while ASR text production is pluggable (in-process, remote endpoint,
-or skipped entirely for `task=diarize`).
+words land in time and who said them* (`align.py`, `diarize.py`, `label.py`, `realign.py`)
+is local code under Vemsa's control, while ASR text production is pluggable (in-process,
+remote endpoint, or skipped entirely for `task=diarize` and `task=align`).
 
 ## Job lifecycle
 
@@ -112,25 +113,26 @@ or skipped entirely for `task=diarize`).
 All tiers converge on the same back half — that is the design's core invariant:
 
 ```
-                      task=transcribe                        task=diarize
-        ┌──────────────┬────────────────┬──────────┐    ┌──────────────────┐
-        │ local        │ hybrid         │ remote   │    │ caller transcript │
-        │ easytranscr. │ remote whisper │ remote   │    │ (words/segments)  │
-        │ (in-process) │ text only      │ whisper  │    └────────┬─────────┘
-        └──────┬───────┴──────┬─────────┴────┬─────┘             │
-               │              ▼              │                   ▼
-               │   forced alignment          │        forced alignment of the
-               │   (easyaligner CTC)         │        caller's text (default)
-               ▼              │              ▼                   │
-        ┌──────┴──────────────┴──────────────┴───────────────────┴─────┐
-        │ word-timestamp trust: forced > provider_words >              │
-        │ segment_split > segment_only  (plausibility-gated, README)   │
-        ├──────────────────────────────────────────────────────────────┤
-        │ pyannote diarization (always local)                          │
-        │ word↔speaker attribution + island smoothing                  │
-        │ segment grouping at sentence-final pauses                    │
-        │ render_text → TranscriptionResult                            │
-        └──────────────────────────────────────────────────────────────┘
+                      task=transcribe                        task=diarize          task=align
+        ┌──────────────┬────────────────┬──────────┐    ┌──────────────────┐  ┌──────────────────┐
+        │ local        │ hybrid         │ remote   │    │ caller transcript │  │ corrected, speaker│
+        │ easytranscr. │ remote whisper │ remote   │    │ (words/segments,  │  │ -labelled segments│
+        │ (in-process) │ text only      │ whisper  │    │  optional labels) │  │ (from a result)   │
+        └──────┬───────┴──────┬─────────┴────┬─────┘    └────────┬─────────┘  └────────┬─────────┘
+               │              ▼              │                   ▼                     ▼
+               │   forced alignment          │        forced alignment of the   forced alignment,
+               │   (easyaligner CTC)         │        caller's text (default)   windows merged where
+               ▼              │              ▼                   │              segments overlap
+        ┌──────┴──────────────┴──────────────┴───────────────────┴─────┐               │
+        │ word-timestamp trust: forced > provider_words >              │               │
+        │ segment_split > segment_only  (plausibility-gated, README)   │               │
+        ├──────────────────────────────────────────────────────────────┤               │
+        │ pyannote diarization (always local)                          │   no diarization,
+        │ clusters renamed after caller labels when supplied           │   no attribution:
+        │ word↔speaker attribution + island smoothing                  │   speakers + text
+        │ segment grouping at sentence-final pauses                    │   verbatim, windows
+        │ render_text → TranscriptionResult                            │   tightened to words
+        └──────────────────────────────────────────────────────────────┘◄──────────────┘
 ```
 
 Only the *text source* varies by tier. Word timestamps are derived from the audio by local
@@ -140,7 +142,16 @@ or a segment-level merge (`remote`, and `VEMSA_DIARIZE_PREFER_ALIGN=false`, are 
 deliberate exceptions that trust an external timestamp source). pyannote always runs
 locally, and every tier — including `task=diarize` — renders through the same
 attribution/grouping/render code, so consumers get one output shape regardless of who
-transcribed.
+transcribed. `task=align` is the deliberate short-circuit: the caller's speakers are ground
+truth, so it runs the aligner and the renderer only (`pipeline/realign.py`) — a human's
+corrections come back re-timed in one alignment pass, never re-clustered.
+
+The aligner has one silent failure mode worth knowing: when a window's text cannot be
+aligned (too long for its audio, or characters the CTC vocabulary lacks) easyaligner
+spreads the words evenly over the window with score 0.0 instead of raising. Vemsa keeps
+the rung at `forced` but surfaces it — words with `probability` 0.0, an
+`align.interpolated` log line per window, a counter, and the
+`VEMSA_ALIGN_MAX_INTERPOLATED_SHARE` floor that turns it into a loud failure.
 
 ### Speaker attribution and segment shaping
 
@@ -195,6 +206,8 @@ boundary is drawn so that each side owns what only it can know:
 | Whisper ASR when asked to transcribe | **Vemsa** | in-process on GPU (`local`) or brokered to an OpenAI-compatible endpoint (`hybrid`/`remote`) |
 | Word timestamps | **Vemsa** | audio-derived CTC forced alignment wins over anything a provider or caller decoded |
 | Speaker diarization & attribution | **Vemsa** | pyannote always local; attribution/smoothing/grouping identical for both tasks |
+| Transcript corrections (edit state, who changed what) | **eneo** | Vemsa never stores a transcript beyond retention; a correction round-trip sends the corrected segments back with the audio |
+| Re-timing corrected text | **Vemsa** | `task=align`: word timestamps re-derived from the audio, speakers and text verbatim; `task=diarize` with labelled segments re-clusters while keeping the names |
 | Rendered output contract | **Vemsa** | `TranscriptionResult` + the `[HH:MM:SS - HH:MM:SS] SPEAKER_00:` text format |
 
 Two integration paths use the same deployment, chosen per request:
@@ -207,7 +220,13 @@ Two integration paths use the same deployment, chosen per request:
    timestamps are neither needed nor wanted in the payload, because decoder-heuristic
    timelines are exactly what the plausibility gate exists to reject.
 
-In both paths eneo passes `result.text` verbatim into its flow output — Vemsa owns the
+3. **Correction round-trip** — after a human edited the transcript in eneo, eneo sends
+   the corrected, speaker-labelled segments with the audio as `task=align` and stores
+   the re-timed segments and words it gets back; to re-run speaker identification on an
+   already-corrected transcript it sends the same labelled segments as `task=diarize`,
+   and the names survive.
+
+In all paths eneo passes `result.text` verbatim into its flow output — Vemsa owns the
 transcript's final shape. The wire contract (multipart part names, status/stage enums,
 cancellation semantics, `TranscriptionResult`, the rendered line format) is
 change-controlled and must move in lockstep with eneo's `RemoteTranscriptionClient`

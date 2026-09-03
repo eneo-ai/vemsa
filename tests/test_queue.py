@@ -87,6 +87,68 @@ async def test_alignment_floor_passes_a_forced_result(
         await wait_for_status(store, job.id, JobStatus.COMPLETED)
 
 
+def align_job(tmp_path: Path):
+    return upload_job(
+        tmp_path,
+        task="align",
+        language="sv",
+        segments=[{"start": 0.0, "end": 2.0, "speaker": "Anna", "text": "hej och välkomna"}],
+    )
+
+
+class InterpolatingEngine(FakeEngine):
+    """A forced-rung result where two of three words carry easyaligner's
+    fallback score (0.0): their timestamps were interpolated, not aligned."""
+
+    def align_transcript(self, *args, **kwargs):
+        result = super().align_transcript(*args, **kwargs)
+        (segment,) = result.segments
+        words = [
+            word.model_copy(update={"probability": 0.0 if index < 2 else 0.9})
+            for index, word in enumerate(segment.words)
+        ]
+        return result.model_copy(update={"segments": [segment.model_copy(update={"words": words})]})
+
+
+async def test_align_job_completes_with_speakers_verbatim(
+    store: JobStore, settings: Settings, tmp_path: Path
+):
+    job, audio = align_job(tmp_path)
+    await store.create(job)
+    engine = FakeEngine()
+    async with running_queue(store, engine, settings) as queue:
+        queue.notify()
+        await wait_for_status(store, job.id, JobStatus.COMPLETED)
+    assert not audio.exists()
+    result = await store.get_result(job.id)
+    assert result is not None and result.alignment == "forced"
+    assert [(s.speaker, s.text) for s in result.segments] == [("Anna", "hej och välkomna")]
+    assert engine.calls[-1]["task"] == "align" and engine.calls[-1]["model"] == "external"
+
+
+async def test_interpolated_share_floor_fails_the_job(
+    store: JobStore, settings: Settings, tmp_path: Path
+):
+    settings.align_max_interpolated_share = 0.5
+    job, _ = align_job(tmp_path)
+    await store.create(job)
+    async with running_queue(store, InterpolatingEngine(), settings) as queue:
+        queue.notify()
+        failed = await wait_for_status(store, job.id, JobStatus.FAILED)
+    assert failed.error is not None and "VEMSA_ALIGN_MAX_INTERPOLATED_SHARE" in failed.error
+    assert "2 of 3 words" in failed.error
+
+
+async def test_interpolated_words_are_tolerated_by_default(
+    store: JobStore, settings: Settings, tmp_path: Path
+):
+    job, _ = align_job(tmp_path)
+    await store.create(job)
+    async with running_queue(store, InterpolatingEngine(), settings) as queue:
+        queue.notify()
+        await wait_for_status(store, job.id, JobStatus.COMPLETED)
+
+
 async def test_failing_engine_marks_job_failed(store: JobStore, settings: Settings, tmp_path: Path):
     job, audio = upload_job(tmp_path)
     await store.create(job)

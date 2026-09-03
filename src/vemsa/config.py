@@ -84,6 +84,14 @@ class Settings(BaseSettings):
     attr_hard_gap_split_s: float = 15.0
     attr_min_segment_words: int = 1
     attr_min_segment_duration_s: float = 0.6
+    attr_align_merge_gap_s: float = 0.5
+    attr_align_window_pad_s: float = 0.5
+    attr_relabel_min_share: float = 0.5
+    # forced alignment falls back to linearly interpolated timestamps (word
+    # probability 0.0) for a window whose text cannot be aligned — too long for
+    # its audio, or characters the CTC vocabulary lacks. Fail a forced-rung job
+    # whose share of interpolated words exceeds this (1.0 = never fail, only log)
+    align_max_interpolated_share: float = 1.0
 
     model_cache_dir: Path = Path("data/models")
     work_dir: Path = Path("data/work")
@@ -158,6 +166,9 @@ class Settings(BaseSettings):
             hard_gap_split_s=self.attr_hard_gap_split_s,
             min_segment_words=self.attr_min_segment_words,
             min_segment_duration_s=self.attr_min_segment_duration_s,
+            align_merge_gap_s=self.attr_align_merge_gap_s,
+            align_window_pad_s=self.attr_align_window_pad_s,
+            relabel_min_share=self.attr_relabel_min_share,
         )
 
     @property
@@ -233,8 +244,12 @@ class Settings(BaseSettings):
                 raise ValueError(f"{name} must be greater than zero")
         if self.max_transcript_bytes <= 0:
             raise ValueError("max_transcript_bytes must be greater than zero")
-        if not 0.0 <= self.attr_min_coverage <= 1.0:
-            raise ValueError("attr_min_coverage must be between 0 and 1")
+        for name in ("attr_min_coverage", "attr_relabel_min_share", "align_max_interpolated_share"):
+            if not 0.0 <= getattr(self, name) <= 1.0:
+                raise ValueError(f"{name} must be between 0 and 1")
+        for name in ("attr_align_merge_gap_s", "attr_align_window_pad_s"):
+            if getattr(self, name) < 0:
+                raise ValueError(f"{name} cannot be negative")
         for name in (
             "attr_island_max_words",
             "attr_island_max_duration_s",

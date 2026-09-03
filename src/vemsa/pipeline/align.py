@@ -197,8 +197,20 @@ def words_from_alignments(speeches: list[Any]) -> list[Word]:
 
     Shared with the local engine: easytranscriber's pipeline returns the same
     easyaligner shapes."""
-    words: list[Word] = []
+    return [word for speech in words_by_speech(speeches) for word in speech]
+
+
+def words_by_speech(speeches: list[Any]) -> list[list[Word]]:
+    """easyaligner output as one word list per input speech window, in order.
+
+    Also the place where easyaligner's silent degradation is made visible: when a
+    window's text cannot be aligned (too long for its audio, or characters the
+    CTC vocabulary lacks) the library spreads the words evenly over the window
+    with score 0.0 instead of failing. Those words are counted and logged here
+    (`align.interpolated`); the job-level floor lives in the worker."""
+    grouped: list[list[Word]] = []
     for speech in speeches:
+        words: list[Word] = []
         containers = getattr(speech, "alignments", None) or [speech]
         for container in containers:
             nested = getattr(container, "words", None) or [container]
@@ -217,4 +229,28 @@ def words_from_alignments(speeches: list[Any]) -> list[Word]:
                         probability=float(score) if score is not None else None,
                     )
                 )
-    return words
+        interpolated = interpolated_words(words)
+        if interpolated:
+            logger.warning(
+                "forced alignment interpolated %d of %d words in window %s-%s:"
+                " the text could not be aligned against the audio",
+                interpolated,
+                len(words),
+                getattr(speech, "start", None),
+                getattr(speech, "end", None),
+                extra={
+                    "event": "align.interpolated",
+                    "interpolated_words": interpolated,
+                    "window_words": len(words),
+                    "window_start": getattr(speech, "start", None),
+                    "window_end": getattr(speech, "end", None),
+                },
+            )
+        grouped.append(words)
+    return grouped
+
+
+def interpolated_words(words: list[Word]) -> int:
+    """How many words carry easyaligner's fallback score (exactly 0.0): their
+    timestamps were linearly interpolated, not derived from the audio."""
+    return sum(1 for word in words if word.probability == 0.0)

@@ -201,6 +201,48 @@ def test_label_speakers_reuses_the_engine_diarizer(settings: Settings, tmp_path:
     assert diarizer.calls == [audio]
 
 
+class SwappedDiarizer(FakeDiarizer):
+    """The same turns as FakeDiarizer, numbered the other way round — what a
+    fresh pyannote run does to a transcript a human already labelled."""
+
+    def diarize(self, audio_path: Path, *, speakers=None) -> list[Turn]:
+        super().diarize(audio_path, speakers=speakers)
+        return [Turn(0.0, 1.5, "SPEAKER_01"), Turn(1.9, 2.7, "SPEAKER_00")]
+
+
+def test_caller_speaker_labels_survive_a_rerun(tmp_path: Path):
+    # the caller's labelled segments (from an earlier run, possibly renamed by a
+    # human) are the reference the new clusters are mapped onto
+    result = label_speakers(
+        SwappedDiarizer(),
+        tmp_path / "missing.wav",
+        words=[Word(**w) for w in WORDS],
+        segments=[
+            Segment(start=0.0, end=0.7, speaker="Anna", text="hej och"),
+            Segment(start=2.0, end=2.2, speaker="Björn", text="tack"),
+        ],
+        language="sv",
+        model="external",
+    )
+    assert [(s.speaker, s.text) for s in result.segments] == [
+        ("Anna", "hej och"),
+        ("Björn", "tack"),
+    ]
+    assert "Anna: hej och" in result.text
+
+
+def test_unlabelled_caller_segments_keep_the_diarizer_labels(tmp_path: Path):
+    result = label_speakers(
+        SwappedDiarizer(),
+        tmp_path / "missing.wav",
+        words=[Word(**w) for w in WORDS],
+        segments=[Segment(start=0.0, end=2.2, text="hej och tack")],
+        language="sv",
+        model="external",
+    )
+    assert [s.speaker for s in result.segments] == ["SPEAKER_01", "SPEAKER_00"]
+
+
 SEGMENT_ONLY = [Segment(start=0.0, end=2.7, text="hej och tack")]
 
 

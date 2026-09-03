@@ -5,6 +5,7 @@ from vemsa.pipeline.diarize import (
     Turn,
     assign_speakers,
     assign_speakers_to_segments,
+    relabel_turns,
     segments_without_speakers,
 )
 
@@ -514,3 +515,87 @@ def test_pick_annotation_respects_disabled_exclusive():
 def test_pick_annotation_falls_back_to_bare_annotation():
     annotation, exclusive = _diarizer()._pick_annotation("bare-annotation")
     assert (annotation, exclusive) == ("bare-annotation", False)
+
+
+# ---- relabel_turns: a re-run's clusters take the caller's speaker labels
+
+
+def turn(start: float, end: float, speaker: str) -> Turn:
+    return Turn(start, end, speaker)
+
+
+def labelled(start: float, end: float, speaker: str) -> Segment:
+    return Segment(start=start, end=end, speaker=speaker, text="...")
+
+
+def test_relabel_maps_clusters_onto_overlapping_caller_labels():
+    # pyannote numbered the clusters the other way round this time
+    turns = [turn(0.0, 5.0, "SPEAKER_01"), turn(5.5, 10.0, "SPEAKER_00")]
+    reference = [labelled(0.0, 4.8, "Anna"), labelled(5.2, 10.0, "Björn")]
+    assert relabel_turns(turns, reference) == [
+        turn(0.0, 5.0, "Anna"),
+        turn(5.5, 10.0, "Björn"),
+    ]
+
+
+def test_relabel_merges_an_over_split_cluster_into_one_caller_label():
+    # the human already merged these two clusters into one speaker
+    turns = [
+        turn(0.0, 3.0, "SPEAKER_00"),
+        turn(3.5, 6.0, "SPEAKER_02"),
+        turn(6.5, 9.0, "SPEAKER_01"),
+    ]
+    reference = [labelled(0.0, 6.0, "Anna"), labelled(6.5, 9.0, "Björn")]
+    assert [t.speaker for t in relabel_turns(turns, reference)] == ["Anna", "Anna", "Björn"]
+
+
+def test_relabel_gives_an_unmatched_cluster_a_fresh_non_colliding_label():
+    # a speaker the caller never labelled shows up; its fresh label must not
+    # collide with the caller's numbering
+    turns = [turn(0.0, 5.0, "SPEAKER_00"), turn(6.0, 9.0, "SPEAKER_01")]
+    reference = [labelled(0.0, 5.0, "SPEAKER_01")]
+    assert [t.speaker for t in relabel_turns(turns, reference)] == ["SPEAKER_01", "SPEAKER_00"]
+
+    reference = [labelled(0.0, 5.0, "SPEAKER_00")]
+    assert [t.speaker for t in relabel_turns(turns, reference)] == ["SPEAKER_00", "SPEAKER_01"]
+
+
+def test_relabel_share_floor_is_respected():
+    # the cluster's labelled time is split 3:7 between Anna and Björn
+    turns = [turn(0.0, 10.0, "SPEAKER_00")]
+    reference = [labelled(0.0, 3.0, "Anna"), labelled(3.0, 10.0, "Björn")]
+    assert relabel_turns(turns, reference, min_share=0.8)[0].speaker == "SPEAKER_00"
+    assert relabel_turns(turns, reference, min_share=0.5)[0].speaker == "Björn"
+
+
+def test_relabel_ignores_silence_around_the_labelled_words():
+    # diarization turns carry silence; reference segments hug the words — a
+    # cluster overlapping only Anna's words is Anna however much it pads them
+    turns = [turn(0.0, 10.0, "SPEAKER_00")]
+    reference = [labelled(4.0, 5.0, "Anna")]
+    assert relabel_turns(turns, reference)[0].speaker == "Anna"
+
+
+def test_relabel_cluster_overlapping_no_labelled_speech_is_fresh():
+    turns = [turn(0.0, 5.0, "SPEAKER_00"), turn(20.0, 25.0, "SPEAKER_01")]
+    reference = [labelled(0.0, 5.0, "Anna")]
+    assert [t.speaker for t in relabel_turns(turns, reference)] == ["Anna", "SPEAKER_00"]
+
+
+def test_relabel_prefers_the_label_with_most_overlap():
+    turns = [turn(0.0, 10.0, "SPEAKER_00")]
+    reference = [labelled(0.0, 3.0, "Anna"), labelled(3.0, 10.0, "Björn")]
+    assert relabel_turns(turns, reference)[0].speaker == "Björn"
+
+
+def test_relabel_without_reference_or_turns_is_a_no_op():
+    turns = [turn(0.0, 1.0, "SPEAKER_00")]
+    assert relabel_turns(turns, []) == turns
+    assert relabel_turns(turns, [Segment(start=0.0, end=1.0, text="x")]) == turns
+    assert relabel_turns([], [labelled(0.0, 1.0, "Anna")]) == []
+
+
+def test_relabel_keeps_turn_order_and_times():
+    turns = [turn(5.0, 6.0, "SPEAKER_00"), turn(0.0, 1.0, "SPEAKER_00")]
+    reference = [labelled(0.0, 6.0, "Anna")]
+    assert relabel_turns(turns, reference) == [turn(5.0, 6.0, "Anna"), turn(0.0, 1.0, "Anna")]

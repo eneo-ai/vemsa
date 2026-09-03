@@ -18,6 +18,7 @@ from vemsa.pipeline.align import build_segment_aligner, force_align_segments
 from vemsa.pipeline.base import StageReporter, report_stage
 from vemsa.pipeline.diarize import Diarizer, resolve_segments
 from vemsa.pipeline.label import alignment_input, label_speakers, words_plausible
+from vemsa.pipeline.realign import align_transcript
 from vemsa.pipeline.whisper_api import build_result, parse_verbose_json, request_transcription
 
 logger = logging.getLogger(__name__)
@@ -104,6 +105,25 @@ class HybridEngine:
             aligner=self._segment_aligner,
             speakers=speakers,
             prefer_alignment=self._settings.diarize_prefer_align,
+            tuning=self._settings.attribution_tuning(),
+        )
+
+    def align_transcript(
+        self,
+        audio_path: Path,
+        *,
+        segments: list[Segment],
+        language: str,
+        model: str,
+        on_stage: StageReporter | None = None,
+    ) -> TranscriptionResult:
+        report_stage(on_stage, JobStage.ALIGNING)
+        return align_transcript(
+            self._segment_aligner,
+            audio_path,
+            segments=segments,
+            language=language,
+            model=model,
             tuning=self._settings.attribution_tuning(),
         )
 
