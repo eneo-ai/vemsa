@@ -1,8 +1,8 @@
 # Eneo handover: correction round-trip (`task=align`) and label-preserving re-diarize
 
 Companion to [eneo-integration-handover.md](eneo-integration-handover.md). Vemsa side is
-implemented on `main` (uncommitted at the time of writing; lands in the next
-`ghcr.io/eneo-ai/vemsa` publish). Eneo's transcript work lives on the flows line
+implemented on `main` (commit `439921c`; lands in the next `ghcr.io/eneo-ai/vemsa`
+publish). Eneo's transcript work lives on the flows line
 (`b563fc2ee`, `refactor/flows-tidy-ai-builder`), which still calls the service "tolka".
 
 ## Why
