@@ -22,6 +22,7 @@ from vemsa.pipeline.diarize import (
     audio_duration,
     segments_without_speakers,
 )
+from vemsa.pipeline.gpu import gpu_slot
 from vemsa.pipeline.label import label_speakers
 from vemsa.pipeline.realign import align_transcript
 from vemsa.pipeline.render import render_text
@@ -73,9 +74,13 @@ class EasyTranscriberEngine:
             # load_tokenizer() Swedish support is unverified; the emissions model default
             # is KBLab/wav2vec2-large-voxrex-swedish (see Settings.emissions_model).
             Path(self._settings.work_dir).mkdir(parents=True, exist_ok=True)
-            with tempfile.TemporaryDirectory(
-                prefix="transcribe-", dir=str(self._settings.work_dir)
-            ) as tmp:
+            # engine lock outer, GPU slot inner (the only place they nest)
+            with (
+                gpu_slot(),
+                tempfile.TemporaryDirectory(
+                    prefix="transcribe-", dir=str(self._settings.work_dir)
+                ) as tmp,
+            ):
                 aligned = pipeline(
                     # silero to match the alignment stack in align.py; pyannote VAD
                     # would additionally need the HF token

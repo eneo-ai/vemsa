@@ -64,6 +64,12 @@ QUEUE_REJECTIONS = Counter(
     ("scope",),
 )
 QUEUE_DEPTH = Gauge("vemsa_queue_depth", "Currently queued jobs")
+JOBS_IN_FLIGHT = Gauge("vemsa_jobs_in_flight", "Jobs this worker process is running right now")
+JOB_RETRIES = Counter(
+    "vemsa_job_retries_total",
+    "Jobs released back to the queue for another attempt",
+    ("reason", "engine", "task"),
+)
 WEBHOOK_DELIVERIES = Counter(
     "vemsa_webhook_deliveries_total", "Webhook delivery attempts", ("outcome",)
 )

@@ -11,8 +11,10 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 from vemsa.jobs.models import Segment, SpeakerBounds, Word
+from vemsa.pipeline.gpu import gpu_slot
 
 if TYPE_CHECKING:
     from vemsa.config import Settings
@@ -623,7 +625,9 @@ def _decodable_audio(audio_path: Path) -> tuple[Path, bool]:
             return audio_path, False
     except Exception:
         pass
-    converted = audio_path.with_name(audio_path.name + ".diarize.wav")
+    # unique per call: the same audio may be in flight twice (an orphaned attempt
+    # whose lease lapsed next to its retry), and the transcode must not be shared
+    converted = audio_path.with_name(f"{audio_path.name}.{uuid4().hex}.diarize.wav")
     logger.info("transcoding audio for diarization", extra={"event": "diarize.transcode"})
     completed = subprocess.run(
         [
@@ -687,6 +691,11 @@ class Diarizer:
                 )
             if torch.cuda.is_available():
                 pipeline.to(torch.device("cuda"))
+                # pyannote's fix_reproducibility flips these process-wide on its
+                # first call; pin them here under the load lock so no global flag
+                # changes while another job is mid-inference
+                torch.backends.cuda.matmul.allow_tf32 = False
+                torch.backends.cudnn.allow_tf32 = False
             self._pipeline = pipeline
             logger.info(
                 "diarization pipeline loaded",
@@ -706,7 +715,12 @@ class Diarizer:
         try:
             # GPU-VERIFY(milestone-2): tune against real output. pyannote over-splits
             # without a prior; callers can bound it via num/min/max_speakers.
-            output = self._pipeline(str(decodable), **bounds)
+            #
+            # GPU-VERIFY(concurrency): the pipeline object is shared; apply() does
+            # not mutate it, but unlocked concurrent inference (gpu_concurrency > 1)
+            # must be shown to reproduce serial output before being enabled.
+            with gpu_slot():
+                output = self._pipeline(str(decodable), **bounds)
         finally:
             if is_temp:
                 decodable.unlink(missing_ok=True)

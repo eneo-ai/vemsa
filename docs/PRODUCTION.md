@@ -236,10 +236,39 @@ counts every `VEMSA_LEASE_HEARTBEAT_S`, and each in-flight job emits `job.progre
 stage and elapsed time on every lease renewal. A silent worker is therefore always a stopped
 or stuck one, never merely an idle one.
 
-Lease renewal and the worker heartbeat run on a dedicated thread with its own database
-connection, so GIL-heavy pipeline stages that starve the main event loop cannot let the
-lease lapse mid-job (a suspended host still can, and a second worker then re-claims the
-job; the store discards the original attempt's late result on commit).
+Lease renewal, stage updates, and the worker heartbeat run on a dedicated thread with its
+own database connection, so GIL-heavy pipeline stages that starve the main event loop
+cannot let the lease lapse mid-job (a suspended host still can, and a second worker then
+re-claims the job; the store discards the original attempt's late result on commit).
+
+## Worker concurrency
+
+One worker process runs `VEMSA_WORKER_CONCURRENCY` jobs at a time (default 1). Each job
+has its own lease, heartbeat, and stage stream, and the claim loop never re-claims a job it
+still has in flight, even if that job's lease lapsed. `worker.heartbeat` reports `in_flight`
+and `concurrency`, and `/metrics` exposes `vemsa_jobs_in_flight`.
+
+`VEMSA_GPU_CONCURRENCY` (default 1, at most `VEMSA_WORKER_CONCURRENCY`) bounds how many of
+those jobs may be inside a GPU stage (forced alignment, diarization, local transcription)
+at once. At the default the GPU stays serialized: concurrency overlaps download, ffmpeg
+transcoding, the remote whisper round trip, persistence, and webhooks, so scheduling changes
+but results cannot. Raising it lets alignment and diarization run side by side on the
+shared models; that is a `GPU-VERIFY` item (see the gate below) because it needs VRAM
+headroom and a result-equality check on the target hardware before it can be trusted.
+
+A GPU or host out-of-memory failure hands the job back to the queue instead of failing it:
+the worker releases cached CUDA memory, the job becomes claimable again after
+`VEMSA_OOM_RETRY_DELAY_S` (default 30), and the failure is final after
+`VEMSA_OOM_MAX_ATTEMPTS` claims (default 3). Retries appear as `job.requeued` log events
+and `vemsa_job_retries_total{reason="oom"}`. The source audio survives between attempts.
+
+Graceful shutdown stops claiming and waits for every in-flight job, so keep the container's
+`stop_grace_period` above `VEMSA_SHUTDOWN_GRACE_S` and size both for the longest job times
+the concurrency.
+
+Recommended rollout: ship with both at 1. After the concurrency items in the GPU
+verification gate pass, raise `VEMSA_WORKER_CONCURRENCY` to 2–3 and leave
+`VEMSA_GPU_CONCURRENCY` at 1 until the result-equality item passes as well.
 
 ## Backups and retention
 
@@ -285,3 +314,18 @@ optional tuning. On the target GPU deployment, with real (consented) recordings:
 5. **Alignment rung**: confirm every job in the verification batch reports
    `alignment=forced` (see the telemetry section); investigate any that does not before
    going live.
+6. **Worker concurrency, GPU serialized** (`jobs/queue.py`, `pipeline/gpu.py`): with
+   `VEMSA_WORKER_CONCURRENCY=3` and `VEMSA_GPU_CONCURRENCY=1`, submit a fixed clip set
+   (≥ 10 clips, mp3/m4a included, 1–4 speakers) and confirm: `nvidia-smi` peak memory stays
+   below 80 % of the device; results are byte-identical to the same clips at concurrency 1;
+   jobs/hour and per-job latency meet eneo's poll deadline; DataLoader forks under load
+   (each alignment run forks its loader workers) neither hang nor exhaust RSS — if they do,
+   pass `num_workers_files=0, num_workers_features=0` to the aligner (speed only, not
+   results); `SIGTERM` with three jobs in flight completes within `stop_grace_period`.
+7. **Out-of-memory drill**: force a CUDA OOM (oversized batch or a small device) and verify
+   `job.requeued`, the attempt count incrementing, eventual completion, and memory released
+   after the retry.
+8. **GPU concurrency** (`pipeline/align.py`, `pipeline/diarize.py`): only after 6 and 7,
+   set `VEMSA_GPU_CONCURRENCY=3` and repeat the clip set plus 20 rounds of three concurrent
+   `task=diarize` jobs. The shared pyannote pipeline and wav2vec2 stack are used unlocked
+   here; any difference from the serial output blocks the setting.

@@ -1,10 +1,12 @@
 """Local forced alignment of a transcript against its audio via easyaligner.
 
 Shared by the hybrid engine (transcribe jobs: provider text, local word timestamps)
-and every engine's task=diarize path (caller-supplied segments without words). One
-module-level lock serializes aligner runs, and the loaded model stack (silero VAD +
-wav2vec2 CTC + processor) is cached so concurrent jobs and multiple engines never
-load wav2vec2 twice. Verified against easyaligner 0.x on CPU (devcontainer)."""
+and every engine's task=diarize path (caller-supplied segments without words). The
+wav2vec2 CTC model + processor are loaded once per (model, device) and shared
+read-only between concurrent jobs and engines; the silero VAD model keeps LSTM
+state between calls, so every pipeline thread gets its own instance. Aligner runs
+are bounded by the process-wide GPU slot (vemsa.pipeline.gpu), not by a module
+lock. Verified against easyaligner 0.x on CPU (devcontainer)."""
 
 import importlib.util
 import logging
@@ -16,12 +18,16 @@ from typing import Any, Protocol
 from vemsa.config import Settings
 from vemsa.jobs.models import Segment, Word
 from vemsa.pipeline.diarize import _decodable_audio, audio_duration
+from vemsa.pipeline.gpu import gpu_slot
 
 logger = logging.getLogger(__name__)
 
-_align_lock = threading.Lock()
-# (emissions model, device) -> (vad_model, ctc_model, processor); guarded by _align_lock
-_loaded_stacks: dict[tuple[str, str], tuple[Any, Any, Any]] = {}
+_stack_lock = threading.Lock()
+# (emissions model, device) -> (ctc_model, processor); mutation guarded by _stack_lock
+_loaded_stacks: dict[tuple[str, str], tuple[Any, Any]] = {}
+# one silero VAD instance per pipeline thread (executor threads are reused, so the
+# small JIT load is amortised); get_speech_timestamps resets its state on entry
+_thread_vad = threading.local()
 
 # request languages that carry no usable signal for picking an acoustic model
 _UNSPECIFIC_LANGUAGES = {"", "auto", "unknown"}
@@ -72,14 +78,19 @@ def alignment_transcript(
     return [{"start": 0.0, "end": fallback_end, "text": fallback_text.strip()}]
 
 
-def _load_alignment_stack(
-    settings: Settings, emissions_model: str, device: str
-) -> tuple[Any, Any, Any]:
-    """Silero VAD + wav2vec2 CTC model + processor, cached per (model, device)."""
+def _load_alignment_stack(settings: Settings, emissions_model: str, device: str) -> tuple[Any, Any]:
+    """wav2vec2 CTC model + processor, cached per (model, device).
+
+    Shared read-only: easyaligner only runs the model under inference_mode."""
     key = (emissions_model, device)
-    if key not in _loaded_stacks:
+    stack = _loaded_stacks.get(key)
+    if stack is not None:
+        return stack
+    with _stack_lock:
+        stack = _loaded_stacks.get(key)
+        if stack is not None:
+            return stack
         import torch
-        from easyaligner.vad.silero import load_vad_model
         from transformers import AutoModelForCTC, Wav2Vec2Processor
 
         logger.info("loading alignment stack %s on %s", emissions_model, device)
@@ -93,8 +104,33 @@ def _load_alignment_stack(
         processor = Wav2Vec2Processor.from_pretrained(
             emissions_model, cache_dir=str(settings.model_cache_dir)
         )
-        _loaded_stacks[key] = (load_vad_model(), model, processor)
-    return _loaded_stacks[key]
+        stack = (model, processor)
+        _loaded_stacks[key] = stack
+        return stack
+
+
+def _new_vad_model() -> Any:
+    from easyaligner.vad.silero import load_vad_model
+
+    return load_vad_model()
+
+
+def _vad_model() -> Any:
+    """This thread's silero VAD instance (stateful, so never shared across threads)."""
+    model = getattr(_thread_vad, "model", None)
+    if model is None:
+        model = _new_vad_model()
+        _thread_vad.model = model
+    return model
+
+
+def _easyaligner() -> tuple[Any, Any]:
+    """(SpeechSegment, pipeline) from easyaligner, imported lazily so the module
+    loads without the `align` extra."""
+    from easyaligner.data.datamodel import SpeechSegment
+    from easyaligner.pipelines import pipeline
+
+    return SpeechSegment, pipeline
 
 
 def _resolve_emissions_model(settings: Settings, language: str) -> str:
@@ -133,9 +169,8 @@ def force_align_segments(
     Alignment errors propagate and fail the job: quality doctrine forbids
     silently degrading to provider timestamps or segment-level merging."""
     import torch
-    from easyaligner.data.datamodel import SpeechSegment
-    from easyaligner.pipelines import pipeline as align_pipeline
 
+    SpeechSegment, align_pipeline = _easyaligner()
     device = "cuda" if torch.cuda.is_available() else "cpu"
     emissions_model = _resolve_emissions_model(settings, language)
 
@@ -159,29 +194,32 @@ def force_align_segments(
                 for index, entry in enumerate(transcript)
             ]
         ]
-        with _align_lock:
-            vad_model, ctc_model, processor = _load_alignment_stack(
-                settings, emissions_model, device
+        ctc_model, processor = _load_alignment_stack(settings, emissions_model, device)
+        vad_model = _vad_model()
+        Path(settings.work_dir).mkdir(parents=True, exist_ok=True)
+        # the whole run (VAD -> emissions -> Viterbi) holds one GPU slot; at
+        # gpu_concurrency=1 aligner runs stay serialized exactly as before
+        with (
+            gpu_slot(),
+            tempfile.TemporaryDirectory(prefix="align-", dir=str(settings.work_dir)) as tmp,
+        ):
+            aligned = align_pipeline(
+                vad_model=vad_model,
+                emissions_model=ctc_model,
+                processor=processor,
+                audio_paths=[decodable.name],
+                audio_dir=str(decodable.parent),
+                speeches=speeches,
+                alignment_strategy="speech",
+                blank_id=processor.tokenizer.pad_token_id,
+                word_boundary=processor.tokenizer.word_delimiter_token,
+                return_alignments=True,
+                delete_emissions=True,
+                output_vad_dir=f"{tmp}/vad",
+                output_emissions_dir=f"{tmp}/emissions",
+                output_alignments_dir=f"{tmp}/alignments",
+                device=device,
             )
-            Path(settings.work_dir).mkdir(parents=True, exist_ok=True)
-            with tempfile.TemporaryDirectory(prefix="align-", dir=str(settings.work_dir)) as tmp:
-                aligned = align_pipeline(
-                    vad_model=vad_model,
-                    emissions_model=ctc_model,
-                    processor=processor,
-                    audio_paths=[decodable.name],
-                    audio_dir=str(decodable.parent),
-                    speeches=speeches,
-                    alignment_strategy="speech",
-                    blank_id=processor.tokenizer.pad_token_id,
-                    word_boundary=processor.tokenizer.word_delimiter_token,
-                    return_alignments=True,
-                    delete_emissions=True,
-                    output_vad_dir=f"{tmp}/vad",
-                    output_emissions_dir=f"{tmp}/emissions",
-                    output_alignments_dir=f"{tmp}/alignments",
-                    device=device,
-                )
     finally:
         if is_temp:
             decodable.unlink(missing_ok=True)

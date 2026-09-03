@@ -1,4 +1,5 @@
 import json
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -71,6 +72,9 @@ _MIGRATIONS = (
         CHECK (stage IN ('queued', 'transcribing', 'aligning', 'diarizing', 'finalizing'));
     ALTER TABLE jobs ADD COLUMN IF NOT EXISTS cancellation_requested_at TIMESTAMPTZ;
     """,
+    # a queued job released for retry (e.g. after an out-of-memory failure) is not
+    # claimable before retry_after
+    "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS retry_after TIMESTAMPTZ;",
 )
 
 _JOB_COLUMNS = (
@@ -168,22 +172,33 @@ class PostgresJobStore:
         return _row_to_job(row) if row else None
 
     async def claim_next_queued(
-        self, *, worker_id: str = "legacy-worker", lease_for_s: float = 3600.0
+        self,
+        *,
+        worker_id: str = "legacy-worker",
+        lease_for_s: float = 3600.0,
+        exclude_ids: Sequence[str] = (),
     ) -> Job | None:
+        """Claim the oldest claimable job: queued (past any retry cooldown) or
+        running with a lapsed lease. `exclude_ids` keeps a worker from re-claiming
+        a job it still has in flight after its own lease lapsed."""
         now = datetime.now(UTC)
         lease_expires_at = now + timedelta(seconds=lease_for_s)
         row = await self.pool.fetchrow(
             f"""
             WITH candidate AS (
                 SELECT id FROM jobs
-                WHERE status = $1 OR (status = $2 AND lease_expires_at < $3)
+                WHERE (
+                    (status = $1 AND (retry_after IS NULL OR retry_after <= $3))
+                    OR (status = $2 AND lease_expires_at < $3)
+                )
+                AND NOT (id = ANY($6::text[]))
                 ORDER BY created_at
                 FOR UPDATE SKIP LOCKED
                 LIMIT 1
             )
             UPDATE jobs
             SET status = $2, updated_at = $3, attempt = attempt + 1,
-                lease_owner = $4, lease_expires_at = $5
+                lease_owner = $4, lease_expires_at = $5, retry_after = NULL
             FROM candidate
             WHERE jobs.id = candidate.id
             RETURNING {_CLAIM_JOB_COLUMNS}
@@ -193,8 +208,29 @@ class PostgresJobStore:
             now,
             worker_id,
             lease_expires_at,
+            list(exclude_ids),
         )
         return _row_to_job(row) if row else None
+
+    async def release_for_retry(self, job_id: str, *, worker_id: str, retry_after_s: float) -> bool:
+        """Hand a running job back to the queue for another attempt after a
+        cooldown. Only the lease owner may release; a cancelled or reclaimed job
+        is left alone (returns False). `error` is untouched on purpose: finish()
+        never clears it, so a stale message must not survive into a later result."""
+        now = datetime.now(UTC)
+        result = await self.pool.execute(
+            "UPDATE jobs SET status = $1, stage = $2, lease_owner = NULL,"
+            " lease_expires_at = NULL, retry_after = $3, updated_at = $4"
+            " WHERE id = $5 AND status = $6 AND lease_owner = $7",
+            JobStatus.QUEUED.value,
+            JobStage.QUEUED.value,
+            now + timedelta(seconds=retry_after_s),
+            now,
+            job_id,
+            JobStatus.RUNNING.value,
+            worker_id,
+        )
+        return result == "UPDATE 1"
 
     async def set_audio_path(self, job_id: str, audio_path: str) -> None:
         await self.pool.execute(

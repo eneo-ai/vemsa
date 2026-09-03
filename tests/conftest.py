@@ -234,3 +234,51 @@ async def wait_for_status(
             if job is not None and job.status == status:
                 return job
             await asyncio.sleep(0.01)
+
+
+class GateEngine(FakeEngine):
+    """FakeEngine whose pipeline calls block on `gate` until the test releases it.
+
+    Records, per call, the audio path and the job id the pipeline thread sees, plus
+    how many calls were inside the engine at once. `fail_first_with` raises that
+    exception once per audio path (the retry then succeeds)."""
+
+    def __init__(self, fail_first_with: type[BaseException] | None = None) -> None:
+        super().__init__()
+        import queue
+        import threading
+        from collections import Counter
+
+        self.gate = threading.Event()
+        self.entered: queue.Queue[tuple[Path, str | None]] = queue.Queue()
+        self.in_flight = 0
+        self.peak = 0
+        self.calls_per_path: Counter[Path] = Counter()
+        self.fail_first_with = fail_first_with
+        self._failed: set[Path] = set()
+        self._lock = threading.Lock()
+
+    async def wait_entered(self, timeout: float = 5.0) -> tuple[Path, str | None]:
+        return await asyncio.to_thread(self.entered.get, True, timeout)
+
+    def _enter(self, audio_path: Path) -> None:
+        from vemsa.observability import job_id_var
+
+        with self._lock:
+            self.in_flight += 1
+            self.peak = max(self.peak, self.in_flight)
+            self.calls_per_path[audio_path] += 1
+        self.entered.put((audio_path, job_id_var.get()))
+        try:
+            if not self.gate.wait(timeout=10.0):
+                raise TimeoutError("gate was never released")
+            if self.fail_first_with is not None and audio_path not in self._failed:
+                self._failed.add(audio_path)
+                raise self.fail_first_with("simulated pipeline failure")
+        finally:
+            with self._lock:
+                self.in_flight -= 1
+
+    def transcribe(self, audio_path: Path, **kwargs):  # type: ignore[override]
+        self._enter(audio_path)
+        return super().transcribe(audio_path, **kwargs)

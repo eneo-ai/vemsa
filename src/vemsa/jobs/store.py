@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Protocol
 
@@ -15,8 +16,15 @@ class JobStore(Protocol):
     async def create(self, job: Job) -> None: ...
     async def get(self, job_id: str, *, client_id: str | None = None) -> Job | None: ...
     async def claim_next_queued(
-        self, *, worker_id: str = "legacy-worker", lease_for_s: float = 3600.0
+        self,
+        *,
+        worker_id: str = "legacy-worker",
+        lease_for_s: float = 3600.0,
+        exclude_ids: Sequence[str] = (),
     ) -> Job | None: ...
+    async def release_for_retry(
+        self, job_id: str, *, worker_id: str, retry_after_s: float
+    ) -> bool: ...
     async def set_audio_path(self, job_id: str, audio_path: str) -> None: ...
     async def set_stage(
         self, job_id: str, stage: JobStage, *, worker_id: str | None = None

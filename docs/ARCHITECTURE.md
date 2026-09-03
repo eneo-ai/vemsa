@@ -96,13 +96,19 @@ remote endpoint, or skipped entirely for `task=diarize` and `task=align`).
    `VEMSA_MAX_QUEUED_JOBS` / `..._PER_CLIENT` (429, pre-body) → persist the job `queued`
    and stream the upload to `/data`. The response is an immediate `202` with `job_id`.
 2. **Claim** (`jobs/queue.py`): a worker selects the oldest queued job with
-   `FOR UPDATE SKIP LOCKED` and takes an expiring lease. Leases plus worker heartbeats are
-   what makes crash recovery automatic: a dead worker's lease lapses and the job is
-   re-leased, without an attempt cap — the consumer's deadline is the backstop.
+   `FOR UPDATE SKIP LOCKED` and takes an expiring lease, up to `VEMSA_WORKER_CONCURRENCY`
+   jobs at a time, each in its own task and never re-claiming a job it still runs. Leases
+   plus worker heartbeats are what makes crash recovery automatic: a dead worker's lease
+   lapses and the job is re-leased, without an attempt cap — the consumer's deadline is
+   the backstop. An out-of-memory failure is the one retried error: the job goes back to
+   `queued` with a cooldown, bounded by `VEMSA_OOM_MAX_ATTEMPTS`.
 3. **Pipeline**: the engine runs synchronously in a worker thread, reporting coarse stages
    (`transcribing → aligning → diarizing → finalizing`) that are persisted and visible to
-   pollers. Lease renewal and heartbeats run on a dedicated thread with its own database
-   connection, so GIL-heavy ML stages cannot let the lease lapse mid-job.
+   pollers. Lease renewal, stage updates, and heartbeats run on a dedicated thread with its
+   own database connection, so GIL-heavy ML stages cannot let the lease lapse mid-job.
+   GPU stages take a process-wide slot (`pipeline/gpu.py`, `VEMSA_GPU_CONCURRENCY`, default
+   1), so concurrent jobs overlap their CPU and network work while the GPU stays serialized
+   unless explicitly allowed otherwise.
 4. **Terminal**: result rows, webhook outbox events, and status flip in one transaction.
    Cancellation (`DELETE`) is idempotent and race-safe — the store refuses a completion
    that lost the race. Source audio is deleted at any terminal state; results are purged

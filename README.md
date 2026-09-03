@@ -314,6 +314,10 @@ All settings via environment variables with the `VEMSA_` prefix (see `src/vemsa/
 | `VEMSA_MAX_QUEUED_JOBS` | `100` | Global active-job admission limit |
 | `VEMSA_MAX_QUEUED_JOBS_PER_CLIENT` | `10` | Per-client active-job admission limit |
 | `VEMSA_RUN_WORKER` | `true` | Run a worker in this process; production separates API and worker |
+| `VEMSA_WORKER_CONCURRENCY` | `1` | Jobs one worker process runs at once, each with its own lease and stage stream |
+| `VEMSA_GPU_CONCURRENCY` | `1` | Of those, how many may be inside a GPU stage at once (≤ worker concurrency); 1 keeps results identical to serial runs, see docs/PRODUCTION.md |
+| `VEMSA_OOM_MAX_ATTEMPTS` | `3` | Claims a job may consume before an out-of-memory failure is final |
+| `VEMSA_OOM_RETRY_DELAY_S` | `30` | Cooldown before an out-of-memory job is claimable again |
 | `VEMSA_LOG_FORMAT` | `json` | Structured `json` or human-readable `text` logs |
 
 `HF_TOKEN` is also honored for the Hugging Face hub. You must accept the pyannote model license

@@ -119,3 +119,126 @@ def test_word_validates_without_probability():
 
     word = Word.model_validate({"word": "hej", "start": 0.0, "end": 0.4})
     assert word.probability is None
+
+
+# --- concurrency: shared CTC stack, per-thread VAD, GPU slot ------------------
+
+
+def _alignment_settings(tmp_path):
+    from vemsa.config import Settings
+
+    return Settings(
+        _env_file=None,
+        database_url="postgresql://unused/unused",
+        work_dir=tmp_path / "work",
+        model_cache_dir=tmp_path / "models",
+    )
+
+
+def test_vad_model_is_per_thread_and_ctc_stack_is_shared(monkeypatch, tmp_path):
+    import threading
+
+    from vemsa.pipeline import align
+
+    created: list[object] = []
+
+    def fake_vad():
+        created.append(object())
+        return created[-1]
+
+    monkeypatch.setattr(align, "_new_vad_model", fake_vad)
+    monkeypatch.setattr(align, "_loaded_stacks", {})
+    stack = (object(), object())
+    align._loaded_stacks[("m", "cpu")] = stack
+    settings = _alignment_settings(tmp_path)
+
+    seen: dict[str, tuple[object, object, object]] = {}
+
+    def probe(name: str) -> None:
+        first = align._vad_model()
+        second = align._vad_model()
+        seen[name] = (first, second, align._load_alignment_stack(settings, "m", "cpu"))
+
+    threads = [threading.Thread(target=probe, args=(name,)) for name in ("a", "b")]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    # one VAD instance per thread, reused within the thread
+    assert seen["a"][0] is seen["a"][1] and seen["b"][0] is seen["b"][1]
+    assert seen["a"][0] is not seen["b"][0]
+    assert len(created) == 2
+    # the CTC stack is the same object for both threads
+    assert seen["a"][2] is stack and seen["b"][2] is stack
+
+
+def _fake_alignment_run(monkeypatch, tmp_path, *, gpu_limit: int, threads: int) -> int:
+    """Run `threads` concurrent force_align_segments calls whose fake pipeline meets
+    at a barrier; returns the peak number of runs inside the pipeline at once."""
+    import sys
+    import threading
+    import types
+
+    from vemsa.pipeline import align, gpu
+
+    barrier = threading.Barrier(threads, timeout=1.0)
+    lock = threading.Lock()
+    state = {"inside": 0, "peak": 0}
+
+    def fake_pipeline(**kwargs):
+        with lock:
+            state["inside"] += 1
+            state["peak"] = max(state["peak"], state["inside"])
+        try:
+            barrier.wait()
+        except threading.BrokenBarrierError:
+            pass
+        finally:
+            with lock:
+                state["inside"] -= 1
+        return [[]]
+
+    class FakeSpeechSegment:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    class FakeProcessor:
+        tokenizer = types.SimpleNamespace(pad_token_id=0, word_delimiter_token="|")
+
+    fake_torch = types.SimpleNamespace(cuda=types.SimpleNamespace(is_available=lambda: False))
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setattr(align, "_easyaligner", lambda: (FakeSpeechSegment, fake_pipeline))
+    monkeypatch.setattr(align, "_load_alignment_stack", lambda *_: (object(), FakeProcessor()))
+    monkeypatch.setattr(align, "_vad_model", lambda: object())
+    monkeypatch.setattr(align, "_decodable_audio", lambda path: (path, False))
+    monkeypatch.setattr(align, "audio_duration", lambda *_, **__: 1.0)
+
+    settings = _alignment_settings(tmp_path)
+    audio = tmp_path / "clip.wav"
+    audio.write_bytes(b"not really audio")
+    segments = [Segment(start=0.0, end=1.0, text="hej")]
+    results: list[object] = []
+
+    def run() -> None:
+        results.append(align.force_align_segments(settings, audio, segments, "sv"))
+
+    gpu.configure_gpu_slots(gpu_limit)
+    try:
+        workers = [threading.Thread(target=run) for _ in range(threads)]
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join()
+    finally:
+        gpu.configure_gpu_slots(1)
+    assert results == [[], []]
+    return state["peak"]
+
+
+def test_alignment_runs_overlap_under_gpu_concurrency_two(monkeypatch, tmp_path):
+    assert _fake_alignment_run(monkeypatch, tmp_path, gpu_limit=2, threads=2) == 2
+
+
+def test_alignment_runs_serialize_under_gpu_concurrency_one(monkeypatch, tmp_path):
+    assert _fake_alignment_run(monkeypatch, tmp_path, gpu_limit=1, threads=2) == 1

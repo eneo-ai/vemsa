@@ -129,3 +129,34 @@ async def test_submission_and_cancellation_logs_exclude_sensitive_content(
     assert sensitive_name not in rendered
     assert "secret-token" not in rendered
     assert "private-meeting.wav" not in rendered
+
+
+def _settings(**overrides):
+    return Settings(
+        _env_file=None,
+        api_tokens="secret-token",
+        engine="fake",
+        database_url="postgresql://vemsa:vemsa@localhost/vemsa",
+        **overrides,
+    )
+
+
+def test_worker_concurrency_must_be_positive():
+    with pytest.raises(ValidationError, match="worker_concurrency"):
+        _settings(worker_concurrency=0)
+    assert _settings(worker_concurrency=3, gpu_concurrency=2).gpu_concurrency == 2
+
+
+def test_gpu_concurrency_cannot_exceed_worker_concurrency():
+    with pytest.raises(ValidationError, match="gpu_concurrency"):
+        _settings(worker_concurrency=2, gpu_concurrency=3)
+    with pytest.raises(ValidationError, match="gpu_concurrency"):
+        _settings(gpu_concurrency=0)
+
+
+def test_oom_settings_are_validated():
+    with pytest.raises(ValidationError, match="oom_max_attempts"):
+        _settings(oom_max_attempts=0)
+    with pytest.raises(ValidationError, match="oom_retry_delay_s"):
+        _settings(oom_retry_delay_s=-1)
+    assert _settings(oom_retry_delay_s=0).oom_retry_delay_s == 0

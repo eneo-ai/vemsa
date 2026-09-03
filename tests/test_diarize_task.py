@@ -639,5 +639,26 @@ def test_decodable_audio_transcodes_compressed_formats(tmp_path: Path, monkeypat
     resolved, is_temp = _decodable_audio(path)
 
     assert is_temp
-    assert resolved.name == "audio.mp3.diarize.wav"
+    assert resolved.parent == path.parent
+    assert resolved.name.startswith("audio.mp3.") and resolved.name.endswith(".diarize.wav")
     assert commands and commands[0][0] == "ffmpeg"
+
+
+def test_decodable_audio_temp_names_are_unique(tmp_path, monkeypatch):
+    import subprocess
+
+    from vemsa.pipeline.diarize import _decodable_audio
+
+    path = tmp_path / "audio.mp3"
+    path.write_bytes(b"not a wav")
+
+    def fake_ffmpeg(cmd, **kwargs):
+        Path(cmd[-1]).write_bytes(b"RIFF")
+        return subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+    monkeypatch.setattr("vemsa.pipeline.diarize.subprocess.run", fake_ffmpeg)
+
+    first, _ = _decodable_audio(path)
+    second, _ = _decodable_audio(path)
+    assert first != second
+    assert first.exists() and second.exists()

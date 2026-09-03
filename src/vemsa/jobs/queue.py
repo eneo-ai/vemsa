@@ -30,8 +30,10 @@ from vemsa.observability import (
     ALIGNMENT_INTERPOLATED_WORDS,
     JOB_ALIGNMENT,
     JOB_DURATION,
+    JOB_RETRIES,
     JOB_STAGE_DURATION,
     JOBS_FINISHED,
+    JOBS_IN_FLIGHT,
     QUEUE_DEPTH,
     WEBHOOK_DELIVERIES,
     job_id_var,
@@ -39,11 +41,16 @@ from vemsa.observability import (
 from vemsa.pipeline.align import interpolated_words
 from vemsa.pipeline.base import TranscriptionEngine
 from vemsa.pipeline.fetch import fetch_url
+from vemsa.pipeline.gpu import is_out_of_memory, release_cached_memory
 from vemsa.security import ForbiddenUrlError, validate_outbound_url
 
 logger = logging.getLogger(__name__)
 
 ORPHAN_MAX_AGE_S = 24 * 3600
+# A pipeline thread blocks this long for its stage update to land. The update
+# runs on the control loop, so this only bounds DB latency (plus a dead control
+# loop), not how busy the pipeline threads keep the GIL.
+STAGE_UPDATE_TIMEOUT_S = 15.0
 
 
 class JobCancelledError(RuntimeError):
@@ -63,7 +70,11 @@ class AlignmentBelowFloorError(RuntimeError):
 
 
 class JobQueue:
-    """Single worker draining the job store; the DB is the queue, this is only the pump."""
+    """One worker draining the job store; the DB is the queue, this is only the pump.
+
+    Up to `worker_concurrency` jobs run at once, each in its own asyncio task with
+    its own lease renewal and stage stream; GPU stages are additionally bounded
+    by `gpu_concurrency` inside the pipeline (see vemsa.pipeline.gpu)."""
 
     def __init__(self, store: JobStore, engine: TranscriptionEngine, settings: Settings) -> None:
         self._store = store
@@ -74,6 +85,9 @@ class JobQueue:
         self._tasks: list[asyncio.Task[None]] = []
         self._worker_id = uuid4().hex
         self._stopping = False
+        # Only the claim loop acquires a slot; a job task releases it when done.
+        self._slots = asyncio.Semaphore(settings.worker_concurrency)
+        self._active: dict[str, asyncio.Task[None]] = {}
         # Lease renewal and the worker heartbeat run on a dedicated thread with
         # their own event loop and store connection, so a main loop starved by
         # GIL-heavy pipeline stages cannot let the job lease lapse mid-work.
@@ -156,14 +170,19 @@ class JobQueue:
         ]
         for task in background_tasks:
             task.cancel()
+        # in-flight jobs finish on their own; the claim loop stops taking new ones
+        draining = [*self._tasks, *self._active.values()]
         try:
             async with asyncio.timeout(self._settings.shutdown_grace_s):
-                await asyncio.gather(*self._tasks, return_exceptions=True)
+                await asyncio.gather(*draining, return_exceptions=True)
         except TimeoutError:
-            logger.warning("worker did not stop within graceful shutdown timeout")
-            for task in self._tasks:
+            logger.warning(
+                "worker did not stop within graceful shutdown timeout",
+                extra={"in_flight": len(self._active)},
+            )
+            for task in draining:
                 task.cancel()
-            for task in self._tasks:
+            for task in draining:
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
         self._tasks = []
@@ -188,6 +207,10 @@ class JobQueue:
         await asyncio.gather(*tasks, return_exceptions=True)
         asyncio.get_running_loop().stop()
 
+    @property
+    def in_flight(self) -> int:
+        return len(self._active)
+
     async def _worker_loop(self) -> None:
         while not self._stopping:
             with contextlib.suppress(TimeoutError):
@@ -195,17 +218,23 @@ class JobQueue:
                     await self._wakeup.wait()
             self._wakeup.clear()
             try:
-                while (
-                    not self._stopping
-                    and (
-                        job := await self._store.claim_next_queued(
-                            worker_id=self._worker_id, lease_for_s=self._settings.job_lease_s
-                        )
+                while not self._stopping and not self._slots.locked():
+                    job = await self._store.claim_next_queued(
+                        worker_id=self._worker_id,
+                        lease_for_s=self._settings.job_lease_s,
+                        # never re-claim a job whose thread this process still
+                        # runs, even if its lease lapsed
+                        exclude_ids=tuple(self._active),
                     )
-                    is not None
-                ):
-                    await self._run_job(job)
+                    if job is None:
+                        break
+                    await self._slots.acquire()
+                    # one task per job: the contextvar and its copy into the
+                    # pipeline thread stay isolated per job
+                    task = asyncio.create_task(self._run_job(job), name=f"vemsa-job-{job.id}")
+                    self._active[job.id] = task
                 QUEUE_DEPTH.set(await self._store.count_queued())
+                JOBS_IN_FLIGHT.set(len(self._active))
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -218,8 +247,21 @@ class JobQueue:
         token = job_id_var.set(job.id)
         try:
             await self._process_job(job)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # _process_job handles its own failures; anything escaping is a bug,
+            # and a job task must never die silently
+            logger.exception(
+                "job task crashed", extra={"event": "job.task_crashed", "job_id": job.id}
+            )
         finally:
             job_id_var.reset(token)
+            self._active.pop(job.id, None)
+            self._slots.release()
+            JOBS_IN_FLIGHT.set(len(self._active))
+            # a freed slot may have a queued job waiting
+            self.notify()
 
     async def _process_job(self, job: Job) -> None:
         started = time.perf_counter()
@@ -229,7 +271,6 @@ class JobQueue:
         engine = self._settings.resolve_engine()
         current_stage = job.stage
         stage_started = time.perf_counter()
-        loop = asyncio.get_running_loop()
         logger.info(
             "job started",
             extra={
@@ -243,11 +284,11 @@ class JobQueue:
             },
         )
 
-        async def _persist_stage(stage: JobStage) -> None:
-            active = await self._store.set_stage(job.id, stage, worker_id=self._worker_id)
+        async def _persist_stage(stage: JobStage, *, store: JobStore) -> None:
+            active = await store.set_stage(job.id, stage, worker_id=self._worker_id)
             if active:
                 return
-            current = await self._store.get(job.id)
+            current = await store.get(job.id)
             if current is not None and current.status == JobStatus.CANCELLED:
                 raise JobCancelledError("job cancellation was requested")
             raise JobLeaseLostError("worker no longer owns the job")
@@ -256,9 +297,15 @@ class JobQueue:
             nonlocal current_stage, stage_started
             if stage == current_stage:
                 return
-            future = asyncio.run_coroutine_threadsafe(_persist_stage(stage), loop)
+            # Runs on the control loop (own thread, own store connection) like the
+            # lease renewal: the main loop may be starved by pipeline threads
+            # holding the GIL, and a stalled stage update fails the job.
+            assert self._control_loop is not None and self._control_store is not None
+            future = asyncio.run_coroutine_threadsafe(
+                _persist_stage(stage, store=self._control_store), self._control_loop
+            )
             try:
-                future.result(timeout=5.0)
+                future.result(timeout=STAGE_UPDATE_TIMEOUT_S)
             except TimeoutError as exc:
                 future.cancel()
                 raise RuntimeError("job stage update timed out") from exc
@@ -372,7 +419,7 @@ class JobQueue:
             JOB_ALIGNMENT.labels(result.alignment or "none", engine, job.request.task).inc()
             self._check_alignment_floor(result)
             self._check_interpolated_share(result, task=job.request.task)
-            await _persist_stage(JobStage.FINALIZING)
+            await _persist_stage(JobStage.FINALIZING, store=self._store)
             JOB_STAGE_DURATION.labels(current_stage.value, engine, job.request.task).observe(
                 time.perf_counter() - stage_started
             )
@@ -450,6 +497,36 @@ class JobQueue:
                     "error_type": type(exc).__name__,
                 },
             )
+            if is_out_of_memory(exc) and job.attempt < self._settings.oom_max_attempts:
+                # Memory pressure is usually a neighbour on the GPU, not this job:
+                # hand it back to the queue after a cooldown instead of failing it.
+                release_cached_memory()
+                released = await self._store.release_for_retry(
+                    job.id,
+                    worker_id=self._worker_id,
+                    retry_after_s=self._settings.oom_retry_delay_s,
+                )
+                if released:
+                    # delete_audio stays False: the retry needs the audio
+                    JOB_RETRIES.labels("oom", engine, job.request.task).inc()
+                    logger.warning(
+                        "job requeued after out-of-memory",
+                        extra={
+                            "event": "job.requeued",
+                            "job_id": job.id,
+                            "client_id": job.client_id,
+                            "attempt": job.attempt,
+                            "max_attempts": self._settings.oom_max_attempts,
+                            "retry_after_s": self._settings.oom_retry_delay_s,
+                            "engine": engine,
+                            "task": job.request.task,
+                            "error_type": type(exc).__name__,
+                        },
+                    )
+                    if self._settings.oom_retry_delay_s == 0:
+                        self.notify()
+                    return
+                # release refused: cancelled or lease lost; the branches below decide
             # generic failures hide internals; the alignment floor is a policy the
             # client can act on, so its message passes through
             public_error = (
@@ -556,6 +633,8 @@ class JobQueue:
                     "worker_id": self._worker_id,
                     "queued_jobs": queued,
                     "running_jobs": await store.count_active() - queued,
+                    "in_flight": len(self._active),
+                    "concurrency": self._settings.worker_concurrency,
                 },
             )
             await asyncio.sleep(self._settings.lease_heartbeat_s)

@@ -18,6 +18,10 @@ x-vemsa-environment: &vemsa-environment
   VEMSA_PRELOAD_MODELS: ${VEMSA_PRELOAD_MODELS:-true}
   VEMSA_WEBHOOK_SIGNING_SECRET: ${VEMSA_WEBHOOK_SIGNING_SECRET:-}
   VEMSA_SHUTDOWN_GRACE_S: ${VEMSA_SHUTDOWN_GRACE_S:-540}
+  # jobs one worker runs at once, and how many of them may be on the GPU at once;
+  # see "Worker concurrency" in docs/PRODUCTION.md before raising either
+  VEMSA_WORKER_CONCURRENCY: ${VEMSA_WORKER_CONCURRENCY:-1}
+  VEMSA_GPU_CONCURRENCY: ${VEMSA_GPU_CONCURRENCY:-1}
 
 x-vemsa-security: &vemsa-security
   restart: unless-stopped

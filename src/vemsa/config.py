@@ -112,6 +112,14 @@ class Settings(BaseSettings):
     shutdown_grace_s: float = 30.0
     run_worker: bool = True
     worker_stale_s: float = 90.0
+    # jobs one worker process runs at once; each has its own lease and stage stream
+    worker_concurrency: int = 1
+    # of those, how many may be inside a GPU stage at once (<= worker_concurrency);
+    # 1 keeps the GPU serialized so results cannot differ from serial runs
+    gpu_concurrency: int = 1
+    # claims a job may consume before a GPU/host out-of-memory failure is final
+    oom_max_attempts: int = 3
+    oom_retry_delay_s: float = 30.0
 
     mcp_max_audio_bytes: int = GIB
     mcp_sync_timeout_s: float = 900.0
@@ -270,4 +278,12 @@ class Settings(BaseSettings):
             raise ValueError("max_queued_jobs_per_client cannot exceed max_queued_jobs")
         if self.webhook_max_attempts <= 0:
             raise ValueError("webhook_max_attempts must be greater than zero")
+        if self.worker_concurrency < 1:
+            raise ValueError("worker_concurrency must be at least 1")
+        if not 1 <= self.gpu_concurrency <= self.worker_concurrency:
+            raise ValueError("gpu_concurrency must be between 1 and worker_concurrency")
+        if self.oom_max_attempts < 1:
+            raise ValueError("oom_max_attempts must be at least 1")
+        if self.oom_retry_delay_s < 0:
+            raise ValueError("oom_retry_delay_s cannot be negative")
         return self
