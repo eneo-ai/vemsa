@@ -11,3 +11,6 @@ build/
 *.db
 data/
 .DS_Store
+
+# Session-local planning notes; consumer-facing contract lives in docs/
+.claude/plans/
