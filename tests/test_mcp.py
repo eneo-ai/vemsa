@@ -127,3 +127,54 @@ async def test_transcribe_audio_rejects_oversize_source(settings: Settings):
     async with mcp_client(settings) as client:
         with pytest.raises(ToolError, match="submit_transcription instead"):
             await client.call_tool("transcribe_audio", {"url": AUDIO_URL})
+
+
+# --- HTTP transport: the documented /mcp URL must work without a redirect ------
+
+MCP_HEADERS = {
+    "Authorization": "Bearer secret-token",
+    "Accept": "application/json, text/event-stream",
+    "Content-Type": "application/json",
+}
+INITIALIZE = {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {
+        "protocolVersion": "2025-06-18",
+        "capabilities": {},
+        "clientInfo": {"name": "probe", "version": "0"},
+    },
+}
+
+
+@pytest.mark.parametrize("path", ["/mcp", "/mcp/"])
+async def test_mcp_endpoint_serves_with_and_without_trailing_slash(settings: Settings, path: str):
+    import httpx
+
+    from vemsa.main import create_app
+
+    settings.run_worker = False
+    app = create_app(settings=settings, engine=FakeEngine())
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            response = await client.post(path, headers=MCP_HEADERS, json=INITIALIZE)
+
+    assert response.status_code == 200, (response.status_code, response.headers.get("location"))
+    assert '"protocolVersion"' in response.text
+    assert "vemsa" in response.text
+
+
+async def test_mcp_alias_does_not_shadow_other_routes(settings: Settings):
+    import httpx
+
+    from vemsa.main import create_app
+
+    settings.run_worker = False
+    app = create_app(settings=settings, engine=FakeEngine())
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            assert (await client.get("/livez")).status_code == 200
+            assert (await client.get("/mcpx")).status_code == 404

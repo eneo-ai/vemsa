@@ -20,6 +20,28 @@ from vemsa.pipeline.factory import build_engine
 logger = logging.getLogger(__name__)
 
 
+class MountAlias:
+    """Serve a mounted sub-application at its bare mount path too.
+
+    Starlette answers a request for `/mcp` with a 307 to `/mcp/`, because a
+    mount only matches paths below it. MCP clients are configured with the
+    documented `/mcp` URL and often do not follow redirects on POST (or drop
+    the bearer token when they do), so the request is rewritten to the mount
+    root before routing and both forms serve the same app with no redirect."""
+
+    def __init__(self, app, path: str) -> None:
+        self._app = app
+        self._path = path.rstrip("/")
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] in {"http", "websocket"} and scope.get("path") == self._path:
+            scope = dict(scope, path=self._path + "/")
+            raw_path = scope.get("raw_path")
+            if isinstance(raw_path, bytes):
+                scope["raw_path"] = raw_path + b"/"
+        await self._app(scope, receive, send)
+
+
 def create_app(settings: Settings | None = None, engine: TranscriptionEngine | None = None):
     settings = settings or Settings()
     configure_logging(settings.log_level, settings.log_format)
@@ -56,6 +78,7 @@ def create_app(settings: Settings | None = None, engine: TranscriptionEngine | N
     app.middleware("http")(request_observability_middleware)
     app.include_router(jobs_router, prefix="/v1", dependencies=[Depends(require_token)])
     app.mount("/mcp", mcp_app)
+    app.add_middleware(MountAlias, path="/mcp")
 
     @app.get("/livez")
     async def livez() -> dict[str, str]:

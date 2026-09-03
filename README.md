@@ -10,7 +10,7 @@ local.
 It exposes two front doors over one job engine:
 
 - **Async job API** — submit, poll, cancel, and fetch through `/v1/jobs`
-- **MCP facade** — streamable-HTTP MCP server at `/mcp` with `transcribe_audio`,
+- **MCP facade** — streamable-HTTP MCP server at `/mcp` (`/mcp/` works too, no redirect) with `transcribe_audio`,
   `submit_transcription`, and `get_transcription` tools
 
 FastMCP is only the adapter that implements the MCP protocol. It lets MCP-capable AI
