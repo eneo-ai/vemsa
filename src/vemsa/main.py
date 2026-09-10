@@ -3,6 +3,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Response, status
+from fastapi.staticfiles import StaticFiles
 from fastmcp.utilities.lifespan import combine_lifespans
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
@@ -14,6 +15,9 @@ from vemsa.jobs.queue import JobQueue
 from vemsa.jobs.store_factory import open_job_store
 from vemsa.mcp.server import build_mcp
 from vemsa.observability import QUEUE_DEPTH, configure_logging, request_observability_middleware
+from vemsa.ops.auth import no_store, require_ops_auth
+from vemsa.ops.router import STATIC_DIR as OPS_STATIC_DIR
+from vemsa.ops.router import router as ops_router
 from vemsa.pipeline.base import TranscriptionEngine
 from vemsa.pipeline.factory import build_engine
 
@@ -77,6 +81,23 @@ def create_app(settings: Settings | None = None, engine: TranscriptionEngine | N
     app.state.deps = deps
     app.middleware("http")(request_observability_middleware)
     app.include_router(jobs_router, prefix="/v1", dependencies=[Depends(require_token)])
+    if settings.ops_enabled:
+        if settings.environment == "production" and settings.ops_user is None:
+            logger.warning(
+                "the /ops dashboard is reachable without credentials; set VEMSA_OPS_USER"
+                " and VEMSA_OPS_PASSWORD or VEMSA_OPS_ENABLED=false"
+            )
+        app.include_router(
+            ops_router,
+            prefix="/ops",
+            dependencies=[Depends(require_ops_auth), Depends(no_store)],
+            include_in_schema=False,
+        )
+        # the built UI's hashed bundles; not secret, so outside the auth dependency
+        app.mount(
+            "/ops/assets",
+            StaticFiles(directory=str(OPS_STATIC_DIR.joinpath("assets")), check_dir=False),
+        )
     app.mount("/mcp", mcp_app)
     app.add_middleware(MountAlias, path="/mcp")
 

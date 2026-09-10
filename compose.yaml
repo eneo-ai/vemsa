@@ -22,6 +22,10 @@ x-vemsa-environment: &vemsa-environment
   # see "Worker concurrency" in docs/PRODUCTION.md before raising either
   VEMSA_WORKER_CONCURRENCY: ${VEMSA_WORKER_CONCURRENCY:-1}
   VEMSA_GPU_CONCURRENCY: ${VEMSA_GPU_CONCURRENCY:-1}
+  # operator dashboard at /ops on the api port: open unless both are set (HTTP Basic)
+  VEMSA_OPS_USER: ${VEMSA_OPS_USER:-}
+  VEMSA_OPS_PASSWORD: ${VEMSA_OPS_PASSWORD:-}
+  VEMSA_STATS_RETENTION_DAYS: ${VEMSA_STATS_RETENTION_DAYS:-90}
 
 x-vemsa-security: &vemsa-security
   restart: unless-stopped

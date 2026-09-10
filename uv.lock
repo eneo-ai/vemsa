@@ -4,35 +4,35 @@ requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu'",
     "python_full_version >= '3.14' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu'",
+    "python_full_version >= '3.14' and sys_platform == 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
+    "python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
+    "python_full_version >= '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
+    "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
+    "python_full_version >= '3.14' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
     "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu'",
-    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu'",
     "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
+    "(python_full_version == '3.13.*' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (python_full_version == '3.13.*' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')",
+    "python_full_version == '3.13.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
+    "python_full_version == '3.13.*' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu'",
     "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
+    "(python_full_version == '3.12.*' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (python_full_version == '3.12.*' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (python_full_version == '3.12.*' and sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')",
+    "python_full_version == '3.12.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
+    "python_full_version == '3.12.*' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
     "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu'",
     "python_full_version < '3.12' and sys_platform == 'emscripten' and extra != 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu'",
     "python_full_version < '3.12' and sys_platform != 'emscripten' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu'",
-    "python_full_version >= '3.14' and sys_platform == 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
-    "python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
-    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
-    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
-    "(python_full_version == '3.13.*' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (python_full_version == '3.13.*' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')",
-    "(python_full_version == '3.12.*' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (python_full_version == '3.12.*' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (python_full_version == '3.12.*' and sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')",
-    "python_full_version == '3.13.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
-    "python_full_version == '3.12.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
     "python_full_version < '3.12' and sys_platform == 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
     "python_full_version < '3.12' and sys_platform == 'emscripten' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
     "(python_full_version < '3.12' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (python_full_version < '3.12' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (python_full_version < '3.12' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')",
     "python_full_version < '3.12' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
-    "python_full_version >= '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
-    "python_full_version == '3.13.*' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
-    "python_full_version == '3.12.*' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
     "python_full_version < '3.12' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
-    "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
-    "python_full_version >= '3.14' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
-    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
-    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
-    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
-    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
     "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
     "python_full_version < '3.12' and sys_platform == 'emscripten' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
     "python_full_version < '3.12' and sys_platform != 'emscripten' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
@@ -246,9 +246,9 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
     { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
-    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version < '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
     { name = "torch", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')" },
-    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu')" },
     { name = "torch", version = "2.8.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "extra == 'extra-5-vemsa-gpu'" },
     { name = "typing-extensions" },
 ]
@@ -832,13 +832,13 @@ dependencies = [
     { name = "rapidfuzz" },
     { name = "silero-vad" },
     { name = "soundfile" },
-    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version < '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
     { name = "torch", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')" },
-    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu')" },
     { name = "torch", version = "2.8.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "extra == 'extra-5-vemsa-gpu'" },
-    { name = "torchaudio", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version < '3.14' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_machine != 'aarch64' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_python_implementation != 'CPython' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (sys_platform != 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torchaudio", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version < '3.14' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
     { name = "torchaudio", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')" },
-    { name = "torchaudio", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version >= '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-5-vemsa-cpu') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torchaudio", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version >= '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-5-vemsa-cpu') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
     { name = "torchaudio", version = "2.8.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "extra == 'extra-5-vemsa-gpu'" },
     { name = "tqdm" },
     { name = "transformers" },
@@ -860,13 +860,13 @@ dependencies = [
     { name = "pyannote-audio" },
     { name = "silero-vad" },
     { name = "soundfile" },
-    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version < '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
     { name = "torch", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')" },
-    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu')" },
     { name = "torch", version = "2.8.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "extra == 'extra-5-vemsa-gpu'" },
-    { name = "torchaudio", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version < '3.14' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_machine != 'aarch64' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_python_implementation != 'CPython' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (sys_platform != 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torchaudio", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version < '3.14' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
     { name = "torchaudio", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')" },
-    { name = "torchaudio", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version >= '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-5-vemsa-cpu') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torchaudio", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version >= '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-5-vemsa-cpu') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
     { name = "torchaudio", version = "2.8.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "extra == 'extra-5-vemsa-gpu'" },
     { name = "tqdm" },
     { name = "transformers" },
@@ -1619,9 +1619,9 @@ name = "julius"
 version = "0.2.8"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version < '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
     { name = "torch", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')" },
-    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu')" },
     { name = "torch", version = "2.8.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "extra == 'extra-5-vemsa-gpu'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1d/c6/5c2aea2b11ead1680bb5b17c996def31f8ccade471cada37cdb93855e06f/julius-0.2.8.tar.gz", hash = "sha256:d691e651200930affea4f6c849c26e95fec846087281ae3d1a7757eac90253d5", size = 48081, upload-time = "2026-06-03T16:05:34.52Z" }
@@ -1763,9 +1763,9 @@ dependencies = [
     { name = "packaging" },
     { name = "pytorch-lightning" },
     { name = "pyyaml" },
-    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version < '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
     { name = "torch", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')" },
-    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu')" },
     { name = "torch", version = "2.8.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "extra == 'extra-5-vemsa-gpu'" },
     { name = "torchmetrics" },
     { name = "tqdm" },
@@ -2302,26 +2302,26 @@ source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu'",
     "python_full_version >= '3.14' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu'",
-    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu'",
-    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu'",
-    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu'",
-    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu'",
     "python_full_version >= '3.14' and sys_platform == 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
     "python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
-    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
-    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
-    "(python_full_version == '3.13.*' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (python_full_version == '3.13.*' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')",
-    "(python_full_version == '3.12.*' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (python_full_version == '3.12.*' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (python_full_version == '3.12.*' and sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')",
-    "python_full_version == '3.13.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
-    "python_full_version == '3.12.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
     "python_full_version >= '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
-    "python_full_version == '3.13.*' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
-    "python_full_version == '3.12.*' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
     "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
     "python_full_version >= '3.14' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
+    "(python_full_version == '3.13.*' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (python_full_version == '3.13.*' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')",
+    "python_full_version == '3.13.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
+    "python_full_version == '3.13.*' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
     "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
-    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
     "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
+    "(python_full_version == '3.12.*' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (python_full_version == '3.12.*' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (python_full_version == '3.12.*' and sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')",
+    "python_full_version == '3.12.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
+    "python_full_version == '3.12.*' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
     "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/22/fd/89965aa4ac08c74998539fcbf24fa3540f3e15237fbeb6bcf9c908f4aade/numpy-2.5.1.tar.gz", hash = "sha256:a48a113e6afea91f5608793bafa7ef2ad481fefbda87ec5069f483de61cb9fa3", size = 20755553, upload-time = "2026-07-04T17:08:00.933Z" }
@@ -2416,7 +2416,7 @@ name = "nvidia-cudnn-cu12"
 version = "9.10.2.21"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cublas-cu12", marker = "extra == 'extra-5-vemsa-gpu'" },
+    { name = "nvidia-cublas-cu12", marker = "(python_full_version >= '3.12' and sys_platform == 'emscripten' and extra != 'extra-5-vemsa-cpu') or (sys_platform != 'emscripten' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/fa/41/e79269ce215c857c935fd86bcfe91a451a584dfc27f1e068f568b9ad1ab7/nvidia_cudnn_cu12-9.10.2.21-py3-none-manylinux_2_27_aarch64.whl", hash = "sha256:c9132cc3f8958447b4910a1720036d9eff5928cc3179b0a51fb6d167c6cc87d8", size = 705026878, upload-time = "2025-06-06T21:52:51.348Z" },
@@ -2429,7 +2429,7 @@ name = "nvidia-cufft-cu12"
 version = "11.3.3.83"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-nvjitlink-cu12", marker = "extra == 'extra-5-vemsa-gpu'" },
+    { name = "nvidia-nvjitlink-cu12", marker = "(python_full_version >= '3.12' and sys_platform == 'emscripten' and extra != 'extra-5-vemsa-cpu') or (sys_platform != 'emscripten' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/60/bc/7771846d3a0272026c416fbb7e5f4c1f146d6d80704534d0b187dd6f4800/nvidia_cufft_cu12-11.3.3.83-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:848ef7224d6305cdb2a4df928759dca7b1201874787083b6e7550dd6765ce69a", size = 193109211, upload-time = "2025-03-07T01:44:56.873Z" },
@@ -2461,9 +2461,9 @@ name = "nvidia-cusolver-cu12"
 version = "11.7.3.90"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cublas-cu12", marker = "extra == 'extra-5-vemsa-gpu'" },
-    { name = "nvidia-cusparse-cu12", marker = "extra == 'extra-5-vemsa-gpu'" },
-    { name = "nvidia-nvjitlink-cu12", marker = "extra == 'extra-5-vemsa-gpu'" },
+    { name = "nvidia-cublas-cu12", marker = "(python_full_version >= '3.12' and sys_platform == 'emscripten' and extra != 'extra-5-vemsa-cpu') or (sys_platform != 'emscripten' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "nvidia-cusparse-cu12", marker = "(python_full_version >= '3.12' and sys_platform == 'emscripten' and extra != 'extra-5-vemsa-cpu') or (sys_platform != 'emscripten' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "nvidia-nvjitlink-cu12", marker = "(python_full_version >= '3.12' and sys_platform == 'emscripten' and extra != 'extra-5-vemsa-cpu') or (sys_platform != 'emscripten' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c8/32/f7cd6ce8a7690544d084ea21c26e910a97e077c9b7f07bf5de623ee19981/nvidia_cusolver_cu12-11.7.3.90-py3-none-manylinux_2_27_aarch64.whl", hash = "sha256:db9ed69dbef9715071232caa9b69c52ac7de3a95773c2db65bdba85916e4e5c0", size = 267229841, upload-time = "2025-03-07T01:46:54.356Z" },
@@ -2476,7 +2476,7 @@ name = "nvidia-cusparse-cu12"
 version = "12.5.8.93"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-nvjitlink-cu12", marker = "extra == 'extra-5-vemsa-gpu'" },
+    { name = "nvidia-nvjitlink-cu12", marker = "(python_full_version >= '3.12' and sys_platform == 'emscripten' and extra != 'extra-5-vemsa-cpu') or (sys_platform != 'emscripten' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/bc/f7/cd777c4109681367721b00a106f491e0d0d15cfa1fd59672ce580ce42a97/nvidia_cusparse_cu12-12.5.8.93-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:9b6c161cb130be1a07a27ea6923df8141f3c295852f4b260c65f18f3e0a091dc", size = 288117129, upload-time = "2025-03-07T01:47:40.407Z" },
@@ -2492,6 +2492,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/73/b9/598f6ff36faaece4b3c50d26f50e38661499ff34346f00e057760b35cc9d/nvidia_cusparselt_cu12-0.7.1-py3-none-manylinux2014_aarch64.whl", hash = "sha256:8878dce784d0fac90131b6817b607e803c36e629ba34dc5b433471382196b6a5", size = 283835557, upload-time = "2025-02-26T00:16:54.265Z" },
     { url = "https://files.pythonhosted.org/packages/56/79/12978b96bd44274fe38b5dde5cfb660b1d114f70a65ef962bcbbed99b549/nvidia_cusparselt_cu12-0.7.1-py3-none-manylinux2014_x86_64.whl", hash = "sha256:f1bb701d6b930d5a7cea44c19ceb973311500847f81b634d802b7b539dc55623", size = 287193691, upload-time = "2025-02-26T00:15:44.104Z" },
     { url = "https://files.pythonhosted.org/packages/2f/d8/a6b0d0d0c2435e9310f3e2bb0d9c9dd4c33daef86aa5f30b3681defd37ea/nvidia_cusparselt_cu12-0.7.1-py3-none-win_amd64.whl", hash = "sha256:f67fbb5831940ec829c9117b7f33807db9f9678dc2a617fbe781cac17b4e1075", size = 271020911, upload-time = "2025-02-26T00:14:47.204Z" },
+]
+
+[[package]]
+name = "nvidia-ml-py"
+version = "13.610.43"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f0/b5/a8fbc356f768fa5c9cfd646668fd7d34bf55bdd1c6e20754642a64d930d4/nvidia_ml_py-13.610.43.tar.gz", hash = "sha256:65437eb73d68d0c62c931ca4d45038472faff03bd0b8729abba4b899f70d60f2", size = 52109, upload-time = "2026-06-01T18:54:08.829Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/23/45/caa600acfab94560807a20a64b5830d2cd3c3202b7f1328644d70b7d6bd8/nvidia_ml_py-13.610.43-py3-none-any.whl", hash = "sha256:f13c72698edef492f985cc225f14faafe68ae065a2e407f45bdf6f4b9b43fde8", size = 53163, upload-time = "2026-06-01T18:54:07.704Z" },
 ]
 
 [[package]]
@@ -2993,6 +3002,34 @@ wheels = [
 ]
 
 [[package]]
+name = "psutil"
+version = "7.2.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/aa/c6/d1ddf4abb55e93cebc4f2ed8b5d6dbad109ecb8d63748dd2b20ab5e57ebe/psutil-7.2.2.tar.gz", hash = "sha256:0746f5f8d406af344fd547f1c8daa5f5c33dbc293bb8d6a16d80b4bb88f59372", size = 493740, upload-time = "2026-01-28T18:14:54.428Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/51/08/510cbdb69c25a96f4ae523f733cdc963ae654904e8db864c07585ef99875/psutil-7.2.2-cp313-cp313t-macosx_10_13_x86_64.whl", hash = "sha256:2edccc433cbfa046b980b0df0171cd25bcaeb3a68fe9022db0979e7aa74a826b", size = 130595, upload-time = "2026-01-28T18:14:57.293Z" },
+    { url = "https://files.pythonhosted.org/packages/d6/f5/97baea3fe7a5a9af7436301f85490905379b1c6f2dd51fe3ecf24b4c5fbf/psutil-7.2.2-cp313-cp313t-macosx_11_0_arm64.whl", hash = "sha256:e78c8603dcd9a04c7364f1a3e670cea95d51ee865e4efb3556a3a63adef958ea", size = 131082, upload-time = "2026-01-28T18:14:59.732Z" },
+    { url = "https://files.pythonhosted.org/packages/37/d6/246513fbf9fa174af531f28412297dd05241d97a75911ac8febefa1a53c6/psutil-7.2.2-cp313-cp313t-manylinux2010_x86_64.manylinux_2_12_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:1a571f2330c966c62aeda00dd24620425d4b0cc86881c89861fbc04549e5dc63", size = 181476, upload-time = "2026-01-28T18:15:01.884Z" },
+    { url = "https://files.pythonhosted.org/packages/b8/b5/9182c9af3836cca61696dabe4fd1304e17bc56cb62f17439e1154f225dd3/psutil-7.2.2-cp313-cp313t-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:917e891983ca3c1887b4ef36447b1e0873e70c933afc831c6b6da078ba474312", size = 184062, upload-time = "2026-01-28T18:15:04.436Z" },
+    { url = "https://files.pythonhosted.org/packages/16/ba/0756dca669f5a9300d0cbcbfae9a4c30e446dfc7440ffe43ded5724bfd93/psutil-7.2.2-cp313-cp313t-win_amd64.whl", hash = "sha256:ab486563df44c17f5173621c7b198955bd6b613fb87c71c161f827d3fb149a9b", size = 139893, upload-time = "2026-01-28T18:15:06.378Z" },
+    { url = "https://files.pythonhosted.org/packages/1c/61/8fa0e26f33623b49949346de05ec1ddaad02ed8ba64af45f40a147dbfa97/psutil-7.2.2-cp313-cp313t-win_arm64.whl", hash = "sha256:ae0aefdd8796a7737eccea863f80f81e468a1e4cf14d926bd9b6f5f2d5f90ca9", size = 135589, upload-time = "2026-01-28T18:15:08.03Z" },
+    { url = "https://files.pythonhosted.org/packages/81/69/ef179ab5ca24f32acc1dac0c247fd6a13b501fd5534dbae0e05a1c48b66d/psutil-7.2.2-cp314-cp314t-macosx_10_15_x86_64.whl", hash = "sha256:eed63d3b4d62449571547b60578c5b2c4bcccc5387148db46e0c2313dad0ee00", size = 130664, upload-time = "2026-01-28T18:15:09.469Z" },
+    { url = "https://files.pythonhosted.org/packages/7b/64/665248b557a236d3fa9efc378d60d95ef56dd0a490c2cd37dafc7660d4a9/psutil-7.2.2-cp314-cp314t-macosx_11_0_arm64.whl", hash = "sha256:7b6d09433a10592ce39b13d7be5a54fbac1d1228ed29abc880fb23df7cb694c9", size = 131087, upload-time = "2026-01-28T18:15:11.724Z" },
+    { url = "https://files.pythonhosted.org/packages/d5/2e/e6782744700d6759ebce3043dcfa661fb61e2fb752b91cdeae9af12c2178/psutil-7.2.2-cp314-cp314t-manylinux2010_x86_64.manylinux_2_12_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:1fa4ecf83bcdf6e6c8f4449aff98eefb5d0604bf88cb883d7da3d8d2d909546a", size = 182383, upload-time = "2026-01-28T18:15:13.445Z" },
+    { url = "https://files.pythonhosted.org/packages/57/49/0a41cefd10cb7505cdc04dab3eacf24c0c2cb158a998b8c7b1d27ee2c1f5/psutil-7.2.2-cp314-cp314t-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:e452c464a02e7dc7822a05d25db4cde564444a67e58539a00f929c51eddda0cf", size = 185210, upload-time = "2026-01-28T18:15:16.002Z" },
+    { url = "https://files.pythonhosted.org/packages/dd/2c/ff9bfb544f283ba5f83ba725a3c5fec6d6b10b8f27ac1dc641c473dc390d/psutil-7.2.2-cp314-cp314t-win_amd64.whl", hash = "sha256:c7663d4e37f13e884d13994247449e9f8f574bc4655d509c3b95e9ec9e2b9dc1", size = 141228, upload-time = "2026-01-28T18:15:18.385Z" },
+    { url = "https://files.pythonhosted.org/packages/f2/fc/f8d9c31db14fcec13748d373e668bc3bed94d9077dbc17fb0eebc073233c/psutil-7.2.2-cp314-cp314t-win_arm64.whl", hash = "sha256:11fe5a4f613759764e79c65cf11ebdf26e33d6dd34336f8a337aa2996d71c841", size = 136284, upload-time = "2026-01-28T18:15:19.912Z" },
+    { url = "https://files.pythonhosted.org/packages/e7/36/5ee6e05c9bd427237b11b3937ad82bb8ad2752d72c6969314590dd0c2f6e/psutil-7.2.2-cp36-abi3-macosx_10_9_x86_64.whl", hash = "sha256:ed0cace939114f62738d808fdcecd4c869222507e266e574799e9c0faa17d486", size = 129090, upload-time = "2026-01-28T18:15:22.168Z" },
+    { url = "https://files.pythonhosted.org/packages/80/c4/f5af4c1ca8c1eeb2e92ccca14ce8effdeec651d5ab6053c589b074eda6e1/psutil-7.2.2-cp36-abi3-macosx_11_0_arm64.whl", hash = "sha256:1a7b04c10f32cc88ab39cbf606e117fd74721c831c98a27dc04578deb0c16979", size = 129859, upload-time = "2026-01-28T18:15:23.795Z" },
+    { url = "https://files.pythonhosted.org/packages/b5/70/5d8df3b09e25bce090399cf48e452d25c935ab72dad19406c77f4e828045/psutil-7.2.2-cp36-abi3-manylinux2010_x86_64.manylinux_2_12_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:076a2d2f923fd4821644f5ba89f059523da90dc9014e85f8e45a5774ca5bc6f9", size = 155560, upload-time = "2026-01-28T18:15:25.976Z" },
+    { url = "https://files.pythonhosted.org/packages/63/65/37648c0c158dc222aba51c089eb3bdfa238e621674dc42d48706e639204f/psutil-7.2.2-cp36-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:b0726cecd84f9474419d67252add4ac0cd9811b04d61123054b9fb6f57df6e9e", size = 156997, upload-time = "2026-01-28T18:15:27.794Z" },
+    { url = "https://files.pythonhosted.org/packages/8e/13/125093eadae863ce03c6ffdbae9929430d116a246ef69866dad94da3bfbc/psutil-7.2.2-cp36-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:fd04ef36b4a6d599bbdb225dd1d3f51e00105f6d48a28f006da7f9822f2606d8", size = 148972, upload-time = "2026-01-28T18:15:29.342Z" },
+    { url = "https://files.pythonhosted.org/packages/04/78/0acd37ca84ce3ddffaa92ef0f571e073faa6d8ff1f0559ab1272188ea2be/psutil-7.2.2-cp36-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:b58fabe35e80b264a4e3bb23e6b96f9e45a3df7fb7eed419ac0e5947c61e47cc", size = 148266, upload-time = "2026-01-28T18:15:31.597Z" },
+    { url = "https://files.pythonhosted.org/packages/b4/90/e2159492b5426be0c1fef7acba807a03511f97c5f86b3caeda6ad92351a7/psutil-7.2.2-cp37-abi3-win_amd64.whl", hash = "sha256:eb7e81434c8d223ec4a219b5fc1c47d0417b12be7ea866e24fb5ad6e84b3d988", size = 137737, upload-time = "2026-01-28T18:15:33.849Z" },
+    { url = "https://files.pythonhosted.org/packages/8c/c7/7bb2e321574b10df20cbde462a94e2b71d05f9bbda251ef27d104668306a/psutil-7.2.2-cp37-abi3-win_arm64.whl", hash = "sha256:8c233660f575a5a89e6d4cb65d9f938126312bca76d8fe087b947b3a1aaac9ee", size = 134617, upload-time = "2026-01-28T18:15:36.514Z" },
+]
+
+[[package]]
 name = "py-key-value-aio"
 version = "0.4.5"
 source = { registry = "https://pypi.org/simple" }
@@ -3039,14 +3076,14 @@ dependencies = [
     { name = "rich" },
     { name = "safetensors" },
     { name = "soundfile" },
-    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version < '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
     { name = "torch", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')" },
-    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu')" },
     { name = "torch", version = "2.8.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "extra == 'extra-5-vemsa-gpu'" },
     { name = "torch-audiomentations" },
-    { name = "torchaudio", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version < '3.14' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_machine != 'aarch64' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_python_implementation != 'CPython' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (sys_platform != 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torchaudio", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version < '3.14' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
     { name = "torchaudio", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')" },
-    { name = "torchaudio", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version >= '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-5-vemsa-cpu') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torchaudio", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version >= '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-5-vemsa-cpu') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
     { name = "torchaudio", version = "2.8.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "extra == 'extra-5-vemsa-gpu'" },
     { name = "torchcodec" },
     { name = "torchmetrics" },
@@ -3387,9 +3424,9 @@ dependencies = [
     { name = "lightning-utilities" },
     { name = "packaging" },
     { name = "pyyaml" },
-    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version < '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
     { name = "torch", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')" },
-    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu')" },
     { name = "torch", version = "2.8.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "extra == 'extra-5-vemsa-gpu'" },
     { name = "torchmetrics" },
     { name = "tqdm" },
@@ -3408,9 +3445,9 @@ dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
     { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
     { name = "scikit-learn" },
-    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version < '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
     { name = "torch", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')" },
-    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu')" },
     { name = "torch", version = "2.8.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "extra == 'extra-5-vemsa-gpu'" },
     { name = "tqdm" },
 ]
@@ -4065,26 +4102,26 @@ source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu'",
     "python_full_version >= '3.14' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu'",
-    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu'",
-    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu'",
-    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu'",
-    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu'",
     "python_full_version >= '3.14' and sys_platform == 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
     "python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
-    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
-    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
-    "(python_full_version == '3.13.*' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (python_full_version == '3.13.*' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')",
-    "(python_full_version == '3.12.*' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (python_full_version == '3.12.*' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (python_full_version == '3.12.*' and sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')",
-    "python_full_version == '3.13.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
-    "python_full_version == '3.12.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
     "python_full_version >= '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
-    "python_full_version == '3.13.*' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
-    "python_full_version == '3.12.*' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
     "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
     "python_full_version >= '3.14' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
+    "(python_full_version == '3.13.*' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (python_full_version == '3.13.*' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')",
+    "python_full_version == '3.13.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
+    "python_full_version == '3.13.*' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
     "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
-    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
     "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
+    "(python_full_version == '3.12.*' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (python_full_version == '3.12.*' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (python_full_version == '3.12.*' and sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')",
+    "python_full_version == '3.12.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
+    "python_full_version == '3.12.*' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
     "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu'",
 ]
 dependencies = [
@@ -4139,8 +4176,8 @@ name = "secretstorage"
 version = "3.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cryptography", marker = "(python_full_version < '3.12' and sys_platform == 'win32') or (sys_platform != 'darwin' and sys_platform != 'win32') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-gpu') or (sys_platform == 'darwin' and extra != 'extra-5-vemsa-cpu') or (sys_platform == 'win32' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
-    { name = "jeepney", marker = "(python_full_version < '3.12' and sys_platform == 'win32') or (sys_platform != 'darwin' and sys_platform != 'win32') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-gpu') or (sys_platform == 'darwin' and extra != 'extra-5-vemsa-cpu') or (sys_platform == 'win32' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "cryptography", marker = "(python_full_version >= '3.12' and sys_platform == 'emscripten') or (sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-gpu') or (sys_platform == 'darwin' and extra != 'extra-5-vemsa-cpu') or (sys_platform == 'emscripten' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform == 'win32' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "jeepney", marker = "(python_full_version >= '3.12' and sys_platform == 'emscripten') or (sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-gpu') or (sys_platform == 'darwin' and extra != 'extra-5-vemsa-cpu') or (sys_platform == 'emscripten' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform == 'win32' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1c/03/e834bcd866f2f8a49a85eaff47340affa3bfa391ee9912a952a1faa68c7b/secretstorage-3.5.0.tar.gz", hash = "sha256:f04b8e4689cbce351744d5537bf6b1329c6fc68f91fa666f60a380edddcd11be", size = 19884, upload-time = "2025-11-23T19:02:53.191Z" }
 wheels = [
@@ -4162,13 +4199,13 @@ version = "6.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "packaging" },
-    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version < '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
     { name = "torch", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')" },
-    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu')" },
     { name = "torch", version = "2.8.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "extra == 'extra-5-vemsa-gpu'" },
-    { name = "torchaudio", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version < '3.14' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_machine != 'aarch64' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_python_implementation != 'CPython' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (sys_platform != 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torchaudio", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version < '3.14' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
     { name = "torchaudio", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')" },
-    { name = "torchaudio", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version >= '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-5-vemsa-cpu') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torchaudio", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version >= '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-5-vemsa-cpu') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
     { name = "torchaudio", version = "2.8.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "extra == 'extra-5-vemsa-gpu'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/32/d3/e31f526482782764aa4f70e20fd4545cf2e4a81a60b6fb0f089f6d107991/silero_vad-6.2.1.tar.gz", hash = "sha256:b23062b0e39fad17b1266fc23c1e7b4290219dbe82ce08510889e32f681f4b3b", size = 28913811, upload-time = "2026-02-24T08:41:59.329Z" }
@@ -4342,19 +4379,18 @@ name = "torch"
 version = "2.8.0"
 source = { registry = "https://download.pytorch.org/whl/cpu" }
 resolution-markers = [
-    "python_full_version >= '3.14' and sys_platform == 'darwin'",
     "python_full_version == '3.13.*' and sys_platform == 'darwin'",
     "python_full_version == '3.12.*' and sys_platform == 'darwin'",
     "python_full_version < '3.12' and sys_platform == 'darwin'",
 ]
 dependencies = [
-    { name = "filelock", marker = "(sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
-    { name = "fsspec", marker = "(sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
-    { name = "jinja2", marker = "(sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
-    { name = "networkx", marker = "(sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
-    { name = "setuptools", marker = "(python_full_version >= '3.12' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.12' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
-    { name = "sympy", marker = "(sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
-    { name = "typing-extensions", marker = "(sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "filelock", marker = "(python_full_version < '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "fsspec", marker = "(python_full_version < '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "jinja2", marker = "(python_full_version < '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "networkx", marker = "(python_full_version < '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "setuptools", marker = "(python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.12' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "sympy", marker = "(python_full_version < '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "typing-extensions", marker = "(python_full_version < '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
 ]
 wheels = [
     { url = "https://download-r2.pytorch.org/whl/cpu/torch-2.8.0-cp311-none-macosx_11_0_arm64.whl", hash = "sha256:3d05017d19bc99741288e458888283a44b0ee881d53f05f72f8b1cfea8998122", upload-time = "2025-10-01T23:35:48Z" },
@@ -4371,8 +4407,8 @@ resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
     "python_full_version >= '3.14' and sys_platform != 'win32'",
     "python_full_version == '3.13.*' and sys_platform == 'win32'",
-    "python_full_version == '3.12.*' and sys_platform == 'win32'",
     "python_full_version == '3.13.*' and sys_platform != 'win32'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32'",
     "python_full_version == '3.12.*' and sys_platform != 'win32'",
     "python_full_version < '3.12' and sys_platform == 'win32'",
     "python_full_version < '3.12' and sys_platform == 'emscripten'",
@@ -4383,8 +4419,23 @@ dependencies = [
     { name = "fsspec", marker = "(extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')" },
     { name = "jinja2", marker = "(extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')" },
     { name = "networkx", marker = "(extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')" },
+    { name = "nvidia-cublas-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "nvidia-cuda-cupti-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "nvidia-cuda-nvrtc-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "nvidia-cuda-runtime-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "nvidia-cudnn-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "nvidia-cufft-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "nvidia-cufile-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "nvidia-curand-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "nvidia-cusolver-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "nvidia-cusparse-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "nvidia-cusparselt-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "nvidia-nccl-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "nvidia-nvjitlink-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "nvidia-nvtx-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
     { name = "setuptools", marker = "(python_full_version >= '3.12' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
     { name = "sympy", marker = "(extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')" },
+    { name = "triton", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
     { name = "typing-extensions", marker = "(extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')" },
 ]
 wheels = [
@@ -4413,11 +4464,12 @@ source = { registry = "https://download.pytorch.org/whl/cpu" }
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
     "python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'win32'",
+    "python_full_version >= '3.14' and sys_platform == 'darwin'",
     "python_full_version == '3.13.*' and sys_platform == 'win32'",
-    "python_full_version == '3.12.*' and sys_platform == 'win32'",
     "(python_full_version == '3.13.*' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version == '3.13.*' and platform_python_implementation != 'CPython' and sys_platform == 'linux') or (python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32')",
-    "(python_full_version == '3.12.*' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version == '3.12.*' and platform_python_implementation != 'CPython' and sys_platform == 'linux') or (python_full_version == '3.12.*' and sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32')",
     "python_full_version == '3.13.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32'",
+    "(python_full_version == '3.12.*' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version == '3.12.*' and platform_python_implementation != 'CPython' and sys_platform == 'linux') or (python_full_version == '3.12.*' and sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32')",
     "python_full_version == '3.12.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "python_full_version < '3.12' and sys_platform == 'win32'",
     "python_full_version < '3.12' and sys_platform == 'emscripten'",
@@ -4425,13 +4477,13 @@ resolution-markers = [
     "python_full_version < '3.12' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
 ]
 dependencies = [
-    { name = "filelock", marker = "(sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
-    { name = "fsspec", marker = "(sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
-    { name = "jinja2", marker = "(sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
-    { name = "networkx", marker = "(sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
-    { name = "setuptools", marker = "(python_full_version >= '3.12' and sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.12' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
-    { name = "sympy", marker = "(sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
-    { name = "typing-extensions", marker = "(sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "filelock", marker = "(python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu')" },
+    { name = "fsspec", marker = "(python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu')" },
+    { name = "jinja2", marker = "(python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu')" },
+    { name = "networkx", marker = "(python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu')" },
+    { name = "setuptools", marker = "(python_full_version >= '3.12' and sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "sympy", marker = "(python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu')" },
+    { name = "typing-extensions", marker = "(python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu')" },
 ]
 wheels = [
     { url = "https://download-r2.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp311-cp311-linux_s390x.whl", hash = "sha256:2bfc013dd6efdc8f8223a0241d3529af9f315dffefb53ffa3bf14d3f10127da6", upload-time = "2025-10-01T23:33:07Z" },
@@ -4462,8 +4514,8 @@ resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
     "python_full_version >= '3.14' and sys_platform != 'win32'",
     "python_full_version == '3.13.*' and sys_platform == 'win32'",
-    "python_full_version == '3.12.*' and sys_platform == 'win32'",
     "python_full_version == '3.13.*' and sys_platform != 'win32'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32'",
     "python_full_version == '3.12.*' and sys_platform != 'win32'",
     "python_full_version < '3.12' and sys_platform == 'win32'",
     "python_full_version < '3.12' and sys_platform == 'emscripten'",
@@ -4510,14 +4562,14 @@ version = "0.12.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "julius" },
-    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version < '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
     { name = "torch", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')" },
-    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu')" },
     { name = "torch", version = "2.8.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "extra == 'extra-5-vemsa-gpu'" },
     { name = "torch-pitch-shift" },
-    { name = "torchaudio", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version < '3.14' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_machine != 'aarch64' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_python_implementation != 'CPython' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (sys_platform != 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torchaudio", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version < '3.14' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
     { name = "torchaudio", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')" },
-    { name = "torchaudio", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version >= '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-5-vemsa-cpu') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torchaudio", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version >= '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-5-vemsa-cpu') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
     { name = "torchaudio", version = "2.8.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "extra == 'extra-5-vemsa-gpu'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/31/8d/2f8fd7e34c75f5ee8de4310c3bd3f22270acd44d1f809e2fe7c12fbf35f8/torch_audiomentations-0.12.0.tar.gz", hash = "sha256:b02d4c5eb86376986a53eb405cca5e34f370ea9284411237508e720c529f7888", size = 52094, upload-time = "2025-01-15T09:07:01.071Z" }
@@ -4532,13 +4584,13 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "packaging" },
     { name = "primepy" },
-    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version < '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
     { name = "torch", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')" },
-    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu')" },
     { name = "torch", version = "2.8.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "extra == 'extra-5-vemsa-gpu'" },
-    { name = "torchaudio", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version < '3.14' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_machine != 'aarch64' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_python_implementation != 'CPython' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (sys_platform != 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torchaudio", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version < '3.14' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
     { name = "torchaudio", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')" },
-    { name = "torchaudio", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version >= '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-5-vemsa-cpu') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torchaudio", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version >= '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-5-vemsa-cpu') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
     { name = "torchaudio", version = "2.8.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "extra == 'extra-5-vemsa-gpu'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/79/a6/722a832bca75d5079f6731e005b3d0c2eec7c6c6863d030620952d143d57/torch_pitch_shift-1.2.5.tar.gz", hash = "sha256:6e1c7531f08d0f407a4c55e5ff8385a41355c5c5d27ab7fa08632e51defbd0ed", size = 4725, upload-time = "2024-09-25T19:10:12.922Z" }
@@ -4552,15 +4604,14 @@ version = "2.8.0"
 source = { registry = "https://download.pytorch.org/whl/cpu" }
 resolution-markers = [
     "python_full_version == '3.13.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
-    "python_full_version == '3.12.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
-    "python_full_version < '3.12' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
-    "python_full_version >= '3.14' and sys_platform == 'darwin'",
     "python_full_version == '3.13.*' and sys_platform == 'darwin'",
+    "python_full_version == '3.12.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.12.*' and sys_platform == 'darwin'",
+    "python_full_version < '3.12' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "python_full_version < '3.12' and sys_platform == 'darwin'",
 ]
 dependencies = [
-    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version < '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
     { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version < '3.14' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_machine != 'aarch64' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_python_implementation != 'CPython' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
 ]
 wheels = [
@@ -4582,8 +4633,8 @@ resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
     "python_full_version >= '3.14' and sys_platform != 'win32'",
     "python_full_version == '3.13.*' and sys_platform == 'win32'",
-    "python_full_version == '3.12.*' and sys_platform == 'win32'",
     "python_full_version == '3.13.*' and sys_platform != 'win32'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32'",
     "python_full_version == '3.12.*' and sys_platform != 'win32'",
     "python_full_version < '3.12' and sys_platform == 'win32'",
     "python_full_version < '3.12' and sys_platform == 'emscripten'",
@@ -4618,16 +4669,17 @@ source = { registry = "https://download.pytorch.org/whl/cpu" }
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
     "python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'win32'",
+    "python_full_version >= '3.14' and sys_platform == 'darwin'",
     "python_full_version == '3.13.*' and sys_platform == 'win32'",
-    "python_full_version == '3.12.*' and sys_platform == 'win32'",
     "(python_full_version == '3.13.*' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version == '3.13.*' and platform_python_implementation != 'CPython' and sys_platform == 'linux') or (python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "python_full_version == '3.12.*' and sys_platform == 'win32'",
     "(python_full_version == '3.12.*' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version == '3.12.*' and platform_python_implementation != 'CPython' and sys_platform == 'linux') or (python_full_version == '3.12.*' and sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32')",
     "python_full_version < '3.12' and sys_platform == 'win32'",
     "python_full_version < '3.12' and sys_platform == 'emscripten'",
     "(python_full_version < '3.12' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.12' and platform_python_implementation != 'CPython' and sys_platform == 'linux') or (python_full_version < '3.12' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32')",
 ]
 dependencies = [
-    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version >= '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-5-vemsa-cpu') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version >= '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-5-vemsa-cpu') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
 ]
 wheels = [
     { url = "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.8.0%2Bcpu-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:e54bd7fc9472019308097d99102df9acee22aa2451ae808d27840bc874320292", upload-time = "2025-08-05T20:12:02Z" },
@@ -4648,8 +4700,8 @@ resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
     "python_full_version >= '3.14' and sys_platform != 'win32'",
     "python_full_version == '3.13.*' and sys_platform == 'win32'",
-    "python_full_version == '3.12.*' and sys_platform == 'win32'",
     "python_full_version == '3.13.*' and sys_platform != 'win32'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32'",
     "python_full_version == '3.12.*' and sys_platform != 'win32'",
     "python_full_version < '3.12' and sys_platform == 'win32'",
     "python_full_version < '3.12' and sys_platform == 'emscripten'",
@@ -4694,9 +4746,9 @@ dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
     { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
     { name = "packaging" },
-    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version < '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
     { name = "torch", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (extra != 'extra-5-vemsa-cpu' and extra != 'extra-5-vemsa-gpu')" },
-    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu')" },
     { name = "torch", version = "2.8.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "extra == 'extra-5-vemsa-gpu'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/81/34/39b8b749333db56c0585d7a11fa62a283c087bb1dfc897d69fb8cedbefb1/torchmetrics-1.9.0.tar.gz", hash = "sha256:a488609948600df52d3db4fcdab02e62aab2a85ef34da67037dc3e65b8512faa", size = 581765, upload-time = "2026-03-09T17:41:22.443Z" }
@@ -4743,7 +4795,7 @@ name = "triton"
 version = "3.4.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "setuptools", marker = "extra == 'extra-5-vemsa-gpu'" },
+    { name = "setuptools", marker = "(python_full_version >= '3.12' and sys_platform == 'emscripten' and extra != 'extra-5-vemsa-cpu') or (sys_platform != 'emscripten' and sys_platform != 'win32' and extra != 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7d/39/43325b3b651d50187e591eefa22e236b2981afcebaefd4f2fc0ea99df191/triton-3.4.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:7b70f5e6a41e52e48cfc087436c8a28c17ff98db369447bcaff3b887a3ab4467", size = 155531138, upload-time = "2025-07-30T19:58:29.908Z" },
@@ -4871,6 +4923,7 @@ dependencies = [
     { name = "fastmcp" },
     { name = "httpx" },
     { name = "prometheus-client" },
+    { name = "psutil" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "uvicorn", extra = ["standard"] },
@@ -4881,15 +4934,16 @@ align = [
     { name = "easyaligner" },
 ]
 cpu = [
-    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
-    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu') or (extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
-    { name = "torchaudio", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version < '3.14' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_machine != 'aarch64' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_python_implementation != 'CPython' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (sys_platform != 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
-    { name = "torchaudio", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version >= '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-5-vemsa-cpu') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version < '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version >= '3.14' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and extra == 'extra-5-vemsa-cpu')" },
+    { name = "torchaudio", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version < '3.14' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
+    { name = "torchaudio", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version >= '3.14' and sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu') or (python_full_version >= '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (python_full_version < '3.14' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-5-vemsa-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-5-vemsa-cpu') or (sys_platform == 'darwin' and extra == 'extra-5-vemsa-cpu' and extra == 'extra-5-vemsa-gpu')" },
 ]
 diarize = [
     { name = "pyannote-audio" },
 ]
 gpu = [
+    { name = "nvidia-ml-py" },
     { name = "torch", version = "2.8.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" } },
     { name = "torchaudio", version = "2.8.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" } },
 ]
@@ -4913,7 +4967,9 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "fastmcp", specifier = ">=2.11" },
     { name = "httpx", specifier = ">=0.27" },
+    { name = "nvidia-ml-py", marker = "extra == 'gpu'", specifier = ">=12" },
     { name = "prometheus-client", specifier = ">=0.21,<1" },
+    { name = "psutil", specifier = ">=6" },
     { name = "pyannote-audio", marker = "extra == 'diarize'", specifier = ">=4,<4.0.4" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pydantic-settings", specifier = ">=2.3" },

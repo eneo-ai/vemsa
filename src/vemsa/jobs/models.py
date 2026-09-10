@@ -208,6 +208,49 @@ class Job(BaseModel):
     lease_owner: str | None = None
     lease_expires_at: datetime | None = None
     cancellation_requested_at: datetime | None = None
+    # first claim; queue wait = started_at - created_at
+    started_at: datetime | None = None
+
+
+class JobOutcome(BaseModel):
+    """What only the worker knows about a finished attempt, recorded into `job_stats`.
+
+    The store fills in task, language, timestamps and attempt count from the jobs
+    row itself. Timings describe the last attempt only."""
+
+    engine: str
+    model: str | None = None
+    alignment: str | None = None
+    device: str | None = None
+    processing_s: float
+    audio_seconds: float | None = None
+    stage_seconds: dict[str, float] = Field(default_factory=dict)
+    # exception class name only, never the message
+    error_class: str | None = None
+
+
+class WorkerSample(BaseModel):
+    """One host/GPU reading taken by a worker on its heartbeat."""
+
+    worker_id: str
+    sampled_at: datetime
+    hostname: str
+    engine: str
+    device: str | None = None
+    gpu_name: str | None = None
+    in_flight: int
+    concurrency: int
+    gpu_concurrency: int
+    cpu_pct: float | None = None
+    load1: float | None = None
+    mem_used_bytes: int | None = None
+    mem_total_bytes: int | None = None
+    disk_used_bytes: int | None = None
+    disk_total_bytes: int | None = None
+    gpu_util_pct: float | None = None
+    gpu_mem_used_bytes: int | None = None
+    gpu_mem_total_bytes: int | None = None
+    gpu_temp_c: float | None = None
 
 
 class WebhookOutboxEvent(BaseModel):

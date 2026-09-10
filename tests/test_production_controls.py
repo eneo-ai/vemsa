@@ -160,3 +160,19 @@ def test_oom_settings_are_validated():
     with pytest.raises(ValidationError, match="oom_retry_delay_s"):
         _settings(oom_retry_delay_s=-1)
     assert _settings(oom_retry_delay_s=0).oom_retry_delay_s == 0
+
+
+def test_ops_credentials_must_be_set_together():
+    with pytest.raises(ValidationError, match="VEMSA_OPS_USER"):
+        _settings(ops_user="ops")
+    with pytest.raises(ValidationError, match="VEMSA_OPS_USER"):
+        _settings(ops_password="secret")
+    # compose passes empty strings for unset variables
+    settings = _settings(ops_user="", ops_password="")
+    assert settings.ops_user is None and settings.ops_password is None
+    assert _settings(ops_user="ops", ops_password="secret").ops_user == "ops"
+
+
+def test_stats_retention_must_be_positive():
+    with pytest.raises(ValidationError, match="stats_retention_days"):
+        _settings(stats_retention_days=0)

@@ -14,3 +14,7 @@ data/
 
 # Session-local planning notes; consumer-facing contract lives in docs/
 .claude/plans/
+
+# operator dashboard frontend: built into the package by the Dockerfile / npm run build
+ui/node_modules/
+src/vemsa/ops/static/

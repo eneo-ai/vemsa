@@ -1,5 +1,7 @@
 import asyncio
 import contextlib
+import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -22,6 +24,14 @@ async def running_queue(store: JobStore, engine, settings: Settings):
         yield queue
     finally:
         await queue.stop()
+
+
+async def wait_for_row(store: JobStore, query: str, timeout: float = 5.0):
+    async with asyncio.timeout(timeout):
+        while True:  # noqa: ASYNC110 — polling the database, no event to wait on
+            if row := await store.pool.fetchrow(query):
+                return row
+            await asyncio.sleep(0.05)
 
 
 def upload_job(tmp_path: Path, **request_kwargs):
@@ -517,3 +527,88 @@ async def test_pipeline_threads_carry_their_own_job_id(
         await wait_for_status(store, job_b.id, JobStatus.COMPLETED)
 
     assert entered == {audio_a: job_a.id, audio_b: job_b.id}
+
+
+async def test_completed_job_records_stats(store: JobStore, settings: Settings, tmp_path: Path):
+    job, _audio = upload_job(tmp_path, language="sv")
+    await store.create(job)
+
+    async with running_queue(store, FakeEngine(), settings) as queue:
+        queue.notify()
+        await wait_for_status(store, job.id, JobStatus.COMPLETED)
+
+    row = await store.pool.fetchrow("SELECT * FROM job_stats WHERE job_id = $1", job.id)
+    assert row is not None
+    assert row["status"] == "completed" and row["task"] == "transcribe"
+    assert row["engine"] == "fake" and row["model"] == "KBLab/kb-whisper-large"
+    assert row["language"] == "sv" and row["device"] in {"cpu", "cuda"}
+    assert row["worker_id"] is not None and row["attempts"] == 1
+    # the fixture bytes are not decodable audio; the result's duration wins
+    assert row["audio_seconds"] == 2.6
+    assert row["processing_s"] > 0
+    # finalizing is the commit itself, so it cannot be part of the committed row
+    stages = json.loads(row["stage_seconds"])
+    assert set(stages) == {"queued", "transcribing"}
+    assert all(seconds >= 0 for seconds in stages.values())
+
+
+async def test_failed_job_records_error_class(store: JobStore, settings: Settings, tmp_path: Path):
+    job, _audio = upload_job(tmp_path)
+    await store.create(job)
+
+    async with running_queue(store, FailingEngine(), settings) as queue:
+        queue.notify()
+        await wait_for_status(store, job.id, JobStatus.FAILED)
+
+    row = await store.pool.fetchrow("SELECT * FROM job_stats WHERE job_id = $1", job.id)
+    assert row is not None
+    assert row["status"] == "failed" and row["error_class"] == "RuntimeError"
+    assert row["audio_seconds"] is None
+    # FailingEngine explodes before reporting a stage: only the setup time is known
+    assert set(json.loads(row["stage_seconds"])) == {"queued"}
+
+
+async def test_out_of_memory_retry_is_counted_in_stats(
+    store: JobStore, settings: Settings, tmp_path: Path
+):
+    settings = settings.model_copy(update={"oom_retry_delay_s": 0.0})
+    job, _audio = upload_job(tmp_path)
+    await store.create(job)
+    engine = GateEngine(fail_first_with=MemoryError)
+    engine.gate.set()
+
+    async with running_queue(store, engine, settings):
+        await wait_for_status(store, job.id, JobStatus.COMPLETED)
+
+    row = await store.pool.fetchrow("SELECT * FROM job_stats WHERE job_id = $1", job.id)
+    assert row is not None and row["status"] == "completed" and row["attempts"] == 2
+    assert row["started_at"] is not None
+
+
+async def test_heartbeat_records_a_worker_sample(store: JobStore, settings: Settings):
+    async with running_queue(store, FakeEngine(), settings):
+        row = await wait_for_row(store, "SELECT * FROM worker_samples")
+
+    assert row["engine"] == "fake" and row["hostname"]
+    assert row["concurrency"] == 1 and row["gpu_concurrency"] == 1 and row["in_flight"] == 0
+    assert row["device"] in {"cpu", "cuda"}
+    assert row["mem_total_bytes"] is not None and row["mem_total_bytes"] > 0
+
+
+async def test_purge_once_drops_stats_past_retention(store: JobStore, settings: Settings):
+    now = datetime.now(UTC)
+    for job_id, finished_at in (("old", now - timedelta(days=100)), ("recent", now)):
+        await store.pool.execute(
+            "INSERT INTO job_stats (job_id, client_id, status, task, attempts, created_at,"
+            " finished_at) VALUES ($1, 'alpha', 'completed', 'transcribe', 1, $2, $2)",
+            job_id,
+            finished_at,
+        )
+    settings.stats_retention_days = 90.0
+    queue = JobQueue(store, FakeEngine(), settings)
+
+    await queue.purge_once()
+
+    assert [row["job_id"] for row in await store.pool.fetch("SELECT job_id FROM job_stats")] == [
+        "recent"
+    ]

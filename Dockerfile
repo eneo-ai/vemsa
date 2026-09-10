@@ -9,6 +9,14 @@ ARG ML_EXTRAS="diarize align local"
 
 FROM ghcr.io/astral-sh/uv:0.8.20 AS uvbin
 
+# Operator dashboard (ui/): built here so the runtime image needs no node
+FROM node:24-slim AS ui
+WORKDIR /ui
+COPY ui/package.json ui/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY ui/ ./
+RUN npm run build
+
 FROM python:3.12-slim-bookworm
 ARG TORCH_VARIANT
 ARG ML_EXTRAS
@@ -32,6 +40,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-install-project ${EXTRA_FLAGS}
 
 COPY src/ src/
+# vite writes to src/vemsa/ops/static (gitignored); the ui stage did that build
+COPY --from=ui /src/vemsa/ops/static/ src/vemsa/ops/static/
 RUN --mount=type=cache,target=/root/.cache/uv \
     EXTRA_FLAGS="--extra ${TORCH_VARIANT}"; \
     for extra in ${ML_EXTRAS}; do EXTRA_FLAGS="${EXTRA_FLAGS} --extra ${extra}"; done; \
@@ -40,8 +50,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 ENV PATH=/app/.venv/bin:$PATH \
     HF_HOME=/models \
     VEMSA_MODEL_CACHE_DIR=/models \
-    VEMSA_WORK_DIR=/data/work \
-    VEMSA_DB_PATH=/data/vemsa.sqlite3
+    VEMSA_WORK_DIR=/data/work
 
 # /app (venv included) stays root-owned read-only; chowning it would copy the
 # whole venv into a new layer. The runtime user only writes /models and /data.

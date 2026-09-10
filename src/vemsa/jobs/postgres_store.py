@@ -7,11 +7,13 @@ import asyncpg
 
 from vemsa.jobs.models import (
     Job,
+    JobOutcome,
     JobRequest,
     JobStage,
     JobStatus,
     TranscriptionResult,
     WebhookOutboxEvent,
+    WorkerSample,
 )
 
 _MIGRATIONS = (
@@ -75,16 +77,68 @@ _MIGRATIONS = (
     # a queued job released for retry (e.g. after an out-of-memory failure) is not
     # claimable before retry_after
     "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS retry_after TIMESTAMPTZ;",
+    # Operator statistics. job_stats gets one row per terminal job, written in the
+    # same transaction as the terminal status change, and deliberately has no
+    # foreign key to jobs: it must outlive the retention purge. worker_samples is
+    # the host/GPU time series each worker writes on its heartbeat. Neither holds
+    # audio, transcripts, or URLs.
+    """
+    ALTER TABLE jobs ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ;
+    CREATE TABLE IF NOT EXISTS job_stats (
+        job_id TEXT PRIMARY KEY,
+        client_id TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('completed', 'failed', 'cancelled')),
+        task TEXT NOT NULL,
+        engine TEXT,
+        model TEXT,
+        language TEXT,
+        alignment TEXT,
+        device TEXT,
+        worker_id TEXT,
+        attempts INTEGER NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL,
+        started_at TIMESTAMPTZ,
+        finished_at TIMESTAMPTZ NOT NULL,
+        processing_s DOUBLE PRECISION,
+        audio_seconds DOUBLE PRECISION,
+        stage_seconds JSONB,
+        error_class TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_job_stats_finished_at ON job_stats (finished_at);
+    CREATE TABLE IF NOT EXISTS worker_samples (
+        worker_id TEXT NOT NULL,
+        sampled_at TIMESTAMPTZ NOT NULL,
+        hostname TEXT NOT NULL,
+        engine TEXT NOT NULL,
+        device TEXT,
+        gpu_name TEXT,
+        in_flight INTEGER NOT NULL,
+        concurrency INTEGER NOT NULL,
+        gpu_concurrency INTEGER NOT NULL,
+        cpu_pct DOUBLE PRECISION,
+        load1 DOUBLE PRECISION,
+        mem_used_bytes BIGINT,
+        mem_total_bytes BIGINT,
+        disk_used_bytes BIGINT,
+        disk_total_bytes BIGINT,
+        gpu_util_pct DOUBLE PRECISION,
+        gpu_mem_used_bytes BIGINT,
+        gpu_mem_total_bytes BIGINT,
+        gpu_temp_c DOUBLE PRECISION,
+        PRIMARY KEY (worker_id, sampled_at)
+    );
+    CREATE INDEX IF NOT EXISTS idx_worker_samples_sampled_at ON worker_samples (sampled_at);
+    """,
 )
 
 _JOB_COLUMNS = (
     "id, client_id, status, stage, created_at, updated_at, request_json, audio_path, error, "
-    "attempt, lease_owner, lease_expires_at, cancellation_requested_at"
+    "attempt, lease_owner, lease_expires_at, cancellation_requested_at, started_at"
 )
 _CLAIM_JOB_COLUMNS = (
     "jobs.id, jobs.client_id, jobs.status, jobs.stage, jobs.created_at, jobs.updated_at, "
     "jobs.request_json, jobs.audio_path, jobs.error, jobs.attempt, jobs.lease_owner, "
-    "jobs.lease_expires_at, jobs.cancellation_requested_at"
+    "jobs.lease_expires_at, jobs.cancellation_requested_at, jobs.started_at"
 )
 
 
@@ -106,6 +160,7 @@ def _row_to_job(row: asyncpg.Record) -> Job:
         lease_owner=row["lease_owner"],
         lease_expires_at=row["lease_expires_at"],
         cancellation_requested_at=row["cancellation_requested_at"],
+        started_at=row["started_at"],
     )
 
 
@@ -198,7 +253,8 @@ class PostgresJobStore:
             )
             UPDATE jobs
             SET status = $2, updated_at = $3, attempt = attempt + 1,
-                lease_owner = $4, lease_expires_at = $5, retry_after = NULL
+                lease_owner = $4, lease_expires_at = $5, retry_after = NULL,
+                started_at = COALESCE(jobs.started_at, $3)
             FROM candidate
             WHERE jobs.id = candidate.id
             RETURNING {_CLAIM_JOB_COLUMNS}
@@ -294,6 +350,15 @@ class PostgresJobStore:
                 JobStatus.QUEUED.value,
                 JobStatus.RUNNING.value,
             )
+            if row is not None:
+                await self._insert_job_stats(
+                    connection,
+                    job_id,
+                    status=JobStatus.CANCELLED,
+                    finished_at=now,
+                    worker_id=None,
+                    outcome=None,
+                )
             if row is not None and webhook_url is not None:
                 await self._insert_webhook(
                     connection,
@@ -322,12 +387,14 @@ class PostgresJobStore:
         *,
         worker_id: str | None = None,
         webhook_url: str | None = None,
+        outcome: JobOutcome | None = None,
     ) -> bool:
         owner_clause = "" if worker_id is None else " AND lease_owner = $6"
+        now = datetime.now(UTC)
         values: list[Any] = [
             JobStatus.COMPLETED.value,
             result.model_dump_json(),
-            datetime.now(UTC),
+            now,
             job_id,
             JobStatus.RUNNING.value,
         ]
@@ -340,6 +407,15 @@ class PostgresJobStore:
                 " WHERE id = $4 AND status = $5" + owner_clause,
                 *values,
             )
+            if command == "UPDATE 1":
+                await self._insert_job_stats(
+                    connection,
+                    job_id,
+                    status=JobStatus.COMPLETED,
+                    finished_at=now,
+                    worker_id=worker_id,
+                    outcome=outcome,
+                )
             if command == "UPDATE 1" and webhook_url is not None:
                 await self._insert_webhook(
                     connection,
@@ -360,12 +436,14 @@ class PostgresJobStore:
         *,
         worker_id: str | None = None,
         webhook_url: str | None = None,
+        outcome: JobOutcome | None = None,
     ) -> bool:
         owner_clause = "" if worker_id is None else " AND lease_owner = $6"
+        now = datetime.now(UTC)
         values: list[Any] = [
             JobStatus.FAILED.value,
             error,
-            datetime.now(UTC),
+            now,
             job_id,
             JobStatus.RUNNING.value,
         ]
@@ -378,6 +456,15 @@ class PostgresJobStore:
                 " WHERE id = $4 AND status = $5" + owner_clause,
                 *values,
             )
+            if command == "UPDATE 1":
+                await self._insert_job_stats(
+                    connection,
+                    job_id,
+                    status=JobStatus.FAILED,
+                    finished_at=now,
+                    worker_id=worker_id,
+                    outcome=outcome,
+                )
             if command == "UPDATE 1" and webhook_url is not None:
                 await self._insert_webhook(
                     connection,
@@ -386,6 +473,71 @@ class PostgresJobStore:
                     {"job_id": job_id, "status": JobStatus.FAILED.value, "error": error},
                 )
         return command == "UPDATE 1"
+
+    async def _insert_job_stats(
+        self,
+        connection: asyncpg.Connection,
+        job_id: str,
+        *,
+        status: JobStatus,
+        finished_at: datetime,
+        worker_id: str | None,
+        outcome: JobOutcome | None,
+    ) -> None:
+        """Record the terminal job into `job_stats`, inside the caller's transaction.
+
+        Runs only after the lease-checked status update hit, so a late result
+        from a re-claimed attempt never produces a row. A cancellation carries no
+        outcome: the worker may never have seen the job."""
+        await connection.execute(
+            """
+            INSERT INTO job_stats (
+                job_id, client_id, status, task, engine, model, language, alignment,
+                device, worker_id, attempts, created_at, started_at, finished_at,
+                processing_s, audio_seconds, stage_seconds, error_class
+            )
+            SELECT id, client_id, $2, request_json->>'task', $3, $4,
+                   request_json->>'language', $5, $6, $7, attempt, created_at,
+                   started_at, $8, $9, $10, $11::jsonb, $12
+            FROM jobs WHERE id = $1
+            ON CONFLICT (job_id) DO NOTHING
+            """,
+            job_id,
+            status.value,
+            outcome.engine if outcome else None,
+            outcome.model if outcome else None,
+            outcome.alignment if outcome else None,
+            outcome.device if outcome else None,
+            worker_id,
+            finished_at,
+            outcome.processing_s if outcome else None,
+            outcome.audio_seconds if outcome else None,
+            json.dumps(outcome.stage_seconds) if outcome and outcome.stage_seconds else None,
+            outcome.error_class if outcome else None,
+        )
+
+    async def record_worker_sample(self, sample: WorkerSample) -> None:
+        data = sample.model_dump()
+        columns = ", ".join(data)
+        placeholders = ", ".join(f"${index}" for index in range(1, len(data) + 1))
+        await self.pool.execute(
+            f"INSERT INTO worker_samples ({columns}) VALUES ({placeholders})"
+            " ON CONFLICT (worker_id, sampled_at) DO NOTHING",
+            *data.values(),
+        )
+
+    async def purge_stats_older_than(self, cutoff: datetime) -> int:
+        """Drop statistics past their retention, plus heartbeat rows of workers
+        not seen since (a restarted worker leaves its old id behind forever)."""
+        removed = 0
+        for statement in (
+            "DELETE FROM job_stats WHERE finished_at < $1",
+            "DELETE FROM worker_samples WHERE sampled_at < $1",
+            "DELETE FROM worker_heartbeats WHERE updated_at < $1",
+        ):
+            command = await self.pool.execute(statement, cutoff)
+            removed += int(command.rsplit(" ", 1)[-1])
+        return removed
 
     async def _insert_webhook(
         self,

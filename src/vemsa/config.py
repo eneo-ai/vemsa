@@ -112,6 +112,12 @@ class Settings(BaseSettings):
     shutdown_grace_s: float = 30.0
     run_worker: bool = True
     worker_stale_s: float = 90.0
+    # operator dashboard at /ops: open unless both credentials are set (HTTP Basic)
+    ops_enabled: bool = True
+    ops_user: str | None = None
+    ops_password: str | None = None
+    # job_stats / worker_samples outlive the job retention window by this much
+    stats_retention_days: float = 90.0
     # jobs one worker process runs at once; each has its own lease and stage stream
     worker_concurrency: int = 1
     # of those, how many may be inside a GPU stage at once (<= worker_concurrency);
@@ -240,6 +246,11 @@ class Settings(BaseSettings):
                 raise ValueError("the diarize tier requires HF_TOKEN for the gated pyannote models")
         if self.job_lease_s <= self.lease_heartbeat_s * 2:
             raise ValueError("job_lease_s must be more than twice lease_heartbeat_s")
+        # compose passes `${VEMSA_OPS_USER:-}`, so empty means unset
+        self.ops_user = self.ops_user or None
+        self.ops_password = self.ops_password or None
+        if (self.ops_user is None) != (self.ops_password is None):
+            raise ValueError("VEMSA_OPS_USER and VEMSA_OPS_PASSWORD must be set together")
         for name in (
             "queue_poll_interval_s",
             "webhook_poll_interval_s",
@@ -247,6 +258,7 @@ class Settings(BaseSettings):
             "shutdown_grace_s",
             "worker_stale_s",
             "retention_hours",
+            "stats_retention_days",
         ):
             if getattr(self, name) <= 0:
                 raise ValueError(f"{name} must be greater than zero")

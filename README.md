@@ -319,6 +319,9 @@ All settings via environment variables with the `VEMSA_` prefix (see `src/vemsa/
 | `VEMSA_OOM_MAX_ATTEMPTS` | `3` | Claims a job may consume before an out-of-memory failure is final |
 | `VEMSA_OOM_RETRY_DELAY_S` | `30` | Cooldown before an out-of-memory job is claimable again |
 | `VEMSA_LOG_FORMAT` | `json` | Structured `json` or human-readable `text` logs |
+| `VEMSA_OPS_ENABLED` | `true` | Serve the operator dashboard at `/ops` |
+| `VEMSA_OPS_USER` / `VEMSA_OPS_PASSWORD` | – | HTTP Basic credentials for `/ops`; open when unset |
+| `VEMSA_STATS_RETENTION_DAYS` | `90` | Retention of the dashboard's per-job statistics and host samples (they outlive `VEMSA_RETENTION_HOURS`) |
 
 `HF_TOKEN` is also honored for the Hugging Face hub. You must accept the pyannote model license
 on Hugging Face (`pyannote/speaker-diarization-community-1`) for the diarization stage to
@@ -388,6 +391,13 @@ Operational endpoints:
 - `GET /readyz` (and compatibility alias `/healthz`) — database and worker readiness
 - `GET /v1/health/ready` — authenticated service readiness and queue admission state
 - `GET /metrics` — Prometheus metrics; requires the same bearer authentication
+- `GET /ops` — operator dashboard (queue, throughput in audio minutes, real-time factor,
+  alignment rungs, per-worker host/GPU load, recent jobs); `GET /ops/api/*` is its JSON.
+  Open by default, HTTP Basic when `VEMSA_OPS_USER`/`VEMSA_OPS_PASSWORD` are set — see
+  "Ops dashboard" in `docs/PRODUCTION.md`. The page is built from `ui/` (Vite + React +
+  Astryx) by the Docker image, CI, and the devcontainer; locally run
+  `npm ci --prefix ui && npm run --prefix ui build`, or `npm run --prefix ui dev` for hot
+  reload proxied to a running API.
 
 The worker logs which job store it opened at startup, a heartbeat with queued/running
 counts every 30s, and per-job progress (stage, elapsed time) while processing — a silent

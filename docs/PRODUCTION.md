@@ -241,6 +241,40 @@ own database connection, so GIL-heavy pipeline stages that starve the main event
 cannot let the lease lapse mid-job (a suspended host still can, and a second worker then
 re-claims the job; the store discards the original attempt's late result on commit).
 
+### Ops dashboard
+
+`GET /ops` on the api port serves an operator dashboard; `GET /ops/api/*` is the JSON it
+polls every 15 s. It shows admission state, queue depth and oldest queued-job age, running
+jobs, live workers with host and GPU load, audio minutes and jobs finished per bucket
+(1h/6h/24h/7d/30d windows), real-time factor and queue-wait percentiles per task, time per
+pipeline stage, out-of-memory retries, the alignment-rung distribution, failure classes,
+per-client totals, and the most recent jobs. Everything a job-level panel shows comes from
+PostgreSQL, so it is complete across separate api and worker containers, unlike `/metrics`,
+whose job counters live in the worker process.
+
+The data behind it:
+
+- `job_stats` — one row per finished job (completed, failed, or cancelled), written in the
+  same transaction as the terminal status change so a lost-lease duplicate can never add a
+  row. It holds ids, task, engine, model, language, alignment rung, device, worker, attempt
+  count, created/started/finished timestamps, processing seconds, decoded audio seconds,
+  per-stage seconds, and the failing exception's class name — never audio, transcripts,
+  URLs, or error messages. It deliberately outlives the job purge.
+- `worker_samples` — every worker writes host CPU, load, memory, work-dir disk, in-flight
+  count and (on CUDA hosts) GPU utilisation, memory and temperature on each heartbeat
+  (`VEMSA_LEASE_HEARTBEAT_S`). The CPU/memory/disk numbers are host-wide, not cgroup-scoped.
+  GPU utilisation and temperature need NVML (`libnvidia-ml.so.1`, injected by the container
+  toolkit's default `utility` capability); without it only memory is reported via torch.
+- Both, plus stale worker heartbeats, are deleted after `VEMSA_STATS_RETENTION_DAYS`
+  (default 90).
+
+Access: the dashboard is open unless both `VEMSA_OPS_USER` and `VEMSA_OPS_PASSWORD` are
+set, in which case it asks for HTTP Basic credentials (the browser prompts natively). It
+reads across every client, so on a deployment where the api port is reachable beyond the
+operators — anything wider than the default loopback `VEMSA_BIND` — set the credentials or
+`VEMSA_OPS_ENABLED=false`. The api logs a warning at startup when it is open in production.
+Bucket boundaries are UTC-aligned; the page renders them in the browser's local time.
+
 ## Worker concurrency
 
 One worker process runs `VEMSA_WORKER_CONCURRENCY` jobs at a time (default 1). Each job
@@ -329,3 +363,7 @@ optional tuning. On the target GPU deployment, with real (consented) recordings:
    set `VEMSA_GPU_CONCURRENCY=3` and repeat the clip set plus 20 rounds of three concurrent
    `task=diarize` jobs. The shared pyannote pipeline and wav2vec2 stack are used unlocked
    here; any difference from the serial output blocks the setting.
+9. **Dashboard GPU telemetry** (`ops/host.py`): confirm the `/ops` worker card shows GPU
+   utilisation and temperature, not only memory — that proves NVML initialised inside the
+   worker container. If it did not, check that the container toolkit exposes the `utility`
+   capability (`nvidia-smi` works in the container) and read the `NVML unavailable` log line.

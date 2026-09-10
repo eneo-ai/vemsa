@@ -19,6 +19,7 @@ from vemsa.jobs.models import (
     ALIGNMENT_RANK,
     EXTERNAL_MODEL,
     Job,
+    JobOutcome,
     JobStage,
     JobStatus,
     TranscriptionResult,
@@ -38,13 +39,24 @@ from vemsa.observability import (
     WEBHOOK_DELIVERIES,
     job_id_var,
 )
+from vemsa.ops.host import sample_host
 from vemsa.pipeline.align import interpolated_words
 from vemsa.pipeline.base import TranscriptionEngine
 from vemsa.pipeline.fetch import fetch_url
-from vemsa.pipeline.gpu import is_out_of_memory, release_cached_memory
+from vemsa.pipeline.gpu import describe_device, is_out_of_memory, release_cached_memory
 from vemsa.security import ForbiddenUrlError, validate_outbound_url
 
 logger = logging.getLogger(__name__)
+
+
+def _probe_audio_seconds(audio_path: Path) -> float | None:
+    """Decoded length of the source, so failed jobs get a duration in the stats too."""
+    # lazy: the API process imports this module and must stay torch-free
+    from vemsa.pipeline.diarize import audio_duration
+
+    seconds = audio_duration(audio_path, fallback=-1.0)
+    return seconds if seconds > 0 else None
+
 
 ORPHAN_MAX_AGE_S = 24 * 3600
 # A pipeline thread blocks this long for its stage update to land. The update
@@ -95,6 +107,8 @@ class JobQueue:
         self._control_loop: asyncio.AbstractEventLoop | None = None
         self._control_store: JobStore | None = None
         self._worker_heartbeat: concurrent.futures.Future[None] | None = None
+        self._device: str | None = None
+        self._gpu_name: str | None = None
 
     def notify(self) -> None:
         self._wakeup.set()
@@ -110,6 +124,8 @@ class JobQueue:
 
     async def start(self) -> None:
         self._stopping = False
+        # the torch import behind this can take a while; keep it off the loop
+        self._device, self._gpu_name = await asyncio.to_thread(describe_device)
         self._tasks = [
             asyncio.create_task(self._worker_loop(), name="vemsa-worker"),
             asyncio.create_task(self._purge_loop(), name="vemsa-purge"),
@@ -271,6 +287,9 @@ class JobQueue:
         engine = self._settings.resolve_engine()
         current_stage = job.stage
         stage_started = time.perf_counter()
+        # per-stage seconds of this attempt, recorded into job_stats at the end
+        stage_seconds: dict[str, float] = {}
+        audio_seconds: float | None = None
         logger.info(
             "job started",
             extra={
@@ -293,6 +312,32 @@ class JobQueue:
                 raise JobCancelledError("job cancellation was requested")
             raise JobLeaseLostError("worker no longer owns the job")
 
+        def _close_stage() -> None:
+            """Account the time spent in the current stage (metrics + stats)."""
+            elapsed = time.perf_counter() - stage_started
+            JOB_STAGE_DURATION.labels(current_stage.value, engine, job.request.task).observe(
+                elapsed
+            )
+            stage_seconds[current_stage.value] = (
+                stage_seconds.get(current_stage.value, 0.0) + elapsed
+            )
+
+        def _outcome(*, error_class: str | None = None) -> JobOutcome:
+            return JobOutcome(
+                engine=engine,
+                model=job.request.model
+                or (
+                    self._settings.default_model
+                    if job.request.task == "transcribe"
+                    else EXTERNAL_MODEL
+                ),
+                device=self._device,
+                processing_s=time.perf_counter() - started,
+                audio_seconds=audio_seconds,
+                stage_seconds=dict(stage_seconds),
+                error_class=error_class,
+            )
+
         def _report_stage(stage: JobStage) -> None:
             nonlocal current_stage, stage_started
             if stage == current_stage:
@@ -309,9 +354,7 @@ class JobQueue:
             except TimeoutError as exc:
                 future.cancel()
                 raise RuntimeError("job stage update timed out") from exc
-            JOB_STAGE_DURATION.labels(current_stage.value, engine, job.request.task).observe(
-                time.perf_counter() - stage_started
-            )
+            _close_stage()
             logger.info(
                 "job stage changed",
                 extra={
@@ -334,9 +377,7 @@ class JobQueue:
             JOB_DURATION.labels("cancelled", engine, job.request.task).observe(
                 time.perf_counter() - started
             )
-            JOB_STAGE_DURATION.labels(current_stage.value, engine, job.request.task).observe(
-                time.perf_counter() - stage_started
-            )
+            _close_stage()
             logger.info(
                 "job stopped after cancellation",
                 extra={
@@ -371,6 +412,7 @@ class JobQueue:
                     allowed_hosts=tuple(self._settings.source_allowed_hosts),
                 )
                 await self._store.set_audio_path(job.id, str(audio_path))
+            audio_seconds = await asyncio.to_thread(_probe_audio_seconds, audio_path)
             assert self._control_loop is not None and self._control_store is not None
             renewal = asyncio.run_coroutine_threadsafe(
                 self._heartbeat_lease(
@@ -420,9 +462,7 @@ class JobQueue:
             self._check_alignment_floor(result)
             self._check_interpolated_share(result, task=job.request.task)
             await _persist_stage(JobStage.FINALIZING, store=self._store)
-            JOB_STAGE_DURATION.labels(current_stage.value, engine, job.request.task).observe(
-                time.perf_counter() - stage_started
-            )
+            _close_stage()
             logger.info(
                 "job stage changed",
                 extra={
@@ -437,11 +477,16 @@ class JobQueue:
             )
             current_stage = JobStage.FINALIZING
             stage_started = time.perf_counter()
+            outcome = _outcome()
+            outcome.model = result.model
+            outcome.alignment = result.alignment
+            outcome.audio_seconds = result.duration_seconds or audio_seconds
             committed = await self._store.finish(
                 job.id,
                 result,
                 worker_id=self._worker_id,
                 webhook_url=str(job.request.webhook_url) if job.request.webhook_url else None,
+                outcome=outcome,
             )
             if not committed:
                 current = await self._store.get(job.id)
@@ -470,9 +515,7 @@ class JobQueue:
                     "duration_ms": round((time.perf_counter() - started) * 1000, 2),
                 },
             )
-            JOB_STAGE_DURATION.labels(current_stage.value, engine, job.request.task).observe(
-                time.perf_counter() - stage_started
-            )
+            _close_stage()
             self._webhook_wakeup.set()
         except JobCancelledError:
             _record_cancelled()
@@ -534,11 +577,13 @@ class JobQueue:
                 if isinstance(exc, AlignmentBelowFloorError)
                 else f"{type(exc).__name__}: processing failed"
             )
+            _close_stage()
             committed = await self._store.fail(
                 job.id,
                 public_error,
                 worker_id=self._worker_id,
                 webhook_url=str(job.request.webhook_url) if job.request.webhook_url else None,
+                outcome=_outcome(error_class=type(exc).__name__),
             )
             if not committed:
                 current = await self._store.get(job.id)
@@ -624,20 +669,42 @@ class JobQueue:
         store = self._control_store
         assert store is not None
         while True:
-            await store.record_worker_heartbeat(self._worker_id)
-            queued = await store.count_queued()
-            logger.info(
-                "worker heartbeat",
-                extra={
-                    "event": "worker.heartbeat",
-                    "worker_id": self._worker_id,
-                    "queued_jobs": queued,
-                    "running_jobs": await store.count_active() - queued,
-                    "in_flight": len(self._active),
-                    "concurrency": self._settings.worker_concurrency,
-                },
-            )
+            # one bad round trip must not end the heartbeat for good: readiness
+            # and the ops dashboard both read it
+            try:
+                await self._heartbeat_once(store)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("worker heartbeat failed")
             await asyncio.sleep(self._settings.lease_heartbeat_s)
+
+    async def _heartbeat_once(self, store: JobStore) -> None:
+        await store.record_worker_heartbeat(self._worker_id)
+        queued = await store.count_queued()
+        logger.info(
+            "worker heartbeat",
+            extra={
+                "event": "worker.heartbeat",
+                "worker_id": self._worker_id,
+                "queued_jobs": queued,
+                "running_jobs": await store.count_active() - queued,
+                "in_flight": len(self._active),
+                "concurrency": self._settings.worker_concurrency,
+            },
+        )
+        sample = await asyncio.to_thread(
+            sample_host,
+            worker_id=self._worker_id,
+            engine=self._settings.resolve_engine(),
+            device=self._device,
+            gpu_name=self._gpu_name,
+            in_flight=len(self._active),
+            concurrency=self._settings.worker_concurrency,
+            gpu_concurrency=self._settings.gpu_concurrency,
+            work_dir=self._settings.work_dir,
+        )
+        await store.record_worker_sample(sample)
 
     async def _webhook_loop(self) -> None:
         while True:
@@ -718,6 +785,10 @@ class JobQueue:
                 Path(job.audio_path).unlink(missing_ok=True)
         if purged:
             logger.info("purged %d jobs past retention", len(purged))
+        stats_cutoff = datetime.now(UTC) - timedelta(days=self._settings.stats_retention_days)
+        removed = await self._store.purge_stats_older_than(stats_cutoff)
+        if removed:
+            logger.info("purged %d statistics rows past retention", removed)
         self._sweep_orphans()
 
     def _sweep_orphans(self) -> None:

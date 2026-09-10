@@ -212,7 +212,9 @@ async def settings(tmp_path: Path) -> Settings:
     # Every test starts from an empty job store (open() also runs migrations).
     store = PostgresJobStore(TEST_DATABASE_URL)
     await store.open()
-    await store.pool.execute("TRUNCATE webhook_outbox, jobs, worker_heartbeats")
+    await store.pool.execute(
+        "TRUNCATE webhook_outbox, jobs, worker_heartbeats, job_stats, worker_samples"
+    )
     await store.close()
     return settings
 

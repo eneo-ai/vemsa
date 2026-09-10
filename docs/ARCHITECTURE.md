@@ -52,7 +52,7 @@ storage first. `VEMSA_RUN_WORKER=true` collapses both into one process for devel
 
 ```
 src/vemsa/
-├── main.py             FastAPI app factory; mounts REST, MCP, health, metrics
+├── main.py             FastAPI app factory; mounts REST, MCP, health, metrics, /ops
 ├── config.py           all VEMSA_* settings (pydantic-settings)
 ├── worker.py           worker entrypoint: store + engine + JobQueue
 ├── security.py         outbound URL policy (schemes, private nets, allowlists)
@@ -62,6 +62,12 @@ src/vemsa/
 │   ├── auth.py         static bearer tokens → client_id; job ownership
 │   └── health.py       /livez, /readyz, /v1/health/ready
 ├── mcp/server.py       FastMCP facade — protocol adapter over the same job store
+├── ops/
+│   ├── router.py       /ops operator dashboard: the built UI page + JSON it polls
+│   ├── queries.py      read-only analytics over job_stats / worker_samples
+│   ├── auth.py         optional HTTP Basic for /ops
+│   ├── host.py         worker-side host/GPU sampling (psutil, NVML)
+│   └── static/         vite build output of ui/ (gitignored; built by Dockerfile/CI)
 ├── jobs/
 │   ├── models.py       Job, TranscriptionResult, Segment, Word — the wire contract
 │   ├── store.py        JobStore interface + lifecycle state machine
@@ -82,6 +88,7 @@ src/vemsa/
     ├── diarize_only.py diarize tier: no ASR constructed at all
     ├── render.py       [HH:MM:SS - HH:MM:SS] SPEAKER_00: line rendering
     └── fake.py         canned engine for dev/tests
+ui/                     operator dashboard sources: Vite + React 19 + Astryx + uPlot
 ```
 
 The split inside `pipeline/` mirrors the quality doctrine: everything that decides *where

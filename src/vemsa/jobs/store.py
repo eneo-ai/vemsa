@@ -4,9 +4,11 @@ from typing import Protocol
 
 from vemsa.jobs.models import (
     Job,
+    JobOutcome,
     JobStage,
     TranscriptionResult,
     WebhookOutboxEvent,
+    WorkerSample,
 )
 
 
@@ -45,6 +47,7 @@ class JobStore(Protocol):
         *,
         worker_id: str | None = None,
         webhook_url: str | None = None,
+        outcome: JobOutcome | None = None,
     ) -> bool: ...
     async def fail(
         self,
@@ -53,6 +56,7 @@ class JobStore(Protocol):
         *,
         worker_id: str | None = None,
         webhook_url: str | None = None,
+        outcome: JobOutcome | None = None,
     ) -> bool: ...
     async def get_result(
         self, job_id: str, *, client_id: str | None = None
@@ -63,6 +67,8 @@ class JobStore(Protocol):
     async def ping(self) -> bool: ...
     async def record_worker_heartbeat(self, worker_id: str) -> None: ...
     async def has_recent_worker(self, stale_after_s: float) -> bool: ...
+    async def record_worker_sample(self, sample: WorkerSample) -> None: ...
+    async def purge_stats_older_than(self, cutoff: datetime) -> int: ...
     async def claim_webhook(
         self, worker_id: str, lease_for_s: float
     ) -> WebhookOutboxEvent | None: ...

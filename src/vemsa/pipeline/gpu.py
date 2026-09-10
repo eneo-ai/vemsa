@@ -8,6 +8,7 @@ but provably cannot change results. Raising it is a GPU-VERIFY item (see
 docs/PRODUCTION.md)."""
 
 import contextlib
+import functools
 import logging
 import threading
 from collections.abc import Iterator
@@ -52,6 +53,22 @@ def is_out_of_memory(exc: BaseException) -> bool:
     if type(exc).__name__ == "OutOfMemoryError":
         return True
     return isinstance(exc, RuntimeError) and "out of memory" in str(exc).lower()
+
+
+@functools.cache
+def describe_device() -> tuple[str, str | None]:
+    """("cuda", "<gpu name>") when torch sees a GPU, else ("cpu", None).
+
+    Guarded like `release_cached_memory` so a torch-less process (the API)
+    answers "cpu" instead of failing; only the worker asks."""
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return "cuda", torch.cuda.get_device_name(0)
+    except Exception:
+        logger.debug("could not describe the compute device", exc_info=True)
+    return "cpu", None
 
 
 def release_cached_memory() -> None:

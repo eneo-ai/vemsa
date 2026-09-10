@@ -12,3 +12,5 @@ __pycache__/
 .env
 *.md
 !README.md
+ui/node_modules/
+src/vemsa/ops/static/

@@ -1,0 +1,70 @@
+/* Page chrome and the few chart styles Astryx does not cover. */
+
+body {
+  background: var(--color-background-body);
+  color: var(--color-text-primary);
+}
+
+.ops-page {
+  max-width: 1440px;
+  margin: 0 auto;
+}
+
+.ops-stale {
+  opacity: 0.55;
+  transition: opacity 120ms ease-in;
+}
+
+.ops-chart {
+  width: 100%;
+  position: relative;
+}
+
+/* uPlot legend doubles as the hover readout: values lead, series names follow */
+.ops-chart .u-legend {
+  font: inherit;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  text-align: left;
+  margin-top: 4px;
+}
+.ops-chart .u-legend .u-series {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 14px;
+}
+.ops-chart .u-legend .u-series > * {
+  padding: 0;
+}
+.ops-chart .u-legend .u-marker {
+  width: 12px;
+  height: 3px;
+  border-radius: 2px;
+  border-width: 0 !important;
+}
+.ops-chart .u-legend .u-value {
+  color: var(--color-text-primary);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  min-width: 3ch;
+}
+.ops-chart .u-legend th::after {
+  content: '';
+}
+
+.ops-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.ops-num {
+  font-variant-numeric: tabular-nums;
+}
+
+.ops-value {
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
