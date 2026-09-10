@@ -397,7 +397,7 @@ Operational endpoints:
   "Ops dashboard" in `docs/PRODUCTION.md`. The page is built from `ui/` (Vite + React +
   Astryx) by the Docker image, CI, and the devcontainer; locally run
   `npm ci --prefix ui && npm run --prefix ui build`, or `npm run --prefix ui dev` for hot
-  reload proxied to a running API.
+  reload proxied to a running API. Developer notes for the page: [`ui/README.md`](ui/README.md).
 
 The worker logs which job store it opened at startup, a heartbeat with queued/running
 counts every 30s, and per-job progress (stage, elapsed time) while processing — a silent
