@@ -13,30 +13,25 @@ The pure parts (window grouping, token counting, redistribution) are CI-tested
 without the ML stack; only ``align_transcript`` touches the aligner."""
 
 import logging
-import re
-import unicodedata
 from pathlib import Path
 
 from vemsa.jobs.models import EXTERNAL_MODEL, Segment, TranscriptionResult, Word
 from vemsa.pipeline.align import SegmentAligner
 from vemsa.pipeline.diarize import AttributionTuning, audio_duration
+from vemsa.pipeline.normalize import alignable_tokens
 from vemsa.pipeline.render import render_text
 
 logger = logging.getLogger(__name__)
 
-_NON_ALIGNABLE = re.compile(r"[^\w\s]")
-
-
-def alignable_tokens(text: str) -> int:
-    """How many words the aligner will produce for ``text``.
-
-    Mirrors easyaligner's default normalizer (NFKC, lowercase, drop everything
-    that is neither a word character nor whitespace, split on whitespace) so a
-    window's words can be handed back to the segments it was built from. A
-    punctuation-only token ("—", "...") vanishes under that normalization and
-    therefore counts as no word."""
-    normalized = unicodedata.normalize("NFKC", text).lower()
-    return len(_NON_ALIGNABLE.sub("", normalized).split())
+__all__ = [
+    "align_transcript",
+    "alignable_tokens",
+    "distribute_words",
+    "group_windows",
+    "pad_windows",
+    "retime_segments",
+    "window_for",
+]
 
 
 def group_windows(segments: list[Segment], *, merge_gap_s: float) -> list[list[int]]:

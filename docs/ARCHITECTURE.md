@@ -166,6 +166,14 @@ the rung at `forced` but surfaces it — words with `probability` 0.0, an
 `align.interpolated` log line per window, a counter, and the
 `VEMSA_ALIGN_MAX_INTERPOLATED_SHARE` floor that turns it into a loud failure.
 
+Every aligner call (`align.py`, the local engine's easytranscriber run) is handed the
+same text normalizer (`pipeline/normalize.py`): easyaligner's default plus digit runs
+spelled out as cardinals in the job's language, so numerals reach the CTC model as the
+words the speaker said while the span map keeps the original digits in the output. The
+expansion never adds whitespace, which is what lets `task=align` count a window's words
+(`alignable_tokens`) without knowing the language and hand them back to the right
+segments.
+
 ### Speaker attribution and segment shaping
 
 The merge from diarization turns onto the word timeline (`pipeline/diarize.py`, pure and

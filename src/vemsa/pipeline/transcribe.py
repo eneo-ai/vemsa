@@ -24,6 +24,7 @@ from vemsa.pipeline.diarize import (
 )
 from vemsa.pipeline.gpu import gpu_slot
 from vemsa.pipeline.label import label_speakers
+from vemsa.pipeline.normalize import alignment_normalizer
 from vemsa.pipeline.realign import align_transcript
 from vemsa.pipeline.render import render_text
 
@@ -92,6 +93,10 @@ class EasyTranscriberEngine:
                     audio_paths=[audio_path.name],
                     audio_dir=str(audio_path.parent),
                     language=lang,
+                    # same normalizer as align.py: numerals spelled out for the
+                    # CTC model (whisper's detected language is unknown here, so
+                    # language=auto aligns digits as-is)
+                    text_normalizer_fn=alignment_normalizer(lang),
                     cache_dir=str(self._settings.model_cache_dir),
                     # the VAD -> transcribe -> emissions -> align steps hand data to
                     # each other through JSON files, so saving must stay on; the

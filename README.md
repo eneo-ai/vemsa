@@ -116,11 +116,21 @@ reports none, and values are not comparable across rungs. The `segment_split` an
 
 On the `forced` rung, a `probability` of exactly `0.0` means the word's timestamps were
 **interpolated, not aligned**: the aligner could not fit a window's text to its audio
-(text much longer than the window, or characters the CTC vocabulary lacks — digits and
-symbols are not spelled out) and spread the words evenly over the window instead.
-Consumers should flag such words for review. The worker logs every such window
-(`align.interpolated`), counts them in `vemsa_alignment_interpolated_words_total`, and
-`VEMSA_ALIGN_MAX_INTERPOLATED_SHARE` fails a job whose interpolated share exceeds it.
+(text much longer than the window, or characters the CTC vocabulary lacks) and spread
+the words evenly over the window instead. Consumers should flag such words for review.
+The worker logs every such window (`align.interpolated`), counts them in
+`vemsa_alignment_interpolated_words_total`, and `VEMSA_ALIGN_MAX_INTERPOLATED_SHARE`
+fails a job whose interpolated share exceeds it.
+
+Numerals written as digits ("57", "2024", "1 500") are spelled out in the job's language
+before alignment (Swedish today; `vemsa.pipeline.normalize`), so they align and score like
+any other word while the returned `word` keeps the original digits. Without that, the CTC
+model never hears a "5" and every number scored `0.0`. Digits glued to other characters
+expand in place ("50-tal" as "femtiotal", "08:30" digit by digit), which times them from
+the audio at a lower score when the speaker read them differently ("1,5" as "en komma
+fem", "2024" as "tjugohundratjugofyra"). Digits in other languages, and with
+`language=auto`, stay digits and still come back as `0.0`. Symbols outside the CTC
+vocabulary (%, currency signs, …) are dropped, not spoken.
 
 ## Job API
 

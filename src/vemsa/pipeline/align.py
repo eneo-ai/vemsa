@@ -19,6 +19,7 @@ from vemsa.config import Settings
 from vemsa.jobs.models import Segment, Word
 from vemsa.pipeline.diarize import _decodable_audio, audio_duration
 from vemsa.pipeline.gpu import gpu_slot
+from vemsa.pipeline.normalize import alignment_normalizer
 
 logger = logging.getLogger(__name__)
 
@@ -165,7 +166,8 @@ def force_align_segments(
     easyaligner's pipeline steps hand data to each other through JSON/npy files,
     so each run gets a throwaway directory under work_dir. `language` picks the
     CTC model via VEMSA_EMISSIONS_MODELS (falling back to VEMSA_EMISSIONS_MODEL
-    with a warning — an acoustic-model mismatch degrades word precision).
+    with a warning — an acoustic-model mismatch degrades word precision) and the
+    text normalizer that spells numerals out for the model (vemsa.pipeline.normalize).
     Alignment errors propagate and fail the job: quality doctrine forbids
     silently degrading to provider timestamps or segment-level merging."""
     import torch
@@ -211,6 +213,7 @@ def force_align_segments(
                 audio_dir=str(decodable.parent),
                 speeches=speeches,
                 alignment_strategy="speech",
+                text_normalizer_fn=alignment_normalizer(language),
                 blank_id=processor.tokenizer.pad_token_id,
                 word_boundary=processor.tokenizer.word_delimiter_token,
                 return_alignments=True,
@@ -245,7 +248,10 @@ def words_by_speech(speeches: list[Any]) -> list[list[Word]]:
     window's text cannot be aligned (too long for its audio, or characters the
     CTC vocabulary lacks) the library spreads the words evenly over the window
     with score 0.0 instead of failing. Those words are counted and logged here
-    (`align.interpolated`); the job-level floor lives in the worker."""
+    (`align.interpolated`); the job-level floor lives in the worker. A word whose
+    characters the model never hears (a numeral left as digits) also lands on
+    exactly 0.0 after rounding, which is why numerals are spelled out before
+    alignment (vemsa.pipeline.normalize)."""
     grouped: list[list[Word]] = []
     for speech in speeches:
         words: list[Word] = []

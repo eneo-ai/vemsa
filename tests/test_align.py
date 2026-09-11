@@ -1,7 +1,11 @@
 """Transcript-window selection for forced alignment."""
 
+from pathlib import Path
+
+import pytest
+
 from vemsa.jobs.models import Segment
-from vemsa.pipeline.align import alignment_transcript
+from vemsa.pipeline.align import alignment_available, alignment_transcript
 
 
 def segment(start: float, end: float, text: str) -> Segment:
@@ -234,6 +238,90 @@ def _fake_alignment_run(monkeypatch, tmp_path, *, gpu_limit: int, threads: int) 
         gpu.configure_gpu_slots(1)
     assert results == [[], []]
     return state["peak"]
+
+
+def test_force_align_spells_numerals_out_for_the_job_language(monkeypatch, tmp_path):
+    """The aligner is handed Vemsa's normalizer, picked per language: Swedish
+    numerals reach the CTC model spelled out, other languages get the library
+    default (digits as-is)."""
+    import sys
+    import types
+
+    pytest.importorskip("easyaligner.text.normalization")
+    from vemsa.pipeline import align
+
+    seen: dict[str, object] = {}
+
+    def fake_pipeline(**kwargs):
+        seen.update(kwargs)
+        return [[]]
+
+    class FakeSpeechSegment:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    class FakeProcessor:
+        tokenizer = types.SimpleNamespace(pad_token_id=0, word_delimiter_token="|")
+
+    fake_torch = types.SimpleNamespace(cuda=types.SimpleNamespace(is_available=lambda: False))
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setattr(align, "_easyaligner", lambda: (FakeSpeechSegment, fake_pipeline))
+    monkeypatch.setattr(align, "_load_alignment_stack", lambda *_: (object(), FakeProcessor()))
+    monkeypatch.setattr(align, "_vad_model", lambda: object())
+    monkeypatch.setattr(align, "_decodable_audio", lambda path: (path, False))
+    monkeypatch.setattr(align, "audio_duration", lambda *_, **__: 1.0)
+    settings = _alignment_settings(tmp_path)
+    audio = tmp_path / "clip.wav"
+    audio.write_bytes(b"not really audio")
+    segments = [Segment(start=0.0, end=1.0, text="Jag är 57 år")]
+
+    align.force_align_segments(settings, audio, segments, "sv")
+    tokens, mapping = seen["text_normalizer_fn"]("Jag är 57 år")
+    assert tokens == ["jag", "är", "femtiosju", "år"]
+    assert mapping[2]["text"] == "57"
+
+    align.force_align_segments(settings, audio, segments, "en")
+    tokens, _ = seen["text_normalizer_fn"]("Jag är 57 år")
+    assert tokens == ["jag", "är", "57", "år"]
+
+
+def _real_alignment_stack_available() -> bool:
+    import shutil
+
+    from vemsa.config import Settings
+
+    cache = Settings(_env_file=None, database_url="postgresql://unused/unused").model_cache_dir
+    return (
+        alignment_available()
+        and shutil.which("ffmpeg") is not None
+        and any(cache.glob("models--KBLab--wav2vec2-large-voxrex-swedish/snapshots/*/vocab.json"))
+    )
+
+
+@pytest.mark.skipif(
+    not _real_alignment_stack_available(),
+    reason="needs easyaligner, ffmpeg and the cached Swedish CTC model (data/models)",
+)
+def test_numerals_are_aligned_not_interpolated():
+    """Acceptance for the numeral fix on a synthetic Swedish clip (macOS `say -v Alva`:
+    "Hej. Jag är femtiosju år gammal och min mamma är hundratvå."): the numerals
+    written as digits come back timed by the audio with a real score, and are no
+    longer counted as interpolated. Before the fix, "57" scored 3.6e-9 (0.0 after
+    rounding) and "102" at the window's end got a garbage end time."""
+    from vemsa.config import Settings
+    from vemsa.pipeline.align import force_align_segments, interpolated_words
+
+    settings = Settings(_env_file=None, database_url="postgresql://unused/unused")
+    clip = Path(__file__).parent / "fixtures" / "sv_numerals.wav"
+    text = "Hej. Jag är 57 år gammal och min mamma är 102."
+    words = force_align_segments(settings, clip, [Segment(start=0.0, end=3.8, text=text)], "sv")
+    assert [word.word for word in words] == text.split()
+    assert interpolated_words(words) == 0
+    by_text = {word.word: word for word in words}
+    assert by_text["57"].probability > 0.5
+    assert 1.0 < by_text["57"].start < by_text["57"].end < 1.8
+    assert by_text["102."].probability > 0.5
+    assert 2.9 < by_text["102."].start < by_text["102."].end <= 3.8
 
 
 def test_alignment_runs_overlap_under_gpu_concurrency_two(monkeypatch, tmp_path):

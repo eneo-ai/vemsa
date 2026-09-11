@@ -40,10 +40,29 @@ def segment(start: float, end: float, text: str, speaker: str | None = None) -> 
         ("", 0),
         ("ﬁka", 1),  # NFKC folds the ligature; still one word
         ("d.v.s. imorgon", 2),  # abbreviation dots stripped, letters glued: one token
+        ("Jag är 57 år", 4),  # a numeral is one word, spelled out or not
+        ("1 500 kr, 1,5 %", 4),
     ],
 )
 def test_alignable_tokens(text: str, expected: int):
     assert alignable_tokens(text) == expected
+
+
+def test_alignable_tokens_matches_the_swedish_alignment_normalizer():
+    # the normalizer the aligner actually runs spells numerals out; the count
+    # it produces must be the one the words are redistributed by
+    pytest.importorskip("easyaligner.text.normalization")
+    from vemsa.pipeline.normalize import alignment_normalizer
+
+    normalize = alignment_normalizer("sv")
+    for text in [
+        "Jag är 57 år",
+        "Vi ses kl. 14:30 på Sveavägen 12 (om det går).",
+        "1 500 kr, d.v.s. 1,5 tusen — 100% säkert…",
+        "50-talet, 3:e gången, år 2024",
+    ]:
+        tokens, _ = normalize(text)
+        assert alignable_tokens(text) == len(tokens), text
 
 
 def test_alignable_tokens_matches_easyaligner_normalizer():
