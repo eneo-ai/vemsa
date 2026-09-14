@@ -148,11 +148,22 @@ async def test_overview_reports_queue_and_workers(settings: Settings):
 
 async def test_throughput_buckets_are_contiguous_and_gap_filled(settings: Settings):
     now = datetime.now(UTC)
+    # buckets are whole UTC hours, so the three recent jobs sit at :26-:28 of the
+    # latest hour that is already half over: seeding them "a few minutes ago"
+    # splits them across two buckets when the test runs just past the hour
+    recent = now.replace(minute=30, second=0, microsecond=0)
+    if recent > now:
+        recent -= timedelta(hours=1)
+    recent_bucket = recent.replace(minute=0)
     async with api_client(settings) as (client, app):
         pool = app.state.deps.store.pool
-        await seed_stat(pool, job_id="a", finished_at=now - timedelta(minutes=2))
-        await seed_stat(pool, job_id="b", finished_at=now - timedelta(minutes=3), audio_seconds=50)
-        await seed_stat(pool, job_id="c", finished_at=now - timedelta(minutes=4), status="failed")
+        await seed_stat(pool, job_id="a", finished_at=recent - timedelta(minutes=2))
+        await seed_stat(
+            pool, job_id="b", finished_at=recent - timedelta(minutes=3), audio_seconds=50
+        )
+        await seed_stat(
+            pool, job_id="c", finished_at=recent - timedelta(minutes=4), status="failed"
+        )
         await seed_stat(pool, job_id="d", finished_at=now - timedelta(hours=3), task="diarize")
         await seed_stat(pool, job_id="old", finished_at=now - timedelta(days=2))
 
@@ -174,7 +185,7 @@ async def test_throughput_buckets_are_contiguous_and_gap_filled(settings: Settin
         "audio_seconds": 250.0,
         "processing_s": 30.0,
     }
-    latest = buckets[-1]
+    latest = buckets[starts.index(recent_bucket)]
     assert latest["completed"] == 2 and latest["failed"] == 1
     assert latest["audio_seconds"] == 150.0
     assert sum(1 for bucket in buckets if bucket["completed"] == 0 and bucket["failed"] == 0) >= 20

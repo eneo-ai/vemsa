@@ -152,12 +152,16 @@ def number_speller(language: Language | str | None) -> Callable[[str], str] | No
 
 def alignment_normalizer(language: Language | str | None) -> TextNormalizer:
     """easyaligner ``text_normalizer_fn`` for a job language: the library
-    default, plus digit runs spelled out for languages that have a speller."""
-    from easyaligner.text.normalization import SpanMapNormalizer
+    default, plus digit runs spelled out for languages that have a speller.
 
+    Building the normalizer needs no easyaligner: the import happens on the
+    first text, i.e. inside the aligner run that needs it anyway. Callers that
+    stub the pipeline (tests without the ``align`` extra) never trigger it."""
     speller = number_speller(language)
 
     def normalize(text: str) -> tuple[list[str], list[dict]]:
+        from easyaligner.text.normalization import SpanMapNormalizer
+
         normalizer = SpanMapNormalizer(text)
         normalizer.transform(r"\S+", lambda m: unicodedata.normalize("NFKC", m.group()))
         if speller is not None:

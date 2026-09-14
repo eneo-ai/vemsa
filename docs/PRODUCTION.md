@@ -19,8 +19,8 @@ before scheduling workers on multiple machines.
 ## Container images
 
 CI publishes images to `ghcr.io/eneo-ai/vemsa` on every push to `main` and on `v*` release
-tags (`.github/workflows/docker.yaml`). One image serves both the `api` and `worker`
-services; two flavors are built:
+tags, but only after the test job of the same run has passed (`.github/workflows/ci.yaml`).
+One image serves both the `api` and `worker` services; two flavors are built:
 
 | Flavor | Tags | Torch | Platforms | For |
 | --- | --- | --- | --- | --- |

@@ -1,5 +1,7 @@
 """Transcript normalization for the aligner: numerals spelled out, token counts stable."""
 
+import sys
+
 import pytest
 
 from vemsa.pipeline.normalize import (
@@ -77,6 +79,17 @@ def test_other_languages_keep_digits(language: str | None):
 def sv_normalizer():
     pytest.importorskip("easyaligner.text.normalization")
     return alignment_normalizer("sv")
+
+
+def test_normalizer_builds_without_easyaligner(monkeypatch):
+    """The engines build the normalizer before every pipeline run; only the run
+    itself (which needs easyaligner anyway) may import it, so the stubbed-pipeline
+    tests pass without the `align` extra."""
+    monkeypatch.setitem(sys.modules, "easyaligner", None)
+    monkeypatch.setitem(sys.modules, "easyaligner.text.normalization", None)
+    normalize = alignment_normalizer("sv")
+    with pytest.raises(ModuleNotFoundError):
+        normalize("hej")
 
 
 def test_numerals_are_spelled_for_the_model_but_reported_verbatim(sv_normalizer):
