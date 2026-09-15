@@ -38,10 +38,10 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-      - run: uv sync --group dev
+      - run: uv sync --group dev --group evaluation
       - run: uv run ruff format --check .
       - run: uv run ruff check .
-      - run: uv run pytest
+      - run: uv run --group evaluation pytest
       - uses: actions/setup-node@v4
         with:
           node-version: "24"

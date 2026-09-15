@@ -84,6 +84,7 @@ class FakeEngine:
         model: str,
         diarize: bool,
         speakers: SpeakerBounds | None = None,
+        include_speaker_review: bool = False,
         vocabulary: list[str] | None = None,
         on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
@@ -95,6 +96,7 @@ class FakeEngine:
                 "model": model,
                 "diarize": diarize,
                 "speakers": speakers,
+                "include_speaker_review": include_speaker_review,
                 "vocabulary": vocabulary,
             }
         )
@@ -109,6 +111,7 @@ class FakeEngine:
         language: str,
         model: str,
         speakers: SpeakerBounds | None = None,
+        include_speaker_review: bool = False,
         on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
         report_stage(on_stage, JobStage.DIARIZING)
@@ -121,6 +124,7 @@ class FakeEngine:
                 "language": language,
                 "model": model,
                 "speakers": speakers,
+                "include_speaker_review": include_speaker_review,
             }
         )
         result = make_result(True)
@@ -162,6 +166,7 @@ class FailingEngine:
         model: str,
         diarize: bool,
         speakers: SpeakerBounds | None = None,
+        include_speaker_review: bool = False,
         vocabulary: list[str] | None = None,
         on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
@@ -176,6 +181,7 @@ class FailingEngine:
         language: str,
         model: str,
         speakers: SpeakerBounds | None = None,
+        include_speaker_review: bool = False,
         on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
         raise RuntimeError("pipeline exploded")

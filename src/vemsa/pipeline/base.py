@@ -23,6 +23,7 @@ class TranscriptionEngine(Protocol):
         model: str,
         diarize: bool,
         speakers: SpeakerBounds | None = None,
+        include_speaker_review: bool = False,
         vocabulary: list[str] | None = None,
         on_stage: StageReporter | None = None,
     ) -> TranscriptionResult: ...
@@ -36,6 +37,7 @@ class TranscriptionEngine(Protocol):
         language: str,
         model: str,
         speakers: SpeakerBounds | None = None,
+        include_speaker_review: bool = False,
         on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
         """Diarize the audio and attach speakers to a transcript produced elsewhere."""

@@ -11,7 +11,9 @@ def render_text(segments: list[Segment]) -> str:
     lines = []
     for segment in segments:
         prefix = f"[{_hms(segment.start)} - {_hms(segment.end)}]"
-        if segment.speaker:
+        if segment.speaker_attribution == "provisional":
+            prefix += " [Överlappande tal – osäker talare]:"
+        elif segment.speaker:
             prefix += f" {segment.speaker}:"
         lines.append(f"{prefix} {segment.text}")
     return "\n".join(lines)

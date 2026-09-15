@@ -208,6 +208,19 @@ worker returns `503`.
 on completion. Results are retained for `VEMSA_RETENTION_HOURS` and then purged; source audio is
 deleted as soon as the job reaches a terminal state.
 
+### Overlapping speech and review (opt-in)
+
+Send `include_speaker_review=true` on a diarized transcription or diarize-only
+job to retain detected overlap intervals and flag provisional attribution.
+Affected text renders as `[Överlappande tal – osäker talare]`; the structured
+segment keeps its suggested speaker for review. This does not separate voices
+or guarantee the speaker count. Existing requests keep their current behavior.
+
+See the [versioned contract](docs/speaker-review-contract.md),
+[Eneo handover](docs/handover-eneo-speaker-review.md),
+[Lyssna handover](docs/handover-lyssna-speaker-review.md), and
+[synthetic evaluation procedure](docs/speaker-review-evaluation.md).
+
 ### Diarize-only jobs (`task=diarize`)
 
 When the transcript is produced elsewhere, Vemsa can add only the speaker labels: upload the

@@ -57,6 +57,38 @@ class Segment(BaseModel):
     speaker: str | None = None
     text: str
     words: list[Word] = Field(default_factory=list)
+    # Opt-in model attribution state, never a confidence score or human review.
+    speaker_attribution: Literal["assigned", "provisional", "unassigned"] | None = None
+    overlap_ids: list[str] = Field(default_factory=list)
+
+
+class SpeechOverlap(BaseModel):
+    id: str
+    start: float = Field(ge=0, allow_inf_nan=False)
+    end: float = Field(gt=0, allow_inf_nan=False)
+    detected_speaker_count: int = Field(ge=2)
+
+    @model_validator(mode="after")
+    def _positive_duration(self) -> "SpeechOverlap":
+        if self.end <= self.start:
+            raise ValueError("overlap end must be greater than start")
+        return self
+
+
+class SpeakerReview(BaseModel):
+    version: Literal[1] = 1
+    overlap_detection: Literal["available", "unavailable"]
+    overlaps: list[SpeechOverlap] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_overlaps(self) -> "SpeakerReview":
+        if self.overlap_detection == "unavailable" and self.overlaps:
+            raise ValueError("unavailable overlap detection cannot provide overlaps")
+        if len({overlap.id for overlap in self.overlaps}) != len(self.overlaps):
+            raise ValueError("overlap IDs must be unique within the result")
+        if any(a.end > b.start for a, b in zip(self.overlaps, self.overlaps[1:], strict=False)):
+            raise ValueError("overlap intervals must be ordered and non-overlapping")
+        return self
 
 
 # How the word timestamps behind the speaker labels were obtained, best to worst:
@@ -82,6 +114,7 @@ class TranscriptionResult(BaseModel):
     text: str
     segments: list[Segment]
     alignment: Alignment | None = None
+    speaker_review: SpeakerReview | None = None
 
 
 class SpeakerBounds(BaseModel):
@@ -101,6 +134,7 @@ class JobRequest(BaseModel):
     language: Language = "auto"
     model: str | None = None
     diarize: bool = True
+    include_speaker_review: bool = False
     webhook_url: HttpUrl | None = None
     # task=diarize: the externally produced transcript to label (words and/or
     # segments). task=align: the speaker-labelled segments to re-time against the
@@ -116,6 +150,13 @@ class JobRequest(BaseModel):
     # the ASR decoder as a prompt hint (remote/hybrid tiers; the local tier
     # ignores it).
     vocabulary: list[str] | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_retiming_review(cls, value: Any) -> Any:
+        if isinstance(value, dict) and value.get("task") == "align" and value.get("speaker_review"):
+            raise ValueError("task=align cannot retime speaker-review metadata")
+        return value
 
     @field_validator("vocabulary")
     @classmethod
@@ -139,6 +180,13 @@ class JobRequest(BaseModel):
 
     @model_validator(mode="after")
     def _validate_task(self) -> "JobRequest":
+        if self.include_speaker_review and (not self.diarize or self.task == "align"):
+            raise ValueError("include_speaker_review requires a diarized transcribe or diarize job")
+        if self.task == "align" and any(
+            segment.speaker_attribution is not None or segment.overlap_ids
+            for segment in self.segments or []
+        ):
+            raise ValueError("task=align cannot retime speaker-review metadata")
         if self.num_speakers is not None and (
             self.min_speakers is not None or self.max_speakers is not None
         ):

@@ -434,6 +434,7 @@ class JobQueue:
                     # The result must never claim Vemsa's default model ran.
                     model=job.request.model or EXTERNAL_MODEL,
                     speakers=job.request.speaker_bounds(),
+                    include_speaker_review=job.request.include_speaker_review,
                     on_stage=_report_stage,
                 )
             elif job.request.task == "align":
@@ -453,6 +454,7 @@ class JobQueue:
                     model=job.request.model or self._settings.default_model,
                     diarize=job.request.diarize,
                     speakers=job.request.speaker_bounds(),
+                    include_speaker_review=job.request.include_speaker_review,
                     vocabulary=job.request.vocabulary,
                     on_stage=_report_stage,
                 )

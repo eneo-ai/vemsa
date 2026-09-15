@@ -3,10 +3,38 @@
 import time
 from pathlib import Path
 
-from vemsa.jobs.models import JobStage, Segment, SpeakerBounds, TranscriptionResult, Word
+from vemsa.jobs.models import (
+    JobStage,
+    Segment,
+    SpeakerBounds,
+    SpeakerReview,
+    SpeechOverlap,
+    TranscriptionResult,
+    Word,
+)
 from vemsa.pipeline.base import StageReporter, report_stage
 from vemsa.pipeline.diarize import resolve_segments
 from vemsa.pipeline.render import render_text
+from vemsa.pipeline.speaker_review import apply_speaker_review
+
+
+def _fake_review(segments: list[Segment], enabled: bool) -> SpeakerReview | None:
+    """Fixed synthetic interruption in the first positive-duration segment; no audio analysis."""
+    if not enabled:
+        return None
+    overlaps = []
+    segment = next((s for s in segments if s.end > s.start), None)
+    if segment is not None:
+        duration = segment.end - segment.start
+        overlaps.append(
+            SpeechOverlap(
+                id="overlap_0000",
+                start=segment.start + duration * 0.4,
+                end=segment.start + duration * 0.6,
+                detected_speaker_count=2,
+            )
+        )
+    return SpeakerReview(overlap_detection="available", overlaps=overlaps)
 
 
 class CannedEngine:
@@ -21,6 +49,7 @@ class CannedEngine:
         model: str,
         diarize: bool,
         speakers: SpeakerBounds | None = None,
+        include_speaker_review: bool = False,
         vocabulary: list[str] | None = None,
         on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
@@ -41,12 +70,15 @@ class CannedEngine:
             text=" ".join(word.word for word in words),
             words=words,
         )
-        return TranscriptionResult(
-            language="sv" if language == "auto" else language,
-            duration_seconds=2.0,
-            model=model,
-            text=render_text([segment]),
-            segments=[segment],
+        return apply_speaker_review(
+            TranscriptionResult(
+                language="sv" if language == "auto" else language,
+                duration_seconds=2.0,
+                model=model,
+                text=render_text([segment]),
+                segments=[segment],
+            ),
+            _fake_review([segment], include_speaker_review),
         )
 
     def label_speakers(
@@ -58,24 +90,33 @@ class CannedEngine:
         language: str,
         model: str,
         speakers: SpeakerBounds | None = None,
+        include_speaker_review: bool = False,
         on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
         """Alternate SPEAKER_00/SPEAKER_01 per segment so consumers can test labelling."""
         report_stage(on_stage, JobStage.DIARIZING)
         if self._delay_s:
             time.sleep(self._delay_s)
-        plain = [segment.model_copy(update={"speaker": None}) for segment in segments]
+        plain = [
+            segment.model_copy(
+                update={"speaker": None, "speaker_attribution": None, "overlap_ids": []}
+            )
+            for segment in segments
+        ]
         grouped = resolve_segments(words, plain, None)
         labelled = [
             segment.model_copy(update={"speaker": f"SPEAKER_{index % 2:02d}"})
             for index, segment in enumerate(grouped)
         ]
-        return TranscriptionResult(
-            language=language if language != "auto" else "unknown",
-            duration_seconds=max((segment.end for segment in labelled), default=0.0),
-            model=model,
-            text=render_text(labelled),
-            segments=labelled,
+        return apply_speaker_review(
+            TranscriptionResult(
+                language=language if language != "auto" else "unknown",
+                duration_seconds=max((segment.end for segment in labelled), default=0.0),
+                model=model,
+                text=render_text(labelled),
+                segments=labelled,
+            ),
+            _fake_review(labelled, include_speaker_review),
         )
 
     def align_transcript(

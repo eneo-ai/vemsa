@@ -17,9 +17,15 @@ from vemsa.jobs.models import Alignment, JobStage, Segment, SpeakerBounds, Trans
 from vemsa.pipeline.align import build_segment_aligner
 from vemsa.pipeline.base import StageReporter, report_stage
 from vemsa.pipeline.diarize import Diarizer, resolve_segments
-from vemsa.pipeline.label import label_speakers, segment_merge_alignment, words_plausible
+from vemsa.pipeline.label import (
+    collect_diarization,
+    label_speakers,
+    segment_merge_alignment,
+    words_plausible,
+)
 from vemsa.pipeline.realign import align_transcript
 from vemsa.pipeline.render import render_text
+from vemsa.pipeline.speaker_review import apply_speaker_review
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +173,7 @@ class OpenAIWhisperEngine:
         model: str,
         diarize: bool,
         speakers: SpeakerBounds | None = None,
+        include_speaker_review: bool = False,
         vocabulary: list[str] | None = None,
         on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
@@ -185,14 +192,26 @@ class OpenAIWhisperEngine:
 
         if diarize:
             report_stage(on_stage, JobStage.DIARIZING)
-        turns = self._diarizer.diarize(audio_path, speakers=speakers) if diarize else None
+        turns, review = (
+            collect_diarization(
+                self._diarizer,
+                audio_path,
+                speakers=speakers,
+                include_speaker_review=include_speaker_review,
+            )
+            if diarize
+            else (None, None)
+        )
         segments = resolve_segments(
             words, plain_segments, turns, tuning=self._settings.attribution_tuning()
         )
         alignment: Alignment = (
             "provider_words" if words else segment_merge_alignment(plain_segments, segments)
         )
-        return build_result(payload, segments, model=model, language=language, alignment=alignment)
+        return apply_speaker_review(
+            build_result(payload, segments, model=model, language=language, alignment=alignment),
+            review,
+        )
 
     def label_speakers(
         self,
@@ -203,6 +222,7 @@ class OpenAIWhisperEngine:
         language: str,
         model: str,
         speakers: SpeakerBounds | None = None,
+        include_speaker_review: bool = False,
         on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
         if not words:
@@ -217,6 +237,7 @@ class OpenAIWhisperEngine:
             model=model,
             aligner=self._segment_aligner,
             speakers=speakers,
+            include_speaker_review=include_speaker_review,
             prefer_alignment=self._settings.diarize_prefer_align,
             tuning=self._settings.attribution_tuning(),
         )

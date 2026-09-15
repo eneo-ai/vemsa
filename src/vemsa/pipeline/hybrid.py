@@ -17,8 +17,14 @@ from vemsa.jobs.models import JobStage, Segment, SpeakerBounds, TranscriptionRes
 from vemsa.pipeline.align import build_segment_aligner, force_align_segments
 from vemsa.pipeline.base import StageReporter, report_stage
 from vemsa.pipeline.diarize import Diarizer, resolve_segments
-from vemsa.pipeline.label import alignment_input, label_speakers, words_plausible
+from vemsa.pipeline.label import (
+    alignment_input,
+    collect_diarization,
+    label_speakers,
+    words_plausible,
+)
 from vemsa.pipeline.realign import align_transcript
+from vemsa.pipeline.speaker_review import apply_speaker_review
 from vemsa.pipeline.whisper_api import build_result, parse_verbose_json, request_transcription
 
 logger = logging.getLogger(__name__)
@@ -45,6 +51,7 @@ class HybridEngine:
         model: str,
         diarize: bool,
         speakers: SpeakerBounds | None = None,
+        include_speaker_review: bool = False,
         vocabulary: list[str] | None = None,
         on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
@@ -77,9 +84,21 @@ class HybridEngine:
 
         if diarize:
             report_stage(on_stage, JobStage.DIARIZING)
-        turns = self._diarizer.diarize(audio_path, speakers=speakers) if diarize else None
+        turns, review = (
+            collect_diarization(
+                self._diarizer,
+                audio_path,
+                speakers=speakers,
+                include_speaker_review=include_speaker_review,
+            )
+            if diarize
+            else (None, None)
+        )
         segments = resolve_segments(words, [], turns, tuning=self._settings.attribution_tuning())
-        return build_result(payload, segments, model=model, language=language, alignment="forced")
+        return apply_speaker_review(
+            build_result(payload, segments, model=model, language=language, alignment="forced"),
+            review,
+        )
 
     def label_speakers(
         self,
@@ -90,6 +109,7 @@ class HybridEngine:
         language: str,
         model: str,
         speakers: SpeakerBounds | None = None,
+        include_speaker_review: bool = False,
         on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
         if not words:
@@ -104,6 +124,7 @@ class HybridEngine:
             model=model,
             aligner=self._segment_aligner,
             speakers=speakers,
+            include_speaker_review=include_speaker_review,
             prefer_alignment=self._settings.diarize_prefer_align,
             tuning=self._settings.attribution_tuning(),
         )

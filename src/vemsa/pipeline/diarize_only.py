@@ -31,6 +31,7 @@ class DiarizeOnlyEngine:
         model: str,
         diarize: bool,
         speakers: SpeakerBounds | None = None,
+        include_speaker_review: bool = False,
         vocabulary: list[str] | None = None,
         on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
@@ -45,6 +46,7 @@ class DiarizeOnlyEngine:
         language: str,
         model: str,
         speakers: SpeakerBounds | None = None,
+        include_speaker_review: bool = False,
         on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
         if not words:
@@ -59,6 +61,7 @@ class DiarizeOnlyEngine:
             model=model,
             aligner=self._segment_aligner,
             speakers=speakers,
+            include_speaker_review=include_speaker_review,
             prefer_alignment=self._prefer_align,
             tuning=self._tuning,
         )

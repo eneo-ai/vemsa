@@ -40,10 +40,11 @@ def upload_job(tmp_path: Path, **request_kwargs):
     return new_job(JobRequest(**request_kwargs), audio_path=str(audio)), audio
 
 
+@pytest.mark.parametrize("include_review", [False, True])
 async def test_upload_job_completes_and_audio_deleted(
-    store: JobStore, settings: Settings, tmp_path: Path
+    store: JobStore, settings: Settings, tmp_path: Path, include_review: bool
 ):
-    job, audio = upload_job(tmp_path, language="sv")
+    job, audio = upload_job(tmp_path, language="sv", include_speaker_review=include_review)
     await store.create(job)
     engine = FakeEngine()
 
@@ -61,6 +62,7 @@ async def test_upload_job_completes_and_audio_deleted(
             "model": settings.default_model,
             "diarize": True,
             "speakers": None,
+            "include_speaker_review": include_review,
             "vocabulary": None,
         }
     ]

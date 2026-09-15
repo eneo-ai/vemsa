@@ -56,6 +56,11 @@ dev = [
     "respx>=0.21",
 ]
 
+evaluation = [
+    "pyannote-metrics>=4,<5",
+    "soundfile>=0.12",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

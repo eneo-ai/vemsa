@@ -23,10 +23,11 @@ from vemsa.pipeline.diarize import (
     segments_without_speakers,
 )
 from vemsa.pipeline.gpu import gpu_slot
-from vemsa.pipeline.label import label_speakers
+from vemsa.pipeline.label import collect_diarization, label_speakers
 from vemsa.pipeline.normalize import alignment_normalizer
 from vemsa.pipeline.realign import align_transcript
 from vemsa.pipeline.render import render_text
+from vemsa.pipeline.speaker_review import apply_speaker_review
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,7 @@ class EasyTranscriberEngine:
         model: str,
         diarize: bool,
         speakers: SpeakerBounds | None = None,
+        include_speaker_review: bool = False,
         vocabulary: list[str] | None = None,
         on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
@@ -114,23 +116,32 @@ class EasyTranscriberEngine:
         words = words_from_alignments(aligned[0])
         duration = audio_duration(audio_path, fallback=words[-1].end if words else 0.0)
 
+        review = None
         if diarize:
             report_stage(on_stage, JobStage.DIARIZING)
-            turns = self._diarizer.diarize(audio_path, speakers=speakers)
+            turns, review = collect_diarization(
+                self._diarizer,
+                audio_path,
+                speakers=speakers,
+                include_speaker_review=include_speaker_review,
+            )
             segments = assign_speakers(words, turns, tuning=self._settings.attribution_tuning())
         else:
             segments = segments_without_speakers(words)
 
-        return TranscriptionResult(
-            # GPU-VERIFY(milestone-2): surface whisper's detected language when
-            # auto-detect was used, instead of echoing the request.
-            language=lang or "auto",
-            duration_seconds=duration,
-            model=model,
-            text=render_text(segments),
-            segments=segments,
-            # easytranscriber's word timestamps come from its own forced alignment
-            alignment="forced",
+        return apply_speaker_review(
+            TranscriptionResult(
+                # GPU-VERIFY(milestone-2): surface whisper's detected language when
+                # auto-detect was used, instead of echoing the request.
+                language=lang or "auto",
+                duration_seconds=duration,
+                model=model,
+                text=render_text(segments),
+                segments=segments,
+                # easytranscriber's word timestamps come from its own forced alignment
+                alignment="forced",
+            ),
+            review,
         )
 
     def label_speakers(
@@ -142,6 +153,7 @@ class EasyTranscriberEngine:
         language: str,
         model: str,
         speakers: SpeakerBounds | None = None,
+        include_speaker_review: bool = False,
         on_stage: StageReporter | None = None,
     ) -> TranscriptionResult:
         if not words:
@@ -156,6 +168,7 @@ class EasyTranscriberEngine:
             model=model,
             aligner=self._segment_aligner,
             speakers=speakers,
+            include_speaker_review=include_speaker_review,
             prefer_alignment=self._settings.diarize_prefer_align,
             tuning=self._settings.attribution_tuning(),
         )

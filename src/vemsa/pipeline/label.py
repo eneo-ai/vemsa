@@ -16,7 +16,14 @@ import logging
 from pathlib import Path
 from typing import Protocol
 
-from vemsa.jobs.models import Alignment, Segment, SpeakerBounds, TranscriptionResult, Word
+from vemsa.jobs.models import (
+    Alignment,
+    Segment,
+    SpeakerBounds,
+    SpeakerReview,
+    TranscriptionResult,
+    Word,
+)
 from vemsa.pipeline.align import SegmentAligner
 from vemsa.pipeline.diarize import (
     AttributionTuning,
@@ -26,6 +33,7 @@ from vemsa.pipeline.diarize import (
     resolve_segments,
 )
 from vemsa.pipeline.render import render_text
+from vemsa.pipeline.speaker_review import apply_speaker_review
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +42,23 @@ class SpeakerDiarizer(Protocol):
     def diarize(self, audio_path: Path, *, speakers: SpeakerBounds | None = None) -> list[Turn]: ...
 
     def load(self) -> None: ...
+
+
+def collect_diarization(
+    diarizer: SpeakerDiarizer,
+    audio_path: Path,
+    *,
+    speakers: SpeakerBounds | None = None,
+    include_speaker_review: bool = False,
+) -> tuple[list[Turn], SpeakerReview | None]:
+    """Keep legacy/custom diarizers usable without claiming overlap was measured."""
+    if include_speaker_review:
+        method = getattr(diarizer, "diarize_with_review", None)
+        if method is not None:
+            return method(audio_path, speakers=speakers)
+    turns = diarizer.diarize(audio_path, speakers=speakers)
+    review = SpeakerReview(overlap_detection="unavailable") if include_speaker_review else None
+    return turns, review
 
 
 def segment_merge_alignment(inputs: list[Segment], outputs: list[Segment]) -> Alignment:
@@ -120,13 +145,17 @@ def label_speakers(
     model: str,
     aligner: SegmentAligner | None = None,
     speakers: SpeakerBounds | None = None,
+    include_speaker_review: bool = False,
     prefer_alignment: bool = False,
     tuning: AttributionTuning | None = None,
 ) -> TranscriptionResult:
     # caller labels are the reference a fresh clustering is mapped onto (a
     # human's earlier corrections must survive a re-run), never attribution input
     reference = [segment for segment in segments if segment.speaker]
-    plain_segments = [segment.model_copy(update={"speaker": None}) for segment in segments]
+    plain_segments = [
+        segment.model_copy(update={"speaker": None, "speaker_attribution": None, "overlap_ids": []})
+        for segment in segments
+    ]
     if not words:
         words = [word for segment in plain_segments for word in segment.words]
     # the caller's text in order, kept before any word discard: alignment can
@@ -179,7 +208,9 @@ def label_speakers(
         if not words:
             raise RuntimeError("forced alignment produced no words for the supplied transcript")
         alignment = "forced"
-    turns = diarizer.diarize(audio_path, speakers=speakers)
+    turns, review = collect_diarization(
+        diarizer, audio_path, speakers=speakers, include_speaker_review=include_speaker_review
+    )
     if reference:
         turns = relabel_turns(
             turns, reference, min_share=(tuning or AttributionTuning()).relabel_min_share
@@ -192,11 +223,14 @@ def label_speakers(
         extra={"event": "label.align", "alignment": alignment, "words": len(words)},
     )
     last_end = max((segment.end for segment in labelled), default=0.0)
-    return TranscriptionResult(
-        language=language if language != "auto" else "unknown",
-        duration_seconds=audio_duration(audio_path, fallback=last_end),
-        model=model,
-        text=render_text(labelled),
-        segments=labelled,
-        alignment=alignment,
+    return apply_speaker_review(
+        TranscriptionResult(
+            language=language if language != "auto" else "unknown",
+            duration_seconds=audio_duration(audio_path, fallback=last_end),
+            model=model,
+            text=render_text(labelled),
+            segments=labelled,
+            alignment=alignment,
+        ),
+        review,
     )

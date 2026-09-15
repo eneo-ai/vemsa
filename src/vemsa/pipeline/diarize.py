@@ -13,8 +13,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
-from vemsa.jobs.models import Segment, SpeakerBounds, Word
+from vemsa.jobs.models import Segment, SpeakerBounds, SpeakerReview, Word
 from vemsa.pipeline.gpu import gpu_slot
+from vemsa.pipeline.speaker_review import detect_overlaps
 
 if TYPE_CHECKING:
     from vemsa.config import Settings
@@ -707,6 +708,19 @@ class Diarizer:
             )
 
     def diarize(self, audio_path: Path, *, speakers: SpeakerBounds | None = None) -> list[Turn]:
+        turns, _ = self._diarize(audio_path, speakers=speakers, include_speaker_review=False)
+        return turns
+
+    def diarize_with_review(
+        self, audio_path: Path, *, speakers: SpeakerBounds | None = None
+    ) -> tuple[list[Turn], SpeakerReview]:
+        turns, review = self._diarize(audio_path, speakers=speakers, include_speaker_review=True)
+        assert review is not None
+        return turns, review
+
+    def _diarize(
+        self, audio_path: Path, *, speakers: SpeakerBounds | None, include_speaker_review: bool
+    ) -> tuple[list[Turn], SpeakerReview | None]:
         self.load()
         bounds = speakers.pipeline_kwargs() if speakers else {}
         logger.info("diarization started", extra={"event": "diarize.start", **bounds})
@@ -739,14 +753,27 @@ class Diarizer:
                 "exclusive": exclusive,
             },
         )
-        return turns
+        review = None
+        if include_speaker_review:
+            regular = getattr(output, "speaker_diarization", None)
+            review = (
+                detect_overlaps(
+                    [
+                        Turn(start=span.start, end=span.end, speaker=str(label))
+                        for span, _, label in regular.itertracks(yield_label=True)
+                    ]
+                )
+                if regular is not None
+                else SpeakerReview(overlap_detection="unavailable")
+            )
+        return turns, review
 
     def _pick_annotation(self, output: Any) -> tuple[Any, bool]:
         """The Annotation to derive turns from, and whether it is the exclusive one.
 
         pyannote 4.x pipelines return a DiarizeOutput whose exclusive variant keeps
-        exactly one speaker active at a time — the one an ASR system would have
-        transcribed — which is what word attribution wants during crosstalk. A
+        one speaker active at a time, simplifying timestamp reconciliation. This
+        is not proof that it chose the voice whose words ASR transcribed. A
         custom pipeline may still return a bare Annotation; use it as-is."""
         exclusive = getattr(output, "exclusive_speaker_diarization", None)
         if self._settings.diarize_exclusive and exclusive is not None:
