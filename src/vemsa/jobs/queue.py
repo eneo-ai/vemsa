@@ -89,9 +89,9 @@ def failure_kind(exc: BaseException) -> FailureKind:
         return "cancelled"
     if isinstance(exc, WhisperProviderError):
         return "provider"
-    if is_out_of_memory(exc) or isinstance(exc, (JobLeaseLostError, QueueCapacityError)):
+    if is_out_of_memory(exc) or isinstance(exc, QueueCapacityError):
         return "capacity"
-    if isinstance(exc, (ValueError, AudioDecodeError, AudioTooLargeError, ForbiddenUrlError)):
+    if isinstance(exc, (AudioDecodeError, AudioTooLargeError, ForbiddenUrlError)):
         return "input"
     return "internal"
 

@@ -95,6 +95,15 @@ def request_transcription(
         payload = response.json()
     except ValueError as exc:
         raise WhisperProviderError("whisper API returned invalid JSON") from exc
+    if not isinstance(payload, dict) or any(
+        payload.get(field) is not None and not isinstance(payload[field], list)
+        for field in ("words", "segments")
+    ):
+        raise WhisperProviderError("whisper API returned an invalid response shape")
+    try:
+        float(payload.get("duration") or 0.0)
+    except (TypeError, ValueError) as exc:
+        raise WhisperProviderError("whisper API returned an invalid duration") from exc
     logger.info(
         "provider transcription received",
         extra={
@@ -113,34 +122,39 @@ def parse_verbose_json(payload: dict[str, Any]) -> tuple[list[Word], list[Segmen
     """Extract words and plain (speakerless) segments from a verbose_json response.
 
     Either list may be empty: some servers return only segments even when word
-    granularity was requested, and vice versa."""
-    words = []
-    for item in payload.get("words") or []:
-        # faster-whisper-derived servers include a per-word probability; plain
-        # OpenAI does not.
-        probability = item.get("probability")
-        words.append(
-            Word(
-                word=str(item["word"]).strip(),
-                start=float(item["start"]),
-                end=float(item["end"]),
-                probability=float(probability) if probability is not None else None,
+    granularity was requested, and vice versa. At least one must contain a transcript."""
+    try:
+        words = []
+        for item in payload.get("words") or []:
+            # faster-whisper-derived servers include a per-word probability; plain
+            # OpenAI does not.
+            probability = item.get("probability")
+            words.append(
+                Word(
+                    word=str(item["word"]).strip(),
+                    start=float(item["start"]),
+                    end=float(item["end"]),
+                    probability=float(probability) if probability is not None else None,
+                )
             )
-        )
-    words.sort(key=lambda word: word.start)
+        words.sort(key=lambda word: word.start)
 
-    segments = []
-    for item in payload.get("segments") or []:
-        start, end = float(item["start"]), float(item["end"])
-        segments.append(
-            Segment(
-                start=start,
-                end=end,
-                text=str(item["text"]).strip(),
-                words=[w for w in words if start <= (w.start + w.end) / 2 < end],
+        segments = []
+        for item in payload.get("segments") or []:
+            start, end = float(item["start"]), float(item["end"])
+            segments.append(
+                Segment(
+                    start=start,
+                    end=end,
+                    text=str(item["text"]).strip(),
+                    words=[w for w in words if start <= (w.start + w.end) / 2 < end],
+                )
             )
-        )
-    segments.sort(key=lambda segment: segment.start)
+        segments.sort(key=lambda segment: segment.start)
+    except (AttributeError, KeyError, TypeError, ValueError) as exc:
+        raise WhisperProviderError("whisper API returned an invalid transcript") from exc
+    if not words and not segments:
+        raise WhisperProviderError("whisper API returned neither words nor segments")
     return words, segments
 
 
@@ -194,8 +208,6 @@ class OpenAIWhisperEngine:
             self._settings, audio_path, language=language, model=model, vocabulary=vocabulary
         )
         words, plain_segments = parse_verbose_json(payload)
-        if not words and not plain_segments:
-            raise RuntimeError("whisper API returned neither words nor segments")
         if words and plain_segments and not words_plausible(words):
             logger.warning("provider word timestamps are implausible; merging speakers per segment")
             words = []

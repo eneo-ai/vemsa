@@ -193,12 +193,14 @@ coarse, persisted processing stage: `queued`, `transcribing`, `aligning`, `diari
 after the worker claims the job.
 
 `failure_kind` is a closed set: `input` for invalid or undecodable input (including
-unsupported media), `capacity` for exhausted capacity such as out-of-memory after
+unsupported media), `capacity` for out-of-memory failures after
 `VEMSA_OOM_MAX_ATTEMPTS`, `provider` for a failed or timed-out whisper request,
 `cancelled` for cancellation, and `internal` for other failures. It is `null` on queued,
 running, and completed jobs, including jobs awaiting an out-of-memory retry. `error`
 remains bounded human-readable text; clients should use `failure_kind` for decisions.
 Failures recorded before this contract are classified as `internal` during migration.
+Losing a worker lease does not fail the job; only its current owner may record a result
+or failure.
 
 Cancel a job with `DELETE /v1/jobs/{id}`. Cancellation is idempotent: an active job returns
 `202` with `cancellation_requested=true`; a terminal job returns `200` unchanged; an unknown

@@ -10,7 +10,7 @@ import pytest
 import respx
 from httpx import Response
 
-from conftest import FakeEngine, make_result, make_wav_bytes
+from conftest import FakeEngine, GateEngine, make_result, make_wav_bytes
 from vemsa.config import Settings
 from vemsa.jobs.models import (
     JobRequest,
@@ -19,6 +19,7 @@ from vemsa.jobs.models import (
     TranscriptionResult,
     new_job,
 )
+from vemsa.jobs.queue import JobLeaseLostError, failure_kind
 from vemsa.main import create_app
 from vemsa.pipeline.base import StageReporter, report_stage
 
@@ -47,7 +48,8 @@ async def poll_until(client: httpx.AsyncClient, job_id: str, wanted: str, timeou
 @pytest.mark.parametrize(
     ("failure", "failure_kind"),
     [
-        ("validation", "input"),
+        ("value_error", "internal"),
+        ("alignment_shape", "internal"),
         ("decode", "input"),
         ("oom", "capacity"),
         ("provider", "provider"),
@@ -63,6 +65,7 @@ async def test_status_reports_failure_kind(
 ):
     from types import SimpleNamespace
 
+    from vemsa.pipeline.align import words_from_alignments
     from vemsa.pipeline.diarize import _decodable_audio
     from vemsa.pipeline.whisper_api import request_transcription
 
@@ -84,12 +87,14 @@ async def test_status_reports_failure_kind(
 
     class ErrorEngine(FakeEngine):
         def transcribe(self, audio_path, **kwargs):
+            if failure == "alignment_shape":
+                words_from_alignments([object()])
             if failure == "decode":
                 _decodable_audio(audio_path)
             if failure_kind == "provider":
                 request_transcription(settings, audio_path, language="sv", model="test")
             errors = {
-                "validation": ValueError("invalid audio"),
+                "value_error": ValueError("unexpected value"),
                 "oom": MemoryError("out of memory"),
                 "internal": RuntimeError("unexpected failure"),
             }
@@ -105,6 +110,83 @@ async def test_status_reports_failure_kind(
             client, job_id, "cancelled" if failure_kind == "cancelled" else "failed"
         )
         assert status["failure_kind"] == failure_kind
+
+
+@pytest.mark.parametrize("engine_name", ["remote", "hybrid"])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        pytest.param(
+            {"words": [{"word": "hej", "start": "invalid", "end": 1.0}]},
+            id="invalid-timestamp",
+        ),
+        pytest.param({"words": [{"start": 0.0, "end": 1.0}]}, id="missing-field"),
+        pytest.param([], id="wrong-json-shape"),
+        pytest.param({"words": 42}, id="wrong-collection-shape"),
+        pytest.param({"words": [None]}, id="wrong-record-shape"),
+        pytest.param({"text": "hej"}, id="unusable-transcript"),
+        pytest.param(
+            {"duration": "invalid", "words": [{"word": "hej", "start": 0.0, "end": 1.0}]},
+            id="invalid-duration",
+        ),
+    ],
+)
+@respx.mock
+async def test_malformed_provider_response_reports_provider_failure(
+    settings: Settings, engine_name: str, payload
+):
+    from test_whisper_api import FakeDiarizer
+    from vemsa.pipeline.hybrid import HybridEngine
+    from vemsa.pipeline.whisper_api import OpenAIWhisperEngine
+
+    settings.whisper_api_base = "https://whisper.example/v1"
+    respx.post("https://whisper.example/v1/audio/transcriptions").mock(
+        return_value=Response(200, json=payload)
+    )
+    engine_class = OpenAIWhisperEngine if engine_name == "remote" else HybridEngine
+    engine = engine_class(settings, diarizer=FakeDiarizer())
+    async with api_client(settings, engine) as (client, _):
+        response = await client.post(
+            "/v1/jobs",
+            files={"file": ("a.wav", b"audio")},
+            data={"diarize": "false"},
+            headers=AUTH,
+        )
+        assert response.status_code == 202
+        status = await poll_until(client, response.json()["job_id"], "failed")
+        assert status["failure_kind"] == "provider"
+
+
+def test_lease_loss_is_not_classified_as_capacity():
+    assert failure_kind(JobLeaseLostError("worker no longer owns the job")) == "internal"
+
+
+@pytest.mark.parametrize("failure", [JobLeaseLostError, ValueError])
+async def test_former_worker_cannot_fail_reclaimed_job(settings: Settings, failure):
+    engine = GateEngine(fail_first_with=failure)
+    async with api_client(settings, engine) as (client, app):
+        response = await client.post("/v1/jobs", files={"file": ("a.wav", b"audio")}, headers=AUTH)
+        assert response.status_code == 202
+        job_id = response.json()["job_id"]
+        store = app.state.deps.ready_store
+        try:
+            await engine.wait_entered()
+            await store.pool.execute(
+                "UPDATE jobs SET lease_expires_at = now() - interval '1 hour' WHERE id = $1",
+                job_id,
+            )
+            reclaimed = await store.claim_next_queued(worker_id="successor", lease_for_s=60)
+            assert reclaimed is not None and reclaimed.id == job_id
+        finally:
+            engine.gate.set()
+        async with asyncio.timeout(5):
+            await app.state.deps.ready_queue.stop()
+        status = (await client.get(f"/v1/jobs/{job_id}", headers=AUTH)).json()
+        assert status["status"] == "running"
+        assert status["failure_kind"] is None
+        assert status["error"] is None
+        current = await store.get(job_id)
+        assert current is not None and current.lease_owner == "successor"
 
 
 @pytest.mark.parametrize("upload", [False, True])
@@ -142,7 +224,12 @@ async def test_idempotency_conflict_and_client_scope(settings: Settings, change:
     settings.api_tokens = ["alpha=alpha-secret", "beta=beta-secret"]
     headers = {"Authorization": "Bearer alpha-secret", "Idempotency-Key": "meeting-1"}
     async with api_client(settings) as (client, app):
-        first = await client.post("/v1/jobs", headers=headers, files={"file": ("a.wav", b"audio")})
+        first = await client.post(
+            "/v1/jobs",
+            headers=headers,
+            files={"file": ("a.wav", b"audio")},
+            data={"language": "sv"},
+        )
         assert first.status_code == 202
         changed = await client.post(
             "/v1/jobs",
@@ -155,6 +242,7 @@ async def test_idempotency_conflict_and_client_scope(settings: Settings, change:
             "/v1/jobs",
             headers={**headers, "Authorization": "Bearer beta-secret"},
             files={"file": ("a.wav", b"audio")},
+            data={"language": "sv"},
         )
         assert other.status_code == 202
         assert other.json()["job_id"] != first.json()["job_id"]
