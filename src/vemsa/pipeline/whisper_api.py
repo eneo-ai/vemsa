@@ -30,6 +30,10 @@ from vemsa.pipeline.speaker_review import apply_speaker_review
 logger = logging.getLogger(__name__)
 
 
+class WhisperProviderError(RuntimeError):
+    pass
+
+
 def request_transcription(
     settings: Settings,
     audio_path: Path,
@@ -79,10 +83,18 @@ def request_transcription(
         audio_path.open("rb") as audio,
         httpx.Client(timeout=settings.whisper_timeout_s, headers=headers) as client,
     ):
-        response = client.post(url, data=data, files={"file": (audio_path.name, audio)})
+        try:
+            response = client.post(url, data=data, files={"file": (audio_path.name, audio)})
+        except httpx.HTTPError as exc:
+            raise WhisperProviderError("whisper API request failed") from exc
     if response.status_code != 200:
-        raise RuntimeError(f"whisper API returned {response.status_code}: {response.text[:500]}")
-    payload = response.json()
+        raise WhisperProviderError(
+            f"whisper API returned {response.status_code}: {response.text[:500]}"
+        )
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise WhisperProviderError("whisper API returned invalid JSON") from exc
     logger.info(
         "provider transcription received",
         extra={

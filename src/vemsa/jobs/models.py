@@ -12,6 +12,7 @@ Language = Literal["sv", "en", "auto"]
 # corrected it) and Vemsa re-derives word timestamps from the audio — no ASR, no
 # diarization, speakers and text kept verbatim.
 JobTask = Literal["transcribe", "diarize", "align"]
+FailureKind = Literal["input", "capacity", "provider", "internal", "cancelled"]
 EXTERNAL_MODEL = "external"
 
 # Whisper's prompt window is ~224 tokens; cap the vocabulary well under it so the
@@ -252,6 +253,9 @@ class Job(BaseModel):
     request: JobRequest
     audio_path: str | None = None
     error: str | None = None
+    failure_kind: FailureKind | None = None
+    idempotency_key: str | None = None
+    request_digest: str | None = None
     attempt: int = 0
     lease_owner: str | None = None
     lease_expires_at: datetime | None = None

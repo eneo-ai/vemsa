@@ -18,6 +18,7 @@ from vemsa.config import Settings
 from vemsa.jobs.models import (
     ALIGNMENT_RANK,
     EXTERNAL_MODEL,
+    FailureKind,
     Job,
     JobOutcome,
     JobStage,
@@ -25,7 +26,7 @@ from vemsa.jobs.models import (
     TranscriptionResult,
     WebhookOutboxEvent,
 )
-from vemsa.jobs.store import JobStore
+from vemsa.jobs.store import JobStore, QueueCapacityError
 from vemsa.jobs.store_factory import open_job_store
 from vemsa.observability import (
     ALIGNMENT_INTERPOLATED_WORDS,
@@ -42,8 +43,10 @@ from vemsa.observability import (
 from vemsa.ops.host import sample_host
 from vemsa.pipeline.align import interpolated_words
 from vemsa.pipeline.base import TranscriptionEngine
-from vemsa.pipeline.fetch import fetch_url
+from vemsa.pipeline.diarize import AudioDecodeError
+from vemsa.pipeline.fetch import AudioTooLargeError, fetch_url
 from vemsa.pipeline.gpu import describe_device, is_out_of_memory, release_cached_memory
+from vemsa.pipeline.whisper_api import WhisperProviderError
 from vemsa.security import ForbiddenUrlError, validate_outbound_url
 
 logger = logging.getLogger(__name__)
@@ -79,6 +82,18 @@ class AlignmentBelowFloorError(RuntimeError):
     Raised instead of completing so a quality-critical deployment fails loudly
     (and retryably) rather than shipping a coarser result. The message is safe
     to show to the client."""
+
+
+def failure_kind(exc: BaseException) -> FailureKind:
+    if isinstance(exc, (JobCancelledError, asyncio.CancelledError)):
+        return "cancelled"
+    if isinstance(exc, WhisperProviderError):
+        return "provider"
+    if is_out_of_memory(exc) or isinstance(exc, (JobLeaseLostError, QueueCapacityError)):
+        return "capacity"
+    if isinstance(exc, (ValueError, AudioDecodeError, AudioTooLargeError, ForbiddenUrlError)):
+        return "input"
+    return "internal"
 
 
 class JobQueue:
@@ -126,12 +141,12 @@ class JobQueue:
         self._stopping = False
         # the torch import behind this can take a while; keep it off the loop
         self._device, self._gpu_name = await asyncio.to_thread(describe_device)
+        await self._start_control_thread()
         self._tasks = [
             asyncio.create_task(self._worker_loop(), name="vemsa-worker"),
             asyncio.create_task(self._purge_loop(), name="vemsa-purge"),
             asyncio.create_task(self._webhook_loop(), name="vemsa-webhook"),
         ]
-        await self._start_control_thread()
         assert self._control_loop is not None
         self._worker_heartbeat = asyncio.run_coroutine_threadsafe(
             self._worker_heartbeat_loop(), self._control_loop
@@ -393,6 +408,24 @@ class JobQueue:
             self._webhook_wakeup.set()
 
         try:
+            if not await self._store.renew_lease(
+                job.id, self._worker_id, self._settings.job_lease_s
+            ):
+                current = await self._store.get(job.id)
+                if current is not None and current.status == JobStatus.CANCELLED:
+                    raise JobCancelledError("job cancellation was requested")
+                raise JobLeaseLostError("worker no longer owns the job")
+            assert self._control_loop is not None and self._control_store is not None
+            renewal = asyncio.run_coroutine_threadsafe(
+                self._heartbeat_lease(
+                    job,
+                    store=self._control_store,
+                    engine=engine,
+                    started=started,
+                    current_stage=lambda: current_stage,
+                ),
+                self._control_loop,
+            )
             if audio_path is None:
                 assert job.request.source_url is not None
                 logger.info(
@@ -413,17 +446,6 @@ class JobQueue:
                 )
                 await self._store.set_audio_path(job.id, str(audio_path))
             audio_seconds = await asyncio.to_thread(_probe_audio_seconds, audio_path)
-            assert self._control_loop is not None and self._control_store is not None
-            renewal = asyncio.run_coroutine_threadsafe(
-                self._heartbeat_lease(
-                    job,
-                    store=self._control_store,
-                    engine=engine,
-                    started=started,
-                    current_stage=lambda: current_stage,
-                ),
-                self._control_loop,
-            )
             if job.request.task == "diarize":
                 result = await asyncio.to_thread(
                     self._engine.label_speakers,
@@ -542,7 +564,11 @@ class JobQueue:
                     "error_type": type(exc).__name__,
                 },
             )
-            if is_out_of_memory(exc) and job.attempt < self._settings.oom_max_attempts:
+            if (
+                not isinstance(exc, WhisperProviderError)
+                and is_out_of_memory(exc)
+                and job.attempt < self._settings.oom_max_attempts
+            ):
                 # Memory pressure is usually a neighbour on the GPU, not this job:
                 # hand it back to the queue after a cooldown instead of failing it.
                 release_cached_memory()
@@ -583,6 +609,7 @@ class JobQueue:
             committed = await self._store.fail(
                 job.id,
                 public_error,
+                failure_kind=failure_kind(exc),
                 worker_id=self._worker_id,
                 webhook_url=str(job.request.webhook_url) if job.request.webhook_url else None,
                 outcome=_outcome(error_class=type(exc).__name__),

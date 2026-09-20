@@ -139,6 +139,7 @@ Submit a job with a source URL (JSON) or a direct upload (multipart):
 ```bash
 curl -X POST http://localhost:8000/v1/jobs \
   -H "Authorization: Bearer $TOKEN" \
+  -H "Idempotency-Key: meeting-2026-09-20" \
   -H "Content-Type: application/json" \
   -d '{"source_url": "https://example.org/meeting.mp3", "language": "sv", "diarize": true}'
 # -> 202 {"job_id": "...", "status": "queued"}
@@ -148,6 +149,21 @@ curl -X POST http://localhost:8000/v1/jobs \
   -F file=@meeting.mp3 -F language=sv \
   -F 'vocabulary=["Anna Lindqvist","Çagri"]'
 ```
+
+`Idempotency-Key` is optional (1–255 characters) and scoped to the authenticated
+`client_id`. Repeating a key with the same validated request and uploaded audio bytes
+returns `202` with the original `job_id` and its current status, including when the job
+is terminal or the queue is full. Different request fields or audio bytes with that key
+return `409`. Multipart filenames and boundaries do not affect identity; for URL jobs,
+the URL is part of the request and Vemsa does not download it to compare submissions.
+Keys remain reserved until the original job is purged under `VEMSA_RETENTION_HOURS`.
+Without a key, every accepted submission creates a new job.
+
+Admission checks the global and per-client active-job caps and inserts the job in one
+database transaction. Both queued and running jobs count toward the caps; a new job
+that would exceed either cap returns `429`. Upload validation and hashing finish before
+this transaction; rejected and duplicate uploads are discarded. Workers claim jobs in
+oldest-first FIFO order and renew their leases before fetching or probing audio.
 
 `vocabulary` is an optional list of names/terms likely to occur in the audio (meeting
 participants, product names). It is passed to the whisper provider as the OpenAI-compatible
@@ -166,7 +182,8 @@ Poll `GET /v1/jobs/{id}` until `status` is `completed`, then fetch `GET /v1/jobs
   "stage": "diarizing",
   "queue_position": null,
   "created_at": "2026-08-26T12:00:00Z",
-  "error": null
+  "error": null,
+  "failure_kind": null
 }
 ```
 
@@ -174,6 +191,14 @@ Poll `GET /v1/jobs/{id}` until `status` is `completed`, then fetch `GET /v1/jobs
 coarse, persisted processing stage: `queued`, `transcribing`, `aligning`, `diarizing`, or
 `finalizing`. Queued jobs include their current global FIFO `queue_position`; it is `null`
 after the worker claims the job.
+
+`failure_kind` is a closed set: `input` for invalid or undecodable input (including
+unsupported media), `capacity` for exhausted capacity such as out-of-memory after
+`VEMSA_OOM_MAX_ATTEMPTS`, `provider` for a failed or timed-out whisper request,
+`cancelled` for cancellation, and `internal` for other failures. It is `null` on queued,
+running, and completed jobs, including jobs awaiting an out-of-memory retry. `error`
+remains bounded human-readable text; clients should use `failure_kind` for decisions.
+Failures recorded before this contract are classified as `internal` during migration.
 
 Cancel a job with `DELETE /v1/jobs/{id}`. Cancellation is idempotent: an active job returns
 `202` with `cancellation_requested=true`; a terminal job returns `200` unchanged; an unknown

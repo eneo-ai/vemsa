@@ -44,6 +44,142 @@ async def poll_until(client: httpx.AsyncClient, job_id: str, wanted: str, timeou
             await asyncio.sleep(0.01)
 
 
+@pytest.mark.parametrize(
+    ("failure", "failure_kind"),
+    [
+        ("validation", "input"),
+        ("decode", "input"),
+        ("oom", "capacity"),
+        ("provider", "provider"),
+        ("provider_timeout", "provider"),
+        ("provider_oom", "provider"),
+        ("internal", "internal"),
+        ("cancelled", "cancelled"),
+    ],
+)
+@respx.mock
+async def test_status_reports_failure_kind(
+    settings: Settings, failure: str, failure_kind: str, monkeypatch
+):
+    from types import SimpleNamespace
+
+    from vemsa.pipeline.diarize import _decodable_audio
+    from vemsa.pipeline.whisper_api import request_transcription
+
+    settings.oom_max_attempts = 3 if failure == "provider_oom" else 1
+    settings.whisper_api_base = "https://whisper.example/v1"
+    settings.run_worker = failure_kind != "cancelled"
+    route = respx.post("https://whisper.example/v1/audio/transcriptions")
+    if failure == "provider_timeout":
+        route.mock(side_effect=httpx.ReadTimeout("provider timed out"))
+    elif failure == "provider_oom":
+        route.mock(return_value=Response(503, text="CUDA out of memory"))
+    else:
+        route.mock(return_value=Response(503, text="provider unavailable"))
+    if failure == "decode":
+        monkeypatch.setattr(
+            "vemsa.pipeline.diarize.subprocess.run",
+            lambda *args, **kwargs: SimpleNamespace(returncode=1),
+        )
+
+    class ErrorEngine(FakeEngine):
+        def transcribe(self, audio_path, **kwargs):
+            if failure == "decode":
+                _decodable_audio(audio_path)
+            if failure_kind == "provider":
+                request_transcription(settings, audio_path, language="sv", model="test")
+            errors = {
+                "validation": ValueError("invalid audio"),
+                "oom": MemoryError("out of memory"),
+                "internal": RuntimeError("unexpected failure"),
+            }
+            raise errors[failure]
+
+    async with api_client(settings, ErrorEngine()) as (client, _):
+        response = await client.post("/v1/jobs", files={"file": ("a.wav", b"audio")}, headers=AUTH)
+        assert response.status_code == 202
+        job_id = response.json()["job_id"]
+        if failure_kind == "cancelled":
+            assert (await client.delete(f"/v1/jobs/{job_id}", headers=AUTH)).status_code == 202
+        status = await poll_until(
+            client, job_id, "cancelled" if failure_kind == "cancelled" else "failed"
+        )
+        assert status["failure_kind"] == failure_kind
+
+
+@pytest.mark.parametrize("upload", [False, True])
+async def test_idempotent_submit_returns_original_at_capacity(settings: Settings, upload: bool):
+    settings.run_worker = False
+    settings.max_queued_jobs = settings.max_queued_jobs_per_client = 1
+    headers = {**AUTH, "Idempotency-Key": "meeting-1"}
+    payload = (
+        {"files": {"file": ("meeting.wav", b"audio")}, "data": {"language": "sv"}}
+        if upload
+        else {"json": {"source_url": "https://example.org/a.mp3", "language": "sv"}}
+    )
+    async with api_client(settings) as (client, app):
+        first = await client.post("/v1/jobs", headers=headers, **payload)
+        assert first.status_code == 202
+        repeats = await asyncio.gather(
+            *(client.post("/v1/jobs", headers=headers, **payload) for _ in range(8))
+        )
+        assert [response.status_code for response in repeats] == [202] * 8
+        assert all(response.json() == first.json() for response in repeats)
+        assert await app.state.deps.ready_store.count_active() == 1
+        assert len(list(settings.work_dir.glob("*"))) == (1 if upload else 0)
+        job_id = first.json()["job_id"]
+        await client.delete(f"/v1/jobs/{job_id}", headers=AUTH)
+        terminal = await client.post("/v1/jobs", headers=headers, **payload)
+        assert terminal.status_code == 202
+        assert terminal.json() == {"job_id": job_id, "status": "cancelled"}
+        assert await app.state.deps.ready_store.pool.fetchval("SELECT COUNT(*) FROM jobs") == 1
+        assert list(settings.work_dir.glob("*")) == []
+
+
+@pytest.mark.parametrize("change", ["payload", "audio"])
+async def test_idempotency_conflict_and_client_scope(settings: Settings, change: str):
+    settings.run_worker = False
+    settings.api_tokens = ["alpha=alpha-secret", "beta=beta-secret"]
+    headers = {"Authorization": "Bearer alpha-secret", "Idempotency-Key": "meeting-1"}
+    async with api_client(settings) as (client, app):
+        first = await client.post("/v1/jobs", headers=headers, files={"file": ("a.wav", b"audio")})
+        assert first.status_code == 202
+        changed = await client.post(
+            "/v1/jobs",
+            headers=headers,
+            files={"file": ("a.wav", b"changed" if change == "audio" else b"audio")},
+            data={"language": "en" if change == "payload" else "sv"},
+        )
+        assert changed.status_code == 409
+        other = await client.post(
+            "/v1/jobs",
+            headers={**headers, "Authorization": "Bearer beta-secret"},
+            files={"file": ("a.wav", b"audio")},
+        )
+        assert other.status_code == 202
+        assert other.json()["job_id"] != first.json()["job_id"]
+        assert await app.state.deps.ready_store.count_active() == 2
+        assert len(list(settings.work_dir.iterdir())) == 2
+
+
+async def test_concurrent_idempotent_submits_create_one_job(settings: Settings):
+    settings.run_worker = False
+    async with api_client(settings) as (client, app):
+        responses = await asyncio.gather(
+            *(
+                client.post(
+                    "/v1/jobs",
+                    json={"source_url": "https://example.org/a.mp3"},
+                    headers={**AUTH, "Idempotency-Key": "meeting-1"},
+                )
+                for _ in range(8)
+            )
+        )
+        assert all(response.status_code == 202 for response in responses)
+        assert len({response.json()["job_id"] for response in responses}) == 1
+        assert await app.state.deps.ready_store.count_active() == 1
+
+
 async def test_missing_or_wrong_token_gets_401(settings: Settings):
     async with api_client(settings) as (client, _):
         assert (await client.get("/v1/jobs/x")).status_code == 401
@@ -67,6 +203,7 @@ async def test_json_submission_full_lifecycle(settings: Settings):
 
         status = await poll_until(client, job_id, "completed")
         assert status["error"] is None
+        assert status["failure_kind"] is None
         assert status["stage"] == "finalizing"
         assert status["queue_position"] is None
         assert "created_at" in status

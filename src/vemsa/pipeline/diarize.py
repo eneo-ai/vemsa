@@ -23,6 +23,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class AudioDecodeError(RuntimeError):
+    pass
+
+
 @dataclass(frozen=True)
 class Turn:
     start: float
@@ -647,7 +651,7 @@ def _decodable_audio(audio_path: Path) -> tuple[Path, bool]:
     )
     if completed.returncode != 0:
         converted.unlink(missing_ok=True)
-        raise RuntimeError(f"ffmpeg could not decode the audio (exit {completed.returncode})")
+        raise AudioDecodeError(f"ffmpeg could not decode the audio (exit {completed.returncode})")
     return converted, True
 
 

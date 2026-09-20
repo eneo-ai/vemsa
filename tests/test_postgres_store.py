@@ -33,6 +33,47 @@ async def postgres_store():
         await store.close()
 
 
+@pytest.mark.parametrize("scope", ["global", "client"])
+async def test_concurrent_admission_enforces_active_cap(postgres_store: PostgresJobStore, scope):
+    first = new_job(JobRequest(source_url="https://example.org/running.mp3"), client_id="alpha")
+    await postgres_store.create(first)
+    assert await postgres_store.claim_next_queued(worker_id="worker-a") is not None
+    jobs = [
+        new_job(
+            JobRequest(source_url=f"https://example.org/{index}.mp3"),
+            client_id="alpha" if scope == "client" else f"client-{index}",
+        )
+        for index in range(12)
+    ]
+    other_store = PostgresJobStore(postgres_store._database_url)
+    await other_store.open()
+    try:
+        results = await asyncio.gather(
+            *(
+                (postgres_store if index % 2 else other_store).create(
+                    job, max_active=3 if scope == "global" else 20, max_active_per_client=3
+                )
+                for index, job in enumerate(jobs)
+            ),
+            return_exceptions=True,
+        )
+    finally:
+        await other_store.close()
+    admitted = [result for result in results if not isinstance(result, BaseException)]
+    assert len(admitted) == 2
+    assert await postgres_store.count_active() == 3
+    from vemsa.jobs.store import QueueCapacityError
+
+    rejected = [result for result in results if isinstance(result, BaseException)]
+    assert all(
+        isinstance(result, QueueCapacityError) and result.scope == scope for result in rejected
+    )
+    expected = sorted(admitted, key=lambda job: job.created_at)
+    for job in expected:
+        claimed = await postgres_store.claim_next_queued(worker_id="worker-b")
+        assert claimed is not None and claimed.id == job.id
+
+
 async def test_postgres_leases_ownership_and_outbox(postgres_store: PostgresJobStore):
     first = new_job(JobRequest(source_url="https://example.org/a.mp3"), client_id="alpha")
     second = new_job(JobRequest(source_url="https://example.org/b.mp3"), client_id="beta")

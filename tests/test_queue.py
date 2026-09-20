@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import json
+import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from httpx import Response
 from conftest import FailingEngine, FakeEngine, GateEngine, wait_for_status
 from vemsa.config import Settings
 from vemsa.jobs.models import JobRequest, JobStatus, new_job
+from vemsa.jobs.postgres_store import PostgresJobStore
 from vemsa.jobs.queue import JobQueue
 from vemsa.jobs.store import JobStore
 
@@ -38,6 +40,59 @@ def upload_job(tmp_path: Path, **request_kwargs):
     audio = tmp_path / "input.wav"
     audio.write_bytes(b"fake audio bytes")
     return new_job(JobRequest(**request_kwargs), audio_path=str(audio)), audio
+
+
+@respx.mock
+@pytest.mark.parametrize("slow_control_start", [False, True])
+async def test_lease_heartbeat_precedes_and_covers_source_fetch(
+    store: JobStore, settings: Settings, monkeypatch, slow_control_start: bool
+):
+    settings.job_lease_s = 0.3
+    settings.lease_heartbeat_s = 0.05
+    settings.queue_poll_interval_s = 0.01
+    if slow_control_start:
+        start_control = JobQueue._start_control_thread
+
+        async def delayed_control_start(self):
+            await asyncio.sleep(0.1)
+            await start_control(self)
+
+        monkeypatch.setattr(JobQueue, "_start_control_thread", delayed_control_start)
+    first_renewal = threading.Event()
+    fetch_started = asyncio.Event()
+    release_fetch = asyncio.Event()
+    heartbeat_before_fetch = False
+    renew_lease = PostgresJobStore.renew_lease
+
+    async def observe_renewal(self, *args, **kwargs):
+        renewed = await renew_lease(self, *args, **kwargs)
+        if renewed:
+            first_renewal.set()
+        return renewed
+
+    async def fetch(request):
+        nonlocal heartbeat_before_fetch
+        heartbeat_before_fetch = first_renewal.is_set()
+        fetch_started.set()
+        await release_fetch.wait()
+        return Response(200, content=b"audio")
+
+    monkeypatch.setattr(PostgresJobStore, "renew_lease", observe_renewal)
+    respx.get("https://example.org/slow.mp3").mock(side_effect=fetch)
+    job = new_job(JobRequest(source_url="https://example.org/slow.mp3"))
+    await store.create(job)
+    async with running_queue(store, FakeEngine(), settings):
+        try:
+            current = await store.get(job.id)
+            assert current is not None and current.status != JobStatus.FAILED
+            async with asyncio.timeout(5):
+                await fetch_started.wait()
+            assert heartbeat_before_fetch
+            await asyncio.sleep(0.5)
+            assert await store.claim_next_queued(worker_id="other-worker") is None
+        finally:
+            release_fetch.set()
+        await wait_for_status(store, job.id, JobStatus.COMPLETED)
 
 
 @pytest.mark.parametrize("include_review", [False, True])
@@ -450,6 +505,7 @@ async def test_out_of_memory_requeues_and_succeeds_on_retry(
 
     assert completed.attempt == 2
     assert completed.error is None
+    assert completed.failure_kind is None
     assert engine.calls_per_path[audio] == 2
     assert not audio.exists()
 
@@ -470,6 +526,7 @@ async def test_out_of_memory_keeps_audio_and_cooldown_between_attempts(
         requeued = await store.get(job.id)
 
     assert requeued is not None and requeued.status == JobStatus.QUEUED
+    assert requeued.failure_kind is None
     assert requeued.lease_owner is None and requeued.attempt == 1
     assert audio.exists()
     assert engine.calls_per_path[audio] == 1
@@ -488,6 +545,7 @@ async def test_out_of_memory_fails_when_attempts_are_exhausted(
         failed = await wait_for_status(store, job.id, JobStatus.FAILED)
 
     assert failed.attempt == 1
+    assert failed.failure_kind == "capacity"
     assert failed.error is not None and failed.error.startswith("MemoryError")
     assert not audio.exists()
 
