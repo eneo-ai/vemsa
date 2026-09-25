@@ -1,9 +1,12 @@
+import asyncio
+import hashlib
 import json
 import logging
 from datetime import datetime
 from pathlib import Path
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Request, Response, status
+from fastapi import APIRouter, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, ValidationError
 from starlette.datastructures import UploadFile
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -11,7 +14,16 @@ from starlette.formparsers import MultiPartException
 
 from vemsa.api.health import ReadinessResponse, load_readiness
 from vemsa.deps import AppDeps
-from vemsa.jobs.models import Job, JobRequest, JobStage, JobStatus, TranscriptionResult, new_job
+from vemsa.jobs.models import (
+    FailureKind,
+    Job,
+    JobRequest,
+    JobStage,
+    JobStatus,
+    TranscriptionResult,
+    new_job,
+)
+from vemsa.jobs.store import IdempotencyConflictError, QueueCapacityError
 from vemsa.observability import (
     JOB_CANCELLATIONS,
     JOBS_SUBMITTED,
@@ -35,6 +47,7 @@ class JobStatusResponse(BaseModel):
     queue_position: int | None = None
     created_at: datetime
     error: str | None = None
+    failure_kind: FailureKind | None = None
 
 
 class JobCancellationResponse(BaseModel):
@@ -57,38 +70,17 @@ def _validation_error(exc: ValidationError) -> HTTPException:
     )
 
 
-async def _ensure_queue_capacity(deps: AppDeps, client_id: str) -> None:
-    total = await deps.ready_store.count_active()
-    client_total = await deps.ready_store.count_active(client_id=client_id)
-    if total >= deps.settings.max_queued_jobs:
-        QUEUE_REJECTIONS.labels("global").inc()
-        logger.warning(
-            "job rejected because the global queue is full",
-            extra={
-                "event": "queue.rejected",
-                "scope": "global",
-                "client_id": client_id,
-                "active_jobs": total,
-                "limit": deps.settings.max_queued_jobs,
-            },
-        )
-        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail="job queue is full")
-    if client_total >= deps.settings.max_queued_jobs_per_client:
-        QUEUE_REJECTIONS.labels("client").inc()
-        logger.warning(
-            "job rejected because the client queue is full",
-            extra={
-                "event": "queue.rejected",
-                "scope": "client",
-                "client_id": client_id,
-                "active_jobs": client_total,
-                "limit": deps.settings.max_queued_jobs_per_client,
-            },
-        )
-        raise HTTPException(
-            status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="client has reached its active job limit",
-        )
+def _request_digest(job: Job) -> str:
+    audio_digest = None
+    if job.audio_path is not None:
+        with Path(job.audio_path).open("rb") as audio:
+            audio_digest = hashlib.file_digest(audio, "sha256").hexdigest()
+    payload = json.dumps(
+        {"request": job.request.model_dump(mode="json"), "audio_sha256": audio_digest},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode()).hexdigest()
 
 
 _TRANSCRIPT_FIELDS = ("words", "segments")  # size-capped against max_transcript_bytes
@@ -189,16 +181,47 @@ async def _job_from_json(request: Request, deps: AppDeps, client_id: str) -> Job
 
 
 @router.post("/jobs", status_code=status.HTTP_202_ACCEPTED)
-async def create_job(request: Request) -> JobSubmittedResponse:
+async def create_job(
+    request: Request,
+    idempotency_key: Annotated[str | None, Header(min_length=1, max_length=255)] = None,
+) -> JobSubmittedResponse:
     deps = _deps(request)
     client_id: str = request.state.client_id
-    await _ensure_queue_capacity(deps, client_id)
     content_type = request.headers.get("content-type", "")
     if content_type.startswith("multipart/"):
         job = await _job_from_multipart(request, deps, client_id)
     else:
         job = await _job_from_json(request, deps, client_id)
-    await deps.ready_store.create(job)
+    if idempotency_key is not None:
+        job.idempotency_key = idempotency_key
+        job.request_digest = await asyncio.to_thread(_request_digest, job)
+    try:
+        admitted = await deps.ready_store.create(
+            job,
+            max_active=deps.settings.max_queued_jobs,
+            max_active_per_client=deps.settings.max_queued_jobs_per_client,
+        )
+    except (QueueCapacityError, IdempotencyConflictError) as exc:
+        if job.audio_path is not None:
+            Path(job.audio_path).unlink(missing_ok=True)
+        if isinstance(exc, IdempotencyConflictError):
+            raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        QUEUE_REJECTIONS.labels(exc.scope).inc()
+        logger.warning(
+            "job rejected because the queue is full",
+            extra={
+                "event": "queue.rejected",
+                "scope": exc.scope,
+                "client_id": client_id,
+                "active_jobs": exc.active_jobs,
+                "limit": exc.limit,
+            },
+        )
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
+    if admitted.id != job.id:
+        if job.audio_path is not None:
+            Path(job.audio_path).unlink(missing_ok=True)
+        return JobSubmittedResponse(job_id=admitted.id, status=admitted.status)
     JOBS_SUBMITTED.labels("upload" if job.audio_path else "url").inc()
     logger.info(
         "job submitted",
@@ -229,6 +252,7 @@ async def get_job(job_id: str, request: Request) -> JobStatusResponse:
         queue_position=await deps.ready_store.queue_position(job.id, client_id=client_id),
         created_at=job.created_at,
         error=job.error,
+        failure_kind=job.failure_kind,
     )
 
 

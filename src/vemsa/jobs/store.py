@@ -1,8 +1,9 @@
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Protocol
+from typing import Literal, Protocol
 
 from vemsa.jobs.models import (
+    FailureKind,
     Job,
     JobOutcome,
     JobStage,
@@ -12,10 +13,30 @@ from vemsa.jobs.models import (
 )
 
 
+class QueueCapacityError(RuntimeError):
+    def __init__(self, scope: Literal["global", "client"], active_jobs: int, limit: int) -> None:
+        self.scope = scope
+        self.active_jobs = active_jobs
+        self.limit = limit
+        super().__init__(
+            "job queue is full" if scope == "global" else "client has reached its active job limit"
+        )
+
+
+class IdempotencyConflictError(RuntimeError):
+    pass
+
+
 class JobStore(Protocol):
     async def open(self) -> None: ...
     async def close(self) -> None: ...
-    async def create(self, job: Job) -> None: ...
+    async def create(
+        self,
+        job: Job,
+        *,
+        max_active: int | None = None,
+        max_active_per_client: int | None = None,
+    ) -> Job: ...
     async def get(self, job_id: str, *, client_id: str | None = None) -> Job | None: ...
     async def claim_next_queued(
         self,
@@ -54,6 +75,7 @@ class JobStore(Protocol):
         job_id: str,
         error: str,
         *,
+        failure_kind: FailureKind = "internal",
         worker_id: str | None = None,
         webhook_url: str | None = None,
         outcome: JobOutcome | None = None,

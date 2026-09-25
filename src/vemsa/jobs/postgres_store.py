@@ -6,6 +6,7 @@ from typing import Any
 import asyncpg
 
 from vemsa.jobs.models import (
+    FailureKind,
     Job,
     JobOutcome,
     JobRequest,
@@ -15,6 +16,7 @@ from vemsa.jobs.models import (
     WebhookOutboxEvent,
     WorkerSample,
 )
+from vemsa.jobs.store import IdempotencyConflictError, QueueCapacityError
 
 _MIGRATIONS = (
     """
@@ -129,16 +131,32 @@ _MIGRATIONS = (
     );
     CREATE INDEX IF NOT EXISTS idx_worker_samples_sampled_at ON worker_samples (sampled_at);
     """,
+    """
+    ALTER TABLE jobs ADD COLUMN failure_kind TEXT
+        CHECK (failure_kind IN ('input', 'capacity', 'provider', 'internal', 'cancelled'));
+    UPDATE jobs SET failure_kind = 'cancelled' WHERE status = 'cancelled';
+    UPDATE jobs SET failure_kind = 'internal' WHERE status = 'failed';
+    """,
+    """
+    ALTER TABLE jobs ADD COLUMN idempotency_key TEXT;
+    ALTER TABLE jobs ADD COLUMN request_digest TEXT;
+    ALTER TABLE jobs ADD CONSTRAINT jobs_idempotency_digest_check
+        CHECK (idempotency_key IS NULL OR request_digest IS NOT NULL);
+    CREATE UNIQUE INDEX idx_jobs_client_idempotency ON jobs (client_id, idempotency_key)
+        WHERE idempotency_key IS NOT NULL;
+    """,
 )
 
 _JOB_COLUMNS = (
     "id, client_id, status, stage, created_at, updated_at, request_json, audio_path, error, "
-    "attempt, lease_owner, lease_expires_at, cancellation_requested_at, started_at"
+    "attempt, lease_owner, lease_expires_at, cancellation_requested_at, started_at, failure_kind, "
+    "idempotency_key, request_digest"
 )
 _CLAIM_JOB_COLUMNS = (
     "jobs.id, jobs.client_id, jobs.status, jobs.stage, jobs.created_at, jobs.updated_at, "
     "jobs.request_json, jobs.audio_path, jobs.error, jobs.attempt, jobs.lease_owner, "
-    "jobs.lease_expires_at, jobs.cancellation_requested_at, jobs.started_at"
+    "jobs.lease_expires_at, jobs.cancellation_requested_at, jobs.started_at, jobs.failure_kind, "
+    "jobs.idempotency_key, jobs.request_digest"
 )
 
 
@@ -156,6 +174,9 @@ def _row_to_job(row: asyncpg.Record) -> Job:
         request=JobRequest.model_validate(request_data),
         audio_path=row["audio_path"],
         error=row["error"],
+        failure_kind=row["failure_kind"],
+        idempotency_key=row["idempotency_key"],
+        request_digest=row["request_digest"],
         attempt=row["attempt"],
         lease_owner=row["lease_owner"],
         lease_expires_at=row["lease_expires_at"],
@@ -202,20 +223,59 @@ class PostgresJobStore:
             await self._pool.close()
             self._pool = None
 
-    async def create(self, job: Job) -> None:
-        await self.pool.execute(
-            "INSERT INTO jobs"
-            " (id, client_id, status, stage, created_at, updated_at, request_json, audio_path)"
-            " VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)",
-            job.id,
-            job.client_id,
-            job.status.value,
-            job.stage.value,
-            job.created_at,
-            job.updated_at,
-            job.request.model_dump_json(),
-            job.audio_path,
-        )
+    async def create(
+        self,
+        job: Job,
+        *,
+        max_active: int | None = None,
+        max_active_per_client: int | None = None,
+    ) -> Job:
+        async with self.pool.acquire() as connection, connection.transaction():
+            # A global cap needs one admission lock across all API processes.
+            # Uploads and hashing happen before this short transaction.
+            await connection.execute("SELECT pg_advisory_xact_lock(hashtext('vemsa_admission'))")
+            if job.idempotency_key is not None:
+                row = await connection.fetchrow(
+                    f"SELECT {_JOB_COLUMNS} FROM jobs"
+                    " WHERE client_id = $1 AND idempotency_key = $2",
+                    job.client_id,
+                    job.idempotency_key,
+                )
+                if row is not None:
+                    original = _row_to_job(row)
+                    if original.request_digest != job.request_digest:
+                        raise IdempotencyConflictError(
+                            "Idempotency-Key was already used with a different request"
+                        )
+                    return original
+            if max_active is not None or max_active_per_client is not None:
+                counts = await connection.fetchrow(
+                    "SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE client_id = $1) AS client"
+                    " FROM jobs WHERE status IN ('queued', 'running')",
+                    job.client_id,
+                )
+                assert counts is not None
+                if max_active is not None and counts["total"] >= max_active:
+                    raise QueueCapacityError("global", counts["total"], max_active)
+                if max_active_per_client is not None and counts["client"] >= max_active_per_client:
+                    raise QueueCapacityError("client", counts["client"], max_active_per_client)
+            await connection.execute(
+                "INSERT INTO jobs"
+                " (id, client_id, status, stage, created_at, updated_at, request_json, audio_path,"
+                " idempotency_key, request_digest)"
+                " VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10)",
+                job.id,
+                job.client_id,
+                job.status.value,
+                job.stage.value,
+                job.created_at,
+                job.updated_at,
+                job.request.model_dump_json(),
+                job.audio_path,
+                job.idempotency_key,
+                job.request_digest,
+            )
+        return job
 
     async def get(self, job_id: str, *, client_id: str | None = None) -> Job | None:
         query = f"SELECT {_JOB_COLUMNS} FROM jobs WHERE id = $1"
@@ -340,6 +400,7 @@ class PostgresJobStore:
         async with self.pool.acquire() as connection, connection.transaction():
             row = await connection.fetchrow(
                 "UPDATE jobs SET status = $1, updated_at = $2,"
+                " failure_kind = 'cancelled',"
                 " cancellation_requested_at = $2, lease_owner = NULL, lease_expires_at = NULL"
                 " WHERE id = $3 AND client_id = $4 AND status IN ($5, $6)"
                 f" RETURNING {_JOB_COLUMNS}",
@@ -434,11 +495,12 @@ class PostgresJobStore:
         job_id: str,
         error: str,
         *,
+        failure_kind: FailureKind = "internal",
         worker_id: str | None = None,
         webhook_url: str | None = None,
         outcome: JobOutcome | None = None,
     ) -> bool:
-        owner_clause = "" if worker_id is None else " AND lease_owner = $6"
+        owner_clause = "" if worker_id is None else " AND lease_owner = $7"
         now = datetime.now(UTC)
         values: list[Any] = [
             JobStatus.FAILED.value,
@@ -446,12 +508,14 @@ class PostgresJobStore:
             now,
             job_id,
             JobStatus.RUNNING.value,
+            failure_kind,
         ]
         if worker_id is not None:
             values.append(worker_id)
         async with self.pool.acquire() as connection, connection.transaction():
             command = await connection.execute(
                 "UPDATE jobs SET status = $1, error = $2, updated_at = $3,"
+                " failure_kind = $6,"
                 " lease_owner = NULL, lease_expires_at = NULL"
                 " WHERE id = $4 AND status = $5" + owner_clause,
                 *values,
