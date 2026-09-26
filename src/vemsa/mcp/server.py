@@ -9,6 +9,8 @@ from pydantic import ValidationError
 
 from vemsa.deps import AppDeps
 from vemsa.jobs.models import JobRequest, JobStatus, new_job
+from vemsa.jobs.store import QueueCapacityError
+from vemsa.observability import QUEUE_REJECTIONS
 from vemsa.security import ForbiddenUrlError, validate_outbound_url
 
 INSTRUCTIONS = """Transcribe audio (Swedish-optimized) with word timestamps and speaker
@@ -44,12 +46,6 @@ def build_mcp(deps: AppDeps) -> FastMCP:
         url: str, language: str, diarize: bool, vocabulary: list[str] | None = None
     ) -> str:
         client_id = _client_id()
-        total = await deps.ready_store.count_active()
-        client_total = await deps.ready_store.count_active(client_id=client_id)
-        if total >= deps.settings.max_queued_jobs:
-            raise ToolError("job queue is full")
-        if client_total >= deps.settings.max_queued_jobs_per_client:
-            raise ToolError("client has reached its active job limit")
         try:
             job_request = JobRequest(
                 source_url=url,  # type: ignore[arg-type]
@@ -60,7 +56,16 @@ def build_mcp(deps: AppDeps) -> FastMCP:
         except ValidationError as exc:
             raise ToolError(f"invalid arguments: {exc}") from exc
         job = new_job(job_request, client_id=client_id)
-        await deps.ready_store.create(job)
+        try:
+            # the store counts and inserts under one admission lock, as for HTTP submits
+            await deps.ready_store.create(
+                job,
+                max_active=deps.settings.max_queued_jobs,
+                max_active_per_client=deps.settings.max_queued_jobs_per_client,
+            )
+        except QueueCapacityError as exc:
+            QUEUE_REJECTIONS.labels(exc.scope).inc()
+            raise ToolError(str(exc)) from exc
         if deps.queue is not None:
             deps.queue.notify()
         return job.id

@@ -178,3 +178,33 @@ async def test_mcp_alias_does_not_shadow_other_routes(settings: Settings):
         async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
             assert (await client.get("/livez")).status_code == 200
             assert (await client.get("/mcpx")).status_code == 404
+
+
+@pytest.mark.parametrize(
+    ("limits", "message"),
+    [
+        ({"max_queued_jobs": 1, "max_queued_jobs_per_client": 1}, "job queue is full"),
+        ({"max_queued_jobs_per_client": 1}, "client has reached its active job limit"),
+    ],
+)
+async def test_concurrent_submits_respect_the_queue_limits(
+    settings: Settings, limits: dict[str, int], message: str
+):
+    settings = settings.model_copy(update=limits)
+    deps = AppDeps(settings=settings, engine=FakeEngine())
+    deps.store = PostgresJobStore(settings.database_url)
+    await deps.store.open()
+    try:
+        async with Client(build_mcp(deps)) as client:
+            results = await asyncio.gather(
+                *(client.call_tool("submit_transcription", {"url": AUDIO_URL}) for _ in range(4)),
+                return_exceptions=True,
+            )
+        admitted = [result.data for result in results if not isinstance(result, BaseException)]
+        refused = [result for result in results if isinstance(result, BaseException)]
+        assert len(admitted) == 1 and isinstance(admitted[0], str) and admitted[0]
+        assert len(refused) == 3
+        assert all(isinstance(error, ToolError) and message in str(error) for error in refused)
+        assert await deps.store.count_active() == 1
+    finally:
+        await deps.store.close()
