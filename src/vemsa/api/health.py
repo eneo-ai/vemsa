@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from vemsa.deps import AppDeps
+from vemsa.jobs.models import JobTask
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,8 @@ class ReadinessResponse(BaseModel):
     worker_ready: bool
     queue_accepting_jobs: bool
     queued_jobs: int | None
+    # capability, not capacity: reported whether or not the deployment is ready
+    supported_tasks: list[JobTask]
 
 
 async def load_readiness(deps: AppDeps, *, client_id: str | None = None) -> ReadinessResponse:
@@ -73,4 +76,5 @@ async def load_readiness(deps: AppDeps, *, client_id: str | None = None) -> Read
         worker_ready=worker_ready,
         queue_accepting_jobs=queue_accepting_jobs,
         queued_jobs=queued_jobs,
+        supported_tasks=deps.settings.supported_tasks(),
     )

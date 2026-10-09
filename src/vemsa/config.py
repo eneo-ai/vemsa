@@ -7,6 +7,7 @@ from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 if TYPE_CHECKING:
+    from vemsa.jobs.models import JobTask
     from vemsa.pipeline.diarize import AttributionTuning
 
 GIB = 1024**3
@@ -161,6 +162,20 @@ class Settings(BaseSettings):
         if self.engine != "auto":
             return self.engine
         return "hybrid" if self.whisper_api_base else "local"
+
+    def supported_tasks(self) -> "list[JobTask]":
+        """The job tasks this deployment accepts, sorted. Job admission (REST and
+        MCP) and authenticated readiness both read this, so they cannot disagree."""
+        if self.resolve_engine() == "diarize":
+            return ["align", "diarize"]
+        return ["align", "diarize", "transcribe"]
+
+    def task_refusal(self, task: str) -> str | None:
+        """Why admission refuses `task` on this deployment, or None when it is accepted."""
+        supported = self.supported_tasks()
+        if task in supported:
+            return None
+        return f"this deployment only accepts {', '.join(f'task={t}' for t in supported)} jobs"
 
     def attribution_tuning(self) -> "AttributionTuning":
         """The VEMSA_ATTR_* knobs as the pipeline's tuning object (imported lazily:

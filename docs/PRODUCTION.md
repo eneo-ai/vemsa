@@ -113,14 +113,17 @@ The full responsibility split between eneo and Vemsa — who owns identity, stor
 timestamps, and the output contract — is documented in
 [ARCHITECTURE.md](ARCHITECTURE.md); this section is the deployment checklist.
 
-Eneo integrates Vemsa as the engine for its flow `transcribe_only` steps. Vemsa exposes
-authenticated readiness, coarse job stages, queue position, and idempotent cancellation.
-Eneo uploads the original audio as multipart to `POST /v1/jobs`, polls
-`GET /v1/jobs/{id}`, cancels through `DELETE /v1/jobs/{id}`, and passes `result.text`
-verbatim into the flow output. Deployment checklist:
+Eneo connects Vemsa as a speaker identification service. Eneo's own transcription model
+writes the text; Vemsa labels who says what. Eneo uploads the original audio with the
+model's words and segments as multipart to `POST /v1/jobs` (`task=diarize`, plus
+`max_speakers` when the flow sets one), polls `GET /v1/jobs/{id}`, and cancels through
+`DELETE /v1/jobs/{id}`. Its connection check reads `supported_tasks` from
+`GET /v1/health/ready` and reports a deployment without `diarize` as unable to identify
+speakers. Deployment checklist:
 
-1. **Credential**: provision a named token, `VEMSA_API_TOKENS=eneo=<long-random-value>`;
-   eneo stores it as `FLOW_TRANSCRIPTION_SERVICE_API_KEY`.
+1. **Credential**: provision a named token, `VEMSA_API_TOKENS=eneo=<long-random-value>`.
+   An eneo administrator connects the service with Vemsa's address and that token under
+   Models, Transcription, Speaker identification, then grants it to spaces.
 2. **Reachability**: the Compose file publishes the API on loopback only. Set `VEMSA_BIND`
    to a private interface reachable by eneo's flow execution worker, or use
    `compose.eneo.yaml` to attach the API container to a shared Docker network. For local
@@ -207,7 +210,8 @@ timestamps and compare signatures in constant time.
 - `/livez` checks that the API process can answer.
 - `/readyz` checks PostgreSQL and a recent worker heartbeat.
 - `/v1/health/ready` is authenticated and reports service version, database/worker readiness,
-  queue admission state, and queue depth.
+  queue admission state, queue depth, and the job tasks the deployment accepts
+  (`supported_tasks`).
 - `/metrics` exposes authenticated Prometheus data.
 
 Alert at minimum on oldest queued-job age, queue depth, queue rejection rate, failure and

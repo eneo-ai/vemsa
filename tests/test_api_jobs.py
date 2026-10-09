@@ -465,6 +465,7 @@ async def test_authenticated_readiness_contract(settings: Settings):
             "worker_ready": True,
             "queue_accepting_jobs": True,
             "queued_jobs": 0,
+            "supported_tasks": ["align", "diarize", "transcribe"],
         }
 
 
@@ -494,6 +495,14 @@ async def test_readiness_is_503_without_a_worker(settings: Settings):
         assert response.status_code == 503
         assert response.json()["status"] == "not_ready"
         assert response.json()["worker_ready"] is False
+        # capability is not readiness: an unready deployment still says what it accepts
+        assert response.json()["supported_tasks"] == ["align", "diarize", "transcribe"]
+
+
+async def test_unauthenticated_readiness_does_not_publish_supported_tasks(settings: Settings):
+    async with api_client(settings) as (client, _):
+        for path in ("/readyz", "/healthz"):
+            assert "supported_tasks" not in (await client.get(path)).json()
 
 
 async def test_openapi_advertises_job_lifecycle(settings: Settings):

@@ -55,6 +55,8 @@ def build_mcp(deps: AppDeps) -> FastMCP:
             )
         except ValidationError as exc:
             raise ToolError(f"invalid arguments: {exc}") from exc
+        if (refusal := deps.settings.task_refusal(job_request.task)) is not None:
+            raise ToolError(refusal)
         job = new_job(job_request, client_id=client_id)
         try:
             # the store counts and inserts under one admission lock, as for HTTP submits

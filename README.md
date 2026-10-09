@@ -215,7 +215,11 @@ curl -X DELETE http://localhost:8000/v1/jobs/$JOB_ID \
 
 Authenticated `GET /v1/health/ready` reports database and worker readiness alongside
 `service_version`, `queue_accepting_jobs`, and `queued_jobs`; an unavailable database or
-worker returns `503`.
+worker returns `503`. `supported_tasks` lists, sorted, the job tasks this deployment
+accepts: `["align", "diarize", "transcribe"]`, or `["align", "diarize"]` on the
+`VEMSA_ENGINE=diarize` tier, which refuses `task=transcribe` with `422`. It describes
+capability, not capacity, so it is present on a `503` answer too. The unauthenticated
+`/readyz` and `/healthz` do not include it.
 
 ```json
 {
