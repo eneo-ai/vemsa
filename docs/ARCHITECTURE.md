@@ -233,8 +233,10 @@ boundary is drawn so that each side owns what only it can know:
 
 Two integration paths use the same deployment, chosen per request:
 
-1. **Vemsa transcribes** — eneo uploads audio (`task=transcribe`), Vemsa runs the full
-   pipeline and returns text with speakers.
+1. **Vemsa transcribes** — a consumer uploads audio (`task=transcribe`), Vemsa runs the
+   full pipeline and returns text with speakers. Eneo no longer uses this path: its own
+   transcription model always writes the text, and Vemsa is connected only to identify
+   speakers.
 2. **Eneo transcribes, Vemsa labels** — eneo runs its own ASR in chunks, then submits the
    audio plus the chunk texts as measured segment windows (`task=diarize`). Vemsa
    force-aligns the text inside those windows and merges speakers; eneo's provider word
