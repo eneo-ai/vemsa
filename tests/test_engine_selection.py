@@ -22,6 +22,22 @@ def test_explicit_engine_passes_through(settings: Settings):
         assert settings.resolve_engine() == engine
 
 
+@pytest.mark.parametrize(
+    ("engine", "tasks"),
+    [
+        ("auto", ["align", "diarize", "transcribe"]),
+        ("local", ["align", "diarize", "transcribe"]),
+        ("hybrid", ["align", "diarize", "transcribe"]),
+        ("remote", ["align", "diarize", "transcribe"]),
+        ("fake", ["align", "diarize", "transcribe"]),
+        ("diarize", ["align", "diarize"]),
+    ],
+)
+def test_supported_tasks_follow_the_engine(settings: Settings, engine, tasks):
+    settings.engine = engine
+    assert settings.supported_tasks() == tasks
+
+
 def test_build_engine_returns_expected_classes(settings: Settings):
     settings.whisper_api_base = "http://whisper.local/v1"
 

@@ -95,11 +95,8 @@ def _part_too_large(deps: AppDeps) -> HTTPException:
 
 
 def _admit_request(job_request: JobRequest, deps: AppDeps) -> None:
-    if job_request.task == "transcribe" and deps.settings.resolve_engine() == "diarize":
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="this deployment only accepts task=diarize jobs",
-        )
+    if (detail := deps.settings.task_refusal(job_request.task)) is not None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=detail)
     if job_request.transcript_bytes() > deps.settings.max_transcript_bytes:
         raise HTTPException(
             status.HTTP_413_CONTENT_TOO_LARGE,

@@ -88,6 +88,13 @@ async def test_submit_vocabulary_reaches_the_engine(settings: Settings):
     assert engine.calls[0]["vocabulary"] == ["Çagri", "Vemsa"]
 
 
+async def test_diarize_tier_refuses_mcp_transcription(settings: Settings):
+    settings.engine = "diarize"
+    async with mcp_client(settings) as client:
+        with pytest.raises(ToolError, match="only accepts task=align, task=diarize"):
+            await client.call_tool("submit_transcription", {"url": AUDIO_URL})
+
+
 async def test_submit_rejects_oversized_vocabulary(settings: Settings):
     async with mcp_client(settings) as client:
         with pytest.raises(ToolError, match="invalid arguments"):

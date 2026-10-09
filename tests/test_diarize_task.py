@@ -135,6 +135,9 @@ async def test_diarize_tier_refuses_transcribe_and_is_ready(settings: Settings):
         response = await submit(client, language="sv")
         assert response.status_code == 422
         assert "task=diarize" in response.json()["detail"]
+        # readiness publishes the same rule admission just applied
+        readiness = await client.get("/v1/health/ready", headers=AUTH)
+        assert readiness.json()["supported_tasks"] == ["align", "diarize"]
 
 
 async def test_fake_engine_alternates_speakers(tmp_path: Path):

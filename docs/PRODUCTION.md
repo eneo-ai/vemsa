@@ -207,7 +207,8 @@ timestamps and compare signatures in constant time.
 - `/livez` checks that the API process can answer.
 - `/readyz` checks PostgreSQL and a recent worker heartbeat.
 - `/v1/health/ready` is authenticated and reports service version, database/worker readiness,
-  queue admission state, and queue depth.
+  queue admission state, queue depth, and the job tasks the deployment accepts
+  (`supported_tasks`).
 - `/metrics` exposes authenticated Prometheus data.
 
 Alert at minimum on oldest queued-job age, queue depth, queue rejection rate, failure and
