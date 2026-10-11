@@ -7,6 +7,8 @@ possible**, while keeping the quality-critical stages — CTC forced alignment (
 timestamps) and [pyannote](https://github.com/pyannote/pyannote-audio) speaker diarization —
 local.
 
+To get Vemsa running and connected to Eneo, follow the [quick start](docs/QUICKSTART.md).
+
 It exposes two front doors over one job engine:
 
 - **Async job API** — submit, poll, cancel, and fetch through `/v1/jobs`

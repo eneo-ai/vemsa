@@ -126,7 +126,8 @@ speakers. Deployment checklist:
    Models, Transcription, Speaker identification, then grants it to spaces.
 2. **Reachability**: the Compose file publishes the API on loopback only. Set `VEMSA_BIND`
    to a private interface reachable by eneo's flow execution worker, or use
-   `compose.eneo.yaml` to attach the API container to a shared Docker network. For local
+   `compose.eneo.yaml` to attach the API container to a shared Docker network, where eneo
+   reaches it at `http://vemsa:8000`. For local
    development against eneo's devcontainer, `VEMSA_BIND=0.0.0.0` makes the port reachable
    via `host.docker.internal` (loopback-published ports are not).
 3. **Admission control**: all eneo tenants share the one `eneo` client id, so
