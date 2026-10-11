@@ -249,9 +249,7 @@ Affected text renders as `[Överlappande tal – osäker talare]`; the structure
 segment keeps its suggested speaker for review. This does not separate voices
 or guarantee the speaker count. Existing requests keep their current behavior.
 
-See the [versioned contract](docs/speaker-review-contract.md),
-[Eneo handover](docs/handover-eneo-speaker-review.md),
-[Lyssna handover](docs/handover-lyssna-speaker-review.md), and
+See the [versioned contract](docs/speaker-review-contract.md) and the
 [synthetic evaluation procedure](docs/speaker-review-evaluation.md).
 
 ### Diarize-only jobs (`task=diarize`)

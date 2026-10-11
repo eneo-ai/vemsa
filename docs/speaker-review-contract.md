@@ -126,6 +126,4 @@ No clustering defaults or automatic centroid merging change in this release.
 Synthetic checks establish correctness of the mechanics; they do not establish
 real-meeting accuracy. CPU/GPU inference need not be bit-identical.
 
-Related: [Eneo handover](handover-eneo-speaker-review.md),
-[Lyssna handover](handover-lyssna-speaker-review.md),
-[benchmark and replay procedure](speaker-review-evaluation.md).
+Related: [benchmark and replay procedure](speaker-review-evaluation.md).
