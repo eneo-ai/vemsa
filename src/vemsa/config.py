@@ -83,6 +83,9 @@ class Settings(BaseSettings):
     attr_boundary_max_gap_s: float = 3.0
     attr_gap_split_s: float = 1.0
     attr_hard_gap_split_s: float = 15.0
+    attr_line_sentence_split_s: float = 15.0
+    attr_line_max_s: float = 30.0
+    attr_line_max_words: int = 60
     attr_min_segment_words: int = 1
     attr_min_segment_duration_s: float = 0.6
     attr_align_merge_gap_s: float = 0.5
@@ -193,6 +196,9 @@ class Settings(BaseSettings):
             boundary_max_gap_s=self.attr_boundary_max_gap_s,
             gap_split_s=self.attr_gap_split_s,
             hard_gap_split_s=self.attr_hard_gap_split_s,
+            line_sentence_split_s=self.attr_line_sentence_split_s,
+            line_max_s=self.attr_line_max_s,
+            line_max_words=self.attr_line_max_words,
             min_segment_words=self.attr_min_segment_words,
             min_segment_duration_s=self.attr_min_segment_duration_s,
             align_merge_gap_s=self.attr_align_merge_gap_s,
@@ -294,6 +300,9 @@ class Settings(BaseSettings):
             "attr_boundary_max_gap_s",
             "attr_gap_split_s",
             "attr_hard_gap_split_s",
+            "attr_line_sentence_split_s",
+            "attr_line_max_s",
+            "attr_line_max_words",
             "attr_min_segment_words",
             "attr_min_segment_duration_s",
         ):

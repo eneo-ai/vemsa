@@ -208,6 +208,13 @@ CI-tested without torch) applies, in order:
   it) is merged into the neighbour it forms a sentence with; without grammatical glue it
   is left alone.
 
+Lines Vemsa builds from words without diarization (`diarize=false`) follow the same
+grouping, bounded besides: with no speaker turns, continuous speech would come back as
+one line, so a line that has run 15 s ends at its next sentence end and none grows past
+30 s or 60 words (cut at its last sentence end, else mid-sentence). Diarized segments are
+not bounded: consumers render each one as a speaker-prefixed line, so splitting a
+monologue would only repeat the prefix.
+
 Every threshold above is env-tunable via the `VEMSA_ATTR_*` settings (see
 `AttributionTuning` in `pipeline/diarize.py`); the defaults are the tested behaviour.
 

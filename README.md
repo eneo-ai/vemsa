@@ -56,7 +56,11 @@ for the full rules; every threshold is tunable via `VEMSA_ATTR_*`). Labelled
 words are grouped into output segments the way a human lines a transcript: a segment ends at
 a speaker change, or at a pause (>1 s) that coincides with sentence-final punctuation — a
 pause mid-sentence, or after a heading's colon, keeps the sentence together (a >15 s silence
-splits regardless, so unpunctuated transcripts cannot collapse into one segment). Requests
+splits regardless, so unpunctuated transcripts cannot collapse into one segment). Lines
+without speakers, grouped from words with `diarize=false`, follow the same rules and are
+bounded besides, because no speaker turn breaks continuous speech: a line that has run 15 s
+ends at its next sentence end, and none grows past 30 s or 60 words (cut at its last
+sentence end, else mid-sentence). Requests
 may pass `num_speakers`, or `min_speakers`/`max_speakers`, as a clustering prior — pyannote
 tends to over-split without one.
 
@@ -350,6 +354,7 @@ All settings via environment variables with the `VEMSA_` prefix (see `src/vemsa/
 | `VEMSA_DIARIZE_PREFER_ALIGN` | `true` | `task=diarize`: force-align even when the caller supplied words; a failed alignment fails the job. Set `false` only for callers whose word timestamps are honestly measured |
 | `VEMSA_MIN_ALIGNMENT` | – | Quality floor (`forced` / `provider_words` / `segment_split` / `segment_only`): fail a job whose word-timestamp rung degrades below it instead of completing with a coarser result |
 | `VEMSA_ATTR_*` | see `AttributionTuning` | Word→speaker attribution tuning (coverage floor, island smoothing limits, inheritance gap, segment splitting/merging thresholds) — one env knob per field of `AttributionTuning` in `pipeline/diarize.py`; defaults are the tested behaviour |
+| `VEMSA_ATTR_LINE_SENTENCE_SPLIT_S` / `VEMSA_ATTR_LINE_MAX_S` / `VEMSA_ATTR_LINE_MAX_WORDS` | `15` / `30` / `60` | Lines without speakers: a line that has run this many seconds ends at its next sentence end; none grows past this many seconds or words (cut at its last sentence end, else mid-sentence). Diarized segments are not bounded |
 | `VEMSA_ATTR_ALIGN_MERGE_GAP_S` | `0.5` | `task=align`: consecutive segments overlapping or closer than this are aligned as one window (a sentence split between speakers is timed as a whole) |
 | `VEMSA_ATTR_ALIGN_WINDOW_PAD_S` | `0.5` | `task=align`: slack added on both sides of every alignment window, clamped to the audio and to neighbouring windows (the aligner mis-times a word ending exactly at its window's edge) |
 | `VEMSA_ATTR_RELABEL_MIN_SHARE` | `0.5` | `task=diarize` with caller speaker labels: a new cluster takes the caller label holding at least this share of its overlap with labelled speech; below it the cluster is a new speaker |

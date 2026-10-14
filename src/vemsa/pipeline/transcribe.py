@@ -127,7 +127,7 @@ class EasyTranscriberEngine:
             )
             segments = assign_speakers(words, turns, tuning=self._settings.attribution_tuning())
         else:
-            segments = segments_without_speakers(words)
+            segments = segments_without_speakers(words, tuning=self._settings.attribution_tuning())
 
         return apply_speaker_review(
             TranscriptionResult(
