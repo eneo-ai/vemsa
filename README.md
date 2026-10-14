@@ -30,7 +30,7 @@ The service is platform-agnostic: any client that can speak HTTP (or MCP) can us
 | `local` | in-process ([easytranscriber](https://github.com/kb-labb/easytranscriber)) | CTC forced alignment (best) | `local`, `diarize` | this box has a GPU, no external whisper |
 | `hybrid` | remote endpoint | local CTC forced alignment via [easyaligner](https://github.com/kb-labb/easyaligner) of the remote transcript (WhisperX-style) | `align`, `diarize` | offload heavy whisper, keep precise timestamps — alignment needs only a wav2vec2-sized model |
 | `remote` | remote endpoint | provider's own (quality varies by serving stack) | `diarize`, `align` | the whisper provider is contractually required to measure timestamps honestly |
-| `diarize` | none — transcripts come from the caller | local forced alignment of the caller's transcript (or the caller's words with `VEMSA_DIARIZE_PREFER_ALIGN=false`) | `diarize`, `align` | the consumer transcribes with its own models; Vemsa adds only speaker labels |
+| `diarize` | none — transcripts come from the caller | local forced alignment of the caller's transcript (or the caller's words with `VEMSA_DIARIZE_PREFER_ALIGN=false`) | `diarize`, `align` | the consumer transcribes with its own models; Vemsa adds only speaker labels or word timestamps |
 | `fake` | none | canned | – | dev/smoke |
 
 `auto` picks `hybrid` when `VEMSA_WHISPER_API_BASE` is set, otherwise `local`.
@@ -109,6 +109,8 @@ Who wins when several sources are available differs by task, deliberately:
   alignment fail, the job fails; the set-aside words are never resurrected. Callers that
   measure their word timestamps honestly can restore caller-words-first with
   `VEMSA_DIARIZE_PREFER_ALIGN=false`.
+- **`task=align` and `task=timestamp`**: forced alignment only — neither task accepts
+  caller words, and a failed alignment fails the job.
 
 The merge is logged (`alignment=forced words=<n>`), so the worker log always answers
 "which timeline were the speakers attached to".
@@ -222,10 +224,10 @@ curl -X DELETE http://localhost:8000/v1/jobs/$JOB_ID \
 Authenticated `GET /v1/health/ready` reports database and worker readiness alongside
 `service_version`, `queue_accepting_jobs`, and `queued_jobs`; an unavailable database or
 worker returns `503`. `supported_tasks` lists, sorted, the job tasks this deployment
-accepts: `["align", "diarize", "transcribe"]`, or `["align", "diarize"]` on the
-`VEMSA_ENGINE=diarize` tier, which refuses `task=transcribe` with `422`. It describes
-capability, not capacity, so it is present on a `503` answer too. The unauthenticated
-`/readyz` and `/healthz` do not include it.
+accepts: `["align", "diarize", "timestamp", "transcribe"]`, or
+`["align", "diarize", "timestamp"]` on the `VEMSA_ENGINE=diarize` tier, which refuses
+`task=transcribe` with `422`. It describes capability, not capacity, so it is present on a
+`503` answer too. The unauthenticated `/readyz` and `/healthz` do not include it.
 
 ```json
 {
@@ -320,11 +322,41 @@ on each side, so tight windows are fine. Interpolated words (`probability` 0.0, 
 signal that an edit no longer fits its audio. `words`, speaker-count priors, and
 `vocabulary` are rejected (422). Accepted on every tier, including `VEMSA_ENGINE=diarize`.
 
-Every engine tier accepts all three tasks — one full deployment serves transcription,
-diarize-only, and realignment jobs side by side, and each request chooses. Optionally,
-`VEMSA_ENGINE=diarize` locks a deployment down to caller-supplied transcripts: no whisper
-endpoint needed, and `task=transcribe` submissions are rejected with 422. The MCP tools
-remain transcribe-only.
+### Word timestamps without speakers (`task=timestamp`)
+
+When the transcript is produced elsewhere and only its timing is wanted — to play from a
+word, or to follow the audio word by word — `task=timestamp` takes the audio plus the
+transcript as `segments` and returns word timestamps without identifying speakers: no ASR,
+no diarization, one alignment pass.
+
+```bash
+curl -X POST http://localhost:8000/v1/jobs \
+  -H "Authorization: Bearer $TOKEN" \
+  -F file=@meeting.mp3 -F task=timestamp -F language=sv \
+  -F 'segments=[{"start":0.0,"end":300.0,"text":"Hej och välkomna. ..."},
+                {"start":300.0,"end":600.0,"text":"Första punkten är budgeten. ..."}]'
+```
+
+Send segments with **measured** windows, as for `task=diarize` — e.g. one segment per
+transcription chunk. The windows anchor the alignment; windows implying an impossible
+speaking rate are replaced by one window over the whole audio (see "Window trust" above).
+The result is a `TranscriptionResult` whose segments are the aligned words grouped into
+bounded lines without speakers (see Engine tiers), so the caller's windows do not come
+back. Every segment carries its `words` with CTC scores and `speaker: null`;
+`speaker_review` is `null`; `alignment` is always `forced`; `text` renders the lines
+without speaker labels; `model` is echoed (default `external`). A transcript that cannot
+be aligned fails the job, and `VEMSA_ALIGN_MAX_INTERPOLATED_SHARE` and
+`VEMSA_MIN_ALIGNMENT` apply as for every forced-rung job. `diarize` defaults to `false`
+for this task and `true` is rejected (422), as are `words` (top level or inside segments),
+segment `speaker` labels and speaker-review metadata, speaker-count priors,
+`include_speaker_review`, and `vocabulary`. Accepted on every tier, including
+`VEMSA_ENGINE=diarize`.
+
+Every engine tier accepts all four tasks — one full deployment serves transcription,
+diarize-only, realignment, and timestamp jobs side by side, and each request chooses.
+Optionally, `VEMSA_ENGINE=diarize` locks a deployment down to caller-supplied transcripts:
+no whisper endpoint needed, and `task=transcribe` submissions are rejected with 422. The
+MCP tools remain transcribe-only.
 
 Auth is fail-closed static bearer authentication intended for internal server-to-server use.
 `VEMSA_API_TOKENS` takes comma-separated `client_id=token` credentials in production, for

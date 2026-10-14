@@ -94,9 +94,11 @@ transcripts, complete source URLs, or webhook payloads.
 
 ## Diarize-only jobs and the optional diarize tier
 
-Every engine tier serves both job kinds: `task=transcribe` runs the full engine and
-`task=diarize` labels speakers on a caller-supplied transcript, chosen per request. The
-expected topology is one full deployment where the consumer's request says what it wants.
+Every engine tier serves every job task, chosen per request: `task=transcribe` runs the
+full engine, while `task=diarize` (speaker labels), `task=align` (re-timing a corrected
+transcript) and `task=timestamp` (word timestamps without speakers) work on a
+caller-supplied transcript. The expected topology is one full deployment where the
+consumer's request says what it wants.
 
 `VEMSA_ENGINE=diarize` is an optional lockdown for a deployment that should never
 transcribe: no ASR engine is constructed, `VEMSA_WHISPER_API_BASE` is not
@@ -114,9 +116,11 @@ timestamps, and the output contract — is documented in
 [ARCHITECTURE.md](ARCHITECTURE.md); this section is the deployment checklist.
 
 Eneo connects Vemsa as a speaker identification service. Eneo's own transcription model
-writes the text; Vemsa labels who says what. Eneo uploads the original audio with the
-model's words and segments as multipart to `POST /v1/jobs` (`task=diarize`, plus
-`max_speakers` when the flow sets one), polls `GET /v1/jobs/{id}`, and cancels through
+writes the text; Vemsa labels who says what, and in flows without speaker identification
+it times the words. Eneo uploads the original audio with the model's words and segments
+as multipart to `POST /v1/jobs` (`task=diarize`, plus `max_speakers` when the flow sets
+one, or `task=timestamp` when the flow does not identify speakers), polls
+`GET /v1/jobs/{id}`, and cancels through
 `DELETE /v1/jobs/{id}`. Its connection check reads `supported_tasks` from
 `GET /v1/health/ready` and reports a deployment without `diarize` as unable to identify
 speakers. Deployment checklist:
@@ -149,14 +153,18 @@ speakers. Deployment checklist:
    in that flow that are certain. Vemsa force-aligns the text inside those windows
    (`VEMSA_DIARIZE_PREFER_ALIGN`, default on), so provider word timestamps are neither
    needed nor wanted in the payload.
-9. **Correction payload**: to re-time a transcript a human corrected, eneo sends
-   `task=align` with the audio and the corrected segments (`start`, `end`, `speaker`,
-   `text`) — the windows from the previous result, a split sentence as two segments over
-   one window. Word timestamps come back re-derived from the audio with speakers verbatim;
-   words with `probability` 0.0 were interpolated (the edit no longer fits its audio) and
-   deserve a review flag. Sending the same labelled segments as `task=diarize` re-runs
-   speaker identification while keeping the names. Both are additive contract changes:
-   a new `task` value, and `Segment.speaker` honoured on input.
+9. **Timestamp payload**: a flow that does not identify speakers sends `task=timestamp`
+   with the same chunk segments, without `diarize`, `max_speakers`, speakers or words.
+   The words come back force-aligned in lines without speakers; a transcript that cannot
+   be aligned fails the job like every forced-rung job.
+10. **Correction payload**: to re-time a transcript a human corrected, eneo sends
+    `task=align` with the audio and the corrected segments (`start`, `end`, `speaker`,
+    `text`) — the windows from the previous result, a split sentence as two segments over
+    one window. Word timestamps come back re-derived from the audio with speakers verbatim;
+    words with `probability` 0.0 were interpolated (the edit no longer fits its audio) and
+    deserve a review flag. Sending the same labelled segments as `task=diarize` re-runs
+    speaker identification while keeping the names. Both are additive contract changes:
+    a new `task` value, and `Segment.speaker` honoured on input.
 
 The response contract eneo depends on (multipart part name `file`, status/stage enums,
 cancellation semantics, `TranscriptionResult`, and the rendered

@@ -28,6 +28,7 @@ from vemsa.pipeline.normalize import alignment_normalizer
 from vemsa.pipeline.realign import align_transcript
 from vemsa.pipeline.render import render_text
 from vemsa.pipeline.speaker_review import apply_speaker_review
+from vemsa.pipeline.timestamp import timestamp_transcript
 
 logger = logging.getLogger(__name__)
 
@@ -184,6 +185,25 @@ class EasyTranscriberEngine:
     ) -> TranscriptionResult:
         report_stage(on_stage, JobStage.ALIGNING)
         return align_transcript(
+            self._segment_aligner,
+            audio_path,
+            segments=segments,
+            language=language,
+            model=model,
+            tuning=self._settings.attribution_tuning(),
+        )
+
+    def timestamp_transcript(
+        self,
+        audio_path: Path,
+        *,
+        segments: list[Segment],
+        language: str,
+        model: str,
+        on_stage: StageReporter | None = None,
+    ) -> TranscriptionResult:
+        report_stage(on_stage, JobStage.ALIGNING)
+        return timestamp_transcript(
             self._segment_aligner,
             audio_path,
             segments=segments,

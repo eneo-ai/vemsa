@@ -153,6 +153,29 @@ class FakeEngine:
             audio_path, segments=segments, language=language, model=model
         )
 
+    def timestamp_transcript(
+        self,
+        audio_path: Path,
+        *,
+        segments: list[Segment],
+        language: str,
+        model: str,
+        on_stage: StageReporter | None = None,
+    ) -> TranscriptionResult:
+        report_stage(on_stage, JobStage.ALIGNING)
+        self.calls.append(
+            {
+                "task": "timestamp",
+                "audio_path": audio_path,
+                "segments": segments,
+                "language": language,
+                "model": model,
+            }
+        )
+        return CannedEngine().timestamp_transcript(
+            audio_path, segments=segments, language=language, model=model
+        )
+
     def warm_up(self) -> None:
         pass
 
@@ -187,6 +210,17 @@ class FailingEngine:
         raise RuntimeError("pipeline exploded")
 
     def align_transcript(
+        self,
+        audio_path: Path,
+        *,
+        segments: list[Segment],
+        language: str,
+        model: str,
+        on_stage: StageReporter | None = None,
+    ) -> TranscriptionResult:
+        raise RuntimeError("pipeline exploded")
+
+    def timestamp_transcript(
         self,
         audio_path: Path,
         *,

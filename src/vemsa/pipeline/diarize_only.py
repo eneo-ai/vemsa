@@ -1,9 +1,9 @@
 """Diarization-only tier (VEMSA_ENGINE=diarize): no ASR engine at all.
 
 For deployments where the consumer transcribes with its own models and only needs
-speaker labels (task=diarize) or re-timed corrections (task=align). transcribe jobs
-are refused at submission on this tier. Transcripts are force-aligned locally, which
-needs the `align` extra."""
+speaker labels (task=diarize), re-timed corrections (task=align) or word timestamps
+without speakers (task=timestamp). transcribe jobs are refused at submission on this
+tier. Transcripts are force-aligned locally, which needs the `align` extra."""
 
 from pathlib import Path
 
@@ -14,6 +14,7 @@ from vemsa.pipeline.base import StageReporter, report_stage
 from vemsa.pipeline.diarize import Diarizer
 from vemsa.pipeline.label import SpeakerDiarizer, label_speakers
 from vemsa.pipeline.realign import align_transcript
+from vemsa.pipeline.timestamp import timestamp_transcript
 
 
 class DiarizeOnlyEngine:
@@ -77,6 +78,25 @@ class DiarizeOnlyEngine:
     ) -> TranscriptionResult:
         report_stage(on_stage, JobStage.ALIGNING)
         return align_transcript(
+            self._segment_aligner,
+            audio_path,
+            segments=segments,
+            language=language,
+            model=model,
+            tuning=self._tuning,
+        )
+
+    def timestamp_transcript(
+        self,
+        audio_path: Path,
+        *,
+        segments: list[Segment],
+        language: str,
+        model: str,
+        on_stage: StageReporter | None = None,
+    ) -> TranscriptionResult:
+        report_stage(on_stage, JobStage.ALIGNING)
+        return timestamp_transcript(
             self._segment_aligner,
             audio_path,
             segments=segments,

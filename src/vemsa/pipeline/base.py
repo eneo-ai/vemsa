@@ -56,4 +56,17 @@ class TranscriptionEngine(Protocol):
         text and speakers verbatim, windows tightened, no ASR or diarization."""
         ...
 
+    def timestamp_transcript(
+        self,
+        audio_path: Path,
+        *,
+        segments: list[Segment],
+        language: str,
+        model: str,
+        on_stage: StageReporter | None = None,
+    ) -> TranscriptionResult:
+        """Word timestamps for a transcript without speakers (task=timestamp): the
+        words force-aligned and grouped into reader lines, no ASR or diarization."""
+        ...
+
     def warm_up(self) -> None: ...

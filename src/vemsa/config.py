@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     # local: in-process easytranscriber (whisper + forced alignment on this machine).
     # hybrid: remote whisper text + local easyaligner forced alignment.
     # remote: remote whisper only, provider timestamps as-is.
-    # diarize: no ASR at all; only task=diarize jobs (caller-supplied transcripts).
+    # diarize: no ASR at all; only caller-supplied transcripts (task=diarize, align, timestamp).
     engine: Literal["auto", "local", "hybrid", "remote", "diarize", "fake"] = "auto"
 
     whisper_api_base: str = ""
@@ -170,8 +170,8 @@ class Settings(BaseSettings):
         """The job tasks this deployment accepts, sorted. Job admission (REST and
         MCP) and authenticated readiness both read this, so they cannot disagree."""
         if self.resolve_engine() == "diarize":
-            return ["align", "diarize"]
-        return ["align", "diarize", "transcribe"]
+            return ["align", "diarize", "timestamp"]
+        return ["align", "diarize", "timestamp", "transcribe"]
 
     def task_refusal(self, task: str) -> str | None:
         """Why admission refuses `task` on this deployment, or None when it is accepted."""

@@ -13,7 +13,7 @@ from vemsa.jobs.models import (
     Word,
 )
 from vemsa.pipeline.base import StageReporter, report_stage
-from vemsa.pipeline.diarize import resolve_segments
+from vemsa.pipeline.diarize import resolve_segments, segments_without_speakers
 from vemsa.pipeline.render import render_text
 from vemsa.pipeline.speaker_review import apply_speaker_review
 
@@ -135,20 +135,10 @@ class CannedEngine:
             time.sleep(self._delay_s)
         aligned: list[Segment] = []
         for segment in sorted(segments, key=lambda item: item.start):
-            tokens = segment.text.split()
-            if not tokens:
+            words = _spread_words(segment)
+            if not words:
                 aligned.append(segment.model_copy(update={"words": []}))
                 continue
-            step = (segment.end - segment.start) / len(tokens)
-            words = [
-                Word(
-                    word=token,
-                    start=round(segment.start + index * step, 3),
-                    end=round(segment.start + (index + 1) * step, 3),
-                    probability=0.9,
-                )
-                for index, token in enumerate(tokens)
-            ]
             aligned.append(
                 segment.model_copy(
                     update={"start": words[0].start, "end": words[-1].end, "words": words}
@@ -163,5 +153,47 @@ class CannedEngine:
             alignment="forced",
         )
 
+    def timestamp_transcript(
+        self,
+        audio_path: Path,
+        *,
+        segments: list[Segment],
+        language: str,
+        model: str,
+        on_stage: StageReporter | None = None,
+    ) -> TranscriptionResult:
+        """Evenly spaced words over each segment's window, grouped into reader
+        lines like the real task, so consumers can test the timestamp contract."""
+        report_stage(on_stage, JobStage.ALIGNING)
+        if self._delay_s:
+            time.sleep(self._delay_s)
+        ordered = sorted(segments, key=lambda item: item.start)
+        lines = segments_without_speakers([w for s in ordered for w in _spread_words(s)])
+        return TranscriptionResult(
+            language=language if language != "auto" else "unknown",
+            duration_seconds=max((line.end for line in lines), default=0.0),
+            model=model,
+            text=render_text(lines),
+            segments=lines,
+            alignment="forced",
+        )
+
     def warm_up(self) -> None:
         pass
+
+
+def _spread_words(segment: Segment) -> list[Word]:
+    """The segment's tokens evenly spaced over its window (canned alignment)."""
+    tokens = segment.text.split()
+    if not tokens:
+        return []
+    step = (segment.end - segment.start) / len(tokens)
+    return [
+        Word(
+            word=token,
+            start=round(segment.start + index * step, 3),
+            end=round(segment.start + (index + 1) * step, 3),
+            probability=0.9,
+        )
+        for index, token in enumerate(tokens)
+    ]

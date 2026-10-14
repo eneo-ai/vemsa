@@ -25,12 +25,12 @@ def test_explicit_engine_passes_through(settings: Settings):
 @pytest.mark.parametrize(
     ("engine", "tasks"),
     [
-        ("auto", ["align", "diarize", "transcribe"]),
-        ("local", ["align", "diarize", "transcribe"]),
-        ("hybrid", ["align", "diarize", "transcribe"]),
-        ("remote", ["align", "diarize", "transcribe"]),
-        ("fake", ["align", "diarize", "transcribe"]),
-        ("diarize", ["align", "diarize"]),
+        ("auto", ["align", "diarize", "timestamp", "transcribe"]),
+        ("local", ["align", "diarize", "timestamp", "transcribe"]),
+        ("hybrid", ["align", "diarize", "timestamp", "transcribe"]),
+        ("remote", ["align", "diarize", "timestamp", "transcribe"]),
+        ("fake", ["align", "diarize", "timestamp", "transcribe"]),
+        ("diarize", ["align", "diarize", "timestamp"]),
     ],
 )
 def test_supported_tasks_follow_the_engine(settings: Settings, engine, tasks):

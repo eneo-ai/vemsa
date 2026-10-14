@@ -25,6 +25,7 @@ from vemsa.pipeline.label import (
 )
 from vemsa.pipeline.realign import align_transcript
 from vemsa.pipeline.speaker_review import apply_speaker_review
+from vemsa.pipeline.timestamp import timestamp_transcript
 from vemsa.pipeline.whisper_api import build_result, parse_verbose_json, request_transcription
 
 logger = logging.getLogger(__name__)
@@ -140,6 +141,25 @@ class HybridEngine:
     ) -> TranscriptionResult:
         report_stage(on_stage, JobStage.ALIGNING)
         return align_transcript(
+            self._segment_aligner,
+            audio_path,
+            segments=segments,
+            language=language,
+            model=model,
+            tuning=self._settings.attribution_tuning(),
+        )
+
+    def timestamp_transcript(
+        self,
+        audio_path: Path,
+        *,
+        segments: list[Segment],
+        language: str,
+        model: str,
+        on_stage: StageReporter | None = None,
+    ) -> TranscriptionResult:
+        report_stage(on_stage, JobStage.ALIGNING)
+        return timestamp_transcript(
             self._segment_aligner,
             audio_path,
             segments=segments,
