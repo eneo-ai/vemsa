@@ -40,10 +40,6 @@ class Turn:
 _SENTENCE_END_CHARS = ".?!…"
 _TRAILING_CLOSERS = "\"'”’»)]"
 
-# A silence this long ends a segment even mid-sentence, so a transcript without
-# punctuation cannot collapse into one endless segment.
-HARD_GAP_SPLIT_S = 15.0
-
 
 @dataclass(frozen=True)
 class AttributionTuning:
@@ -75,7 +71,15 @@ class AttributionTuning:
     # a pause longer than this ends a segment when it coincides with a sentence end
     gap_split_s: float = 1.0
     # a silence longer than this ends a segment even mid-sentence
-    hard_gap_split_s: float = HARD_GAP_SPLIT_S
+    hard_gap_split_s: float = 15.0
+    # speakerless lines only: a line that has run this long ends at its next
+    # sentence end, pause or not (with no speaker turns, continuous speech has
+    # nothing else to break at)
+    line_sentence_split_s: float = 15.0
+    # speakerless lines only: none grows past this many seconds or words; it is
+    # cut at its last sentence end, or mid-sentence when it has none
+    line_max_s: float = 30.0
+    line_max_words: int = 60
     # a segment at most this many words and this short whose speaker appears on
     # neither side is merged into the neighbour it reads mid-sentence with
     min_segment_words: int = 1
@@ -351,15 +355,14 @@ def assign_speakers(
 ) -> list[Segment]:
     """Assign speakers to aligned words by maximal temporal overlap with diarization
     turns, smooth away single-word islands surrounded by another speaker, group
-    consecutive same-speaker words into segments (splitting where a pause longer
-    than tuning.gap_split_s coincides with a sentence end — see _group_labelled),
-    then merge away tiny orphan segments glued mid-sentence to a neighbour."""
+    consecutive same-speaker words into segments (see _line_end), then merge away
+    tiny orphan segments glued mid-sentence to a neighbour."""
     if not words:
         return []
     tuning = tuning or AttributionTuning()
     words = sorted(words, key=lambda word: word.start)
     if not turns:
-        return segments_without_speakers(words, gap_split_s=tuning.gap_split_s)
+        return _group_labelled(words, [None] * len(words), tuning)
     turns = sorted(turns, key=lambda turn: turn.start)
     labels = _label_words(
         words,
@@ -380,9 +383,7 @@ def assign_speakers(
         max_words=tuning.boundary_max_words,
         max_gap_s=tuning.boundary_max_gap_s,
     )
-    segments = _group_labelled(
-        words, labels, tuning.gap_split_s, hard_gap_split_s=tuning.hard_gap_split_s
-    )
+    segments = _group_labelled(words, labels, tuning)
     return _merge_short_orphans(
         segments,
         max_words=tuning.min_segment_words,
@@ -558,21 +559,25 @@ def resolve_segments(
 ) -> list[Segment]:
     """Best segment construction for the available inputs: word-level speaker merge
     when words exist, segment-level merge otherwise; without diarization (turns=None),
-    provider segments verbatim or gap-grouped words."""
+    provider segments verbatim or the words grouped into speakerless lines."""
     if turns is not None:
         if words:
             return assign_speakers(words, turns, tuning=tuning)
         return assign_speakers_to_segments(plain_segments, turns)
     if plain_segments:
         return plain_segments
-    return segments_without_speakers(words)
+    return segments_without_speakers(words, tuning=tuning)
 
 
-def segments_without_speakers(words: list[Word], *, gap_split_s: float = 1.0) -> list[Segment]:
+def segments_without_speakers(
+    words: list[Word], *, tuning: AttributionTuning | None = None
+) -> list[Segment]:
+    """Speakerless reader lines: the words grouped like a diarized transcript
+    whose speaker never changes, and bounded besides (see _line_end)."""
     if not words:
         return []
     words = sorted(words, key=lambda word: word.start)
-    return _group_labelled(words, [None] * len(words), gap_split_s)
+    return _group_labelled(words, [None] * len(words), tuning or AttributionTuning(), bounded=True)
 
 
 def audio_duration(audio_path: Path, *, fallback: float) -> float:
@@ -788,37 +793,66 @@ class Diarizer:
 def _group_labelled(
     words: list[Word],
     labels: list[str | None],
-    gap_split_s: float,
+    tuning: AttributionTuning,
     *,
-    hard_gap_split_s: float = HARD_GAP_SPLIT_S,
+    bounded: bool = False,
 ) -> list[Segment]:
-    """Group consecutive same-speaker words into segments the way a human lines
-    a transcript: a segment ends at a speaker change, at a pause longer than
-    gap_split_s that coincides with sentence-final punctuation (a pause
-    mid-sentence keeps the sentence together), or at a silence longer than
-    hard_gap_split_s regardless of punctuation."""
+    """Group consecutive same-speaker words into segments, one line at a time."""
     segments: list[Segment] = []
-    start_index = 0
-    for index in range(1, len(words) + 1):
-        end_of_input = index == len(words)
-        if not end_of_input:
-            speaker_changed = labels[index] != labels[start_index]
-            gap = words[index].start - words[index - 1].end
-            sentence_break = gap > gap_split_s and _ends_sentence(words[index - 1].word)
-            if not speaker_changed and not sentence_break and gap <= hard_gap_split_s:
-                continue
-        group = words[start_index:index]
+    start = 0
+    while start < len(words):
+        end = _line_end(words, labels, start, tuning, bounded=bounded)
+        group = words[start:end]
         segments.append(
             Segment(
                 start=group[0].start,
                 end=group[-1].end,
-                speaker=labels[start_index],
+                speaker=labels[start],
                 text=" ".join(word.word for word in group),
                 words=group,
             )
         )
-        start_index = index
+        start = end
     return segments
+
+
+def _line_end(
+    words: list[Word],
+    labels: list[str | None],
+    start: int,
+    tuning: AttributionTuning,
+    *,
+    bounded: bool,
+) -> int:
+    """Exclusive end of the segment beginning at words[start], lined the way a
+    human lines a transcript.
+
+    A segment ends at a speaker change; at a pause longer than gap_split_s that
+    coincides with sentence-final punctuation (a pause mid-sentence keeps the
+    sentence together); or at a silence longer than hard_gap_split_s regardless
+    of punctuation. A bounded (speakerless) line also ends, once it has run
+    line_sentence_split_s, at its next sentence end even without a pause, and
+    never grows past line_max_words words or line_max_s seconds: it is cut at its
+    last sentence end, or mid-sentence when it has none. Diarized segments stay
+    unbounded: consumers render each one as a speaker-prefixed line, so splitting
+    a monologue would only repeat the prefix."""
+    last_sentence_end: int | None = None
+    for index in range(start + 1, len(words)):
+        previous = words[index - 1]
+        gap = words[index].start - previous.end
+        if labels[index] != labels[start] or gap > tuning.hard_gap_split_s:
+            return index
+        if _ends_sentence(previous.word):
+            line_s = previous.end - words[start].start
+            if gap > tuning.gap_split_s or (bounded and line_s >= tuning.line_sentence_split_s):
+                return index
+            last_sentence_end = index
+        if bounded and (
+            index - start >= tuning.line_max_words
+            or words[index].end - words[start].start > tuning.line_max_s
+        ):
+            return last_sentence_end if last_sentence_end is not None else index
+    return len(words)
 
 
 def _merge_short_orphans(

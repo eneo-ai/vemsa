@@ -85,6 +85,7 @@ src/vemsa/
     ├── diarize.py      pyannote Diarizer + pure word↔speaker assignment logic
     ├── label.py        task=diarize: label an externally produced transcript
     ├── realign.py      task=align: re-time a corrected, speaker-labelled transcript
+    ├── timestamp.py    task=timestamp: word timestamps for a transcript, no speakers
     ├── diarize_only.py diarize tier: no ASR constructed at all
     ├── render.py       [HH:MM:SS - HH:MM:SS] SPEAKER_00: line rendering
     └── fake.py         canned engine for dev/tests
@@ -92,9 +93,10 @@ ui/                     operator dashboard sources: Vite + React 19 + Astryx + u
 ```
 
 The split inside `pipeline/` mirrors the quality doctrine: everything that decides *where
-words land in time and who said them* (`align.py`, `diarize.py`, `label.py`, `realign.py`)
-is local code under Vemsa's control, while ASR text production is pluggable (in-process,
-remote endpoint, or skipped entirely for `task=diarize` and `task=align`).
+words land in time and who said them* (`align.py`, `diarize.py`, `label.py`, `realign.py`,
+`timestamp.py`) is local code under Vemsa's control, while ASR text production is pluggable
+(in-process, remote endpoint, or skipped entirely for `task=diarize`, `task=align` and
+`task=timestamp`).
 
 ## Job lifecycle
 
@@ -157,7 +159,10 @@ locally, and every tier — including `task=diarize` — renders through the sam
 attribution/grouping/render code, so consumers get one output shape regardless of who
 transcribed. `task=align` is the deliberate short-circuit: the caller's speakers are ground
 truth, so it runs the aligner and the renderer only (`pipeline/realign.py`) — a human's
-corrections come back re-timed in one alignment pass, never re-clustered.
+corrections come back re-timed in one alignment pass, never re-clustered. `task=timestamp`
+is the other one: the caller wants no speakers, so it runs the aligner — on the caller's
+windows, or on one whole-audio window when they are implausible — then the bounded
+grouping of words without speakers and the renderer (`pipeline/timestamp.py`).
 
 The aligner has one silent failure mode worth knowing: when a window's text cannot be
 aligned (too long for its audio, or characters the CTC vocabulary lacks) easyaligner
@@ -208,6 +213,13 @@ CI-tested without torch) applies, in order:
   it) is merged into the neighbour it forms a sentence with; without grammatical glue it
   is left alone.
 
+Lines Vemsa builds from words without diarization (`diarize=false`) follow the same
+grouping, bounded besides: with no speaker turns, continuous speech would come back as
+one line, so a line that has run 15 s ends at its next sentence end and none grows past
+30 s or 60 words (cut at its last sentence end, else mid-sentence). Diarized segments are
+not bounded: consumers render each one as a speaker-prefixed line, so splitting a
+monologue would only repeat the prefix.
+
 Every threshold above is env-tunable via the `VEMSA_ATTR_*` settings (see
 `AttributionTuning` in `pipeline/diarize.py`); the defaults are the tested behaviour.
 
@@ -221,7 +233,7 @@ boundary is drawn so that each side owns what only it can know:
 | End-user identity, tenants, permissions | **eneo** | Vemsa sees exactly one credential (`client_id=eneo`) for all of eneo's tenants |
 | UI, flows, orchestration, retries, deadlines | **eneo** | Vemsa re-leases crashed jobs forever; eneo's poll deadline is the backstop |
 | Original audio custody & long-term storage | **eneo** | Vemsa keeps audio only while a job is active, results only for `VEMSA_RETENTION_HOURS` |
-| ASR in eneo's own transcription flow | **eneo** | eneo may transcribe with its own models and use Vemsa for labels only (`task=diarize`) |
+| ASR in eneo's own transcription flow | **eneo** | eneo may transcribe with its own models and use Vemsa only for speaker labels (`task=diarize`) or word timestamps (`task=timestamp`) |
 | Chunk boundaries in that flow | **eneo** | eneo sends one segment per chunk with windows *it measured itself* — the only trustworthy timestamps in that path |
 | Job queueing, admission, leasing, crash recovery | **Vemsa** | PostgreSQL leases; per-client caps bound eneo's total fan-in across tenants |
 | Whisper ASR when asked to transcribe | **Vemsa** | in-process on GPU (`local`) or brokered to an OpenAI-compatible endpoint (`hybrid`/`remote`) |
@@ -236,12 +248,14 @@ Two integration paths use the same deployment, chosen per request:
 1. **Vemsa transcribes** — a consumer uploads audio (`task=transcribe`), Vemsa runs the
    full pipeline and returns text with speakers. Eneo no longer uses this path: its own
    transcription model always writes the text, and Vemsa is connected only to identify
-   speakers.
+   speakers and time the words.
 2. **Eneo transcribes, Vemsa labels** — eneo runs its own ASR in chunks, then submits the
    audio plus the chunk texts as measured segment windows (`task=diarize`). Vemsa
    force-aligns the text inside those windows and merges speakers; eneo's provider word
    timestamps are neither needed nor wanted in the payload, because decoder-heuristic
-   timelines are exactly what the plausibility gate exists to reject.
+   timelines are exactly what the plausibility gate exists to reject. A flow that does
+   not identify speakers sends the same audio and chunk segments as `task=timestamp`
+   and gets the words timed against the audio, in lines without speakers.
 
 3. **Correction round-trip** — after a human edited the transcript in eneo, eneo sends
    the corrected, speaker-labelled segments with the audio as `task=align` and stores

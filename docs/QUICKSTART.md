@@ -63,8 +63,8 @@ curl -s http://127.0.0.1:8000/v1/health/ready \
 ```
 
 A good answer has status `200` and contains `"status":"ready"`, `"queue_accepting_jobs":true`
-and `"supported_tasks":["align","diarize"]`. `503` with `"status":"not_ready"` means the
-database or the worker is not up yet. `401` means the token is wrong.
+and `"supported_tasks":["align","diarize","timestamp"]`. `503` with `"status":"not_ready"`
+means the database or the worker is not up yet. `401` means the token is wrong.
 
 ## Connect it to Eneo
 

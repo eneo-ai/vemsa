@@ -11,7 +11,10 @@ Language = Literal["sv", "en", "auto"]
 # align: the caller supplies a speaker-labelled transcript (e.g. after a human
 # corrected it) and Vemsa re-derives word timestamps from the audio — no ASR, no
 # diarization, speakers and text kept verbatim.
-JobTask = Literal["transcribe", "diarize", "align"]
+# timestamp: the caller supplies a transcript as timed segments without speakers
+# and Vemsa returns its word timestamps, grouped into reader lines — no ASR, no
+# diarization, no speakers.
+JobTask = Literal["transcribe", "diarize", "align", "timestamp"]
 FailureKind = Literal["input", "capacity", "provider", "internal", "cancelled"]
 EXTERNAL_MODEL = "external"
 
@@ -139,7 +142,8 @@ class JobRequest(BaseModel):
     webhook_url: HttpUrl | None = None
     # task=diarize: the externally produced transcript to label (words and/or
     # segments). task=align: the speaker-labelled segments to re-time against the
-    # audio (segments only; their windows anchor the alignment).
+    # audio (segments only; their windows anchor the alignment). task=timestamp:
+    # the transcript to time (segments only, without words or speakers).
     words: list[Word] | None = None
     segments: list[Segment] | None = None
     # Speaker-count prior for diarization: exact count, or an expected range.
@@ -155,8 +159,21 @@ class JobRequest(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_retiming_review(cls, value: Any) -> Any:
-        if isinstance(value, dict) and value.get("task") == "align" and value.get("speaker_review"):
-            raise ValueError("task=align cannot retime speaker-review metadata")
+        if (
+            isinstance(value, dict)
+            and value.get("task") in ("align", "timestamp")
+            and value.get("speaker_review")
+        ):
+            raise ValueError(f"task={value['task']} cannot retime speaker-review metadata")
+        return value
+
+    @model_validator(mode="before")
+    @classmethod
+    def _timestamp_never_diarizes(cls, value: Any) -> Any:
+        # diarize says whether speakers come back; task=timestamp never returns
+        # any, so the field defaults to false there and true is rejected below
+        if isinstance(value, dict) and value.get("task") == "timestamp" and "diarize" not in value:
+            return {**value, "diarize": False}
         return value
 
     @field_validator("vocabulary")
@@ -183,11 +200,11 @@ class JobRequest(BaseModel):
     def _validate_task(self) -> "JobRequest":
         if self.include_speaker_review and (not self.diarize or self.task == "align"):
             raise ValueError("include_speaker_review requires a diarized transcribe or diarize job")
-        if self.task == "align" and any(
+        if self.task in ("align", "timestamp") and any(
             segment.speaker_attribution is not None or segment.overlap_ids
             for segment in self.segments or []
         ):
-            raise ValueError("task=align cannot retime speaker-review metadata")
+            raise ValueError(f"task={self.task} cannot retime speaker-review metadata")
         if self.num_speakers is not None and (
             self.min_speakers is not None or self.max_speakers is not None
         ):
@@ -198,26 +215,34 @@ class JobRequest(BaseModel):
             and self.min_speakers > self.max_speakers
         ):
             raise ValueError("min_speakers cannot exceed max_speakers")
+        if self.task in ("align", "timestamp") and self.speaker_bounds() is not None:
+            raise ValueError(
+                f"speaker bounds are not accepted for task={self.task} (no diarization)"
+            )
         if not self.diarize and self.speaker_bounds() is not None:
             raise ValueError("speaker bounds require diarize=true")
         if self.task != "transcribe" and self.vocabulary is not None:
             raise ValueError("vocabulary is only accepted for task=transcribe")
         if self.task == "transcribe":
             if self.words is not None or self.segments is not None:
-                raise ValueError(
-                    "words and segments are only accepted for task=diarize or task=align"
-                )
+                raise ValueError("words and segments are not accepted for task=transcribe")
             return self
-        if self.task == "align":
-            if self.words is not None:
-                raise ValueError("words are not accepted for task=align (send segments)")
+        if self.task == "diarize":
+            if not self.words and not self.segments:
+                raise ValueError("task=diarize requires a non-empty words or segments list")
+        else:
+            if self.words is not None or (
+                self.task == "timestamp" and any(segment.words for segment in self.segments or [])
+            ):
+                raise ValueError(f"words are not accepted for task={self.task} (send segments)")
             if not self.segments or not any(segment.text.strip() for segment in self.segments):
-                raise ValueError("task=align requires a non-empty segments list with text")
-            if self.speaker_bounds() is not None:
-                raise ValueError("speaker bounds are not accepted for task=align (no diarization)")
-        elif not self.words and not self.segments:
-            raise ValueError("task=diarize requires a non-empty words or segments list")
-        if not self.diarize:
+                raise ValueError(f"task={self.task} requires a non-empty segments list with text")
+        if self.task == "timestamp":
+            if self.diarize:
+                raise ValueError("task=timestamp cannot set diarize=true (it returns no speakers)")
+            if any(segment.speaker is not None for segment in self.segments or []):
+                raise ValueError("task=timestamp takes segments without speakers")
+        elif not self.diarize:
             raise ValueError(f"task={self.task} cannot set diarize=false")
         spans = [(word.start, word.end) for word in self.words or []] + [
             (segment.start, segment.end) for segment in self.segments or []

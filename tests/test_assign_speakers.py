@@ -1,6 +1,7 @@
 from vemsa.config import Settings
 from vemsa.jobs.models import Segment, Word
 from vemsa.pipeline.diarize import (
+    AttributionTuning,
     Diarizer,
     Turn,
     assign_speakers,
@@ -408,6 +409,67 @@ def test_segments_without_speakers_splits_on_sentence_pause():
 def test_empty_words():
     assert assign_speakers([], [Turn(0.0, 1.0, "SPEAKER_00")]) == []
     assert segments_without_speakers([]) == []
+
+
+# ---- bounded lines: continuous speech has no pauses to break at
+
+
+def back_to_back(texts: list[str], *, step: float = 0.5) -> list[Word]:
+    """Words without any pause between them, one every `step` seconds."""
+    return [word(text, index * step, (index + 1) * step) for index, text in enumerate(texts)]
+
+
+def sentences(count: int, length: int) -> list[str]:
+    """`count` sentences of `length` words, each ending in a full stop."""
+    return [
+        f"s{number}w{index}" + ("." if index == length - 1 else "")
+        for number in range(count)
+        for index in range(length)
+    ]
+
+
+def test_long_line_ends_at_its_next_sentence_end():
+    # 5 s sentences without a pause: a line that has run 15 s ends at the
+    # sentence end reached there, not after minutes of speech
+    segments = segments_without_speakers(back_to_back(sentences(6, 10)))
+    assert [len(s.words) for s in segments] == [30, 30]
+    assert [(s.start, s.end) for s in segments] == [(0.0, 15.0), (15.0, 30.0)]
+    assert all(s.text.endswith(".") for s in segments)
+
+
+def test_diarized_segments_are_not_bounded():
+    # consumers render every diarized segment as a speaker-prefixed line; a
+    # monologue stays one segment, with or without diarization turns
+    words = back_to_back(sentences(12, 10))
+    segments = assign_speakers(words, [Turn(0.0, 70.0, "SPEAKER_00")])
+    assert [(s.speaker, len(s.words)) for s in segments] == [("SPEAKER_00", 120)]
+    assert [len(s.words) for s in assign_speakers(words, [])] == [120]
+
+
+def test_line_without_sentence_end_is_cut_at_the_word_cap():
+    segments = segments_without_speakers(back_to_back([f"w{i}" for i in range(70)], step=0.3))
+    assert [len(s.words) for s in segments] == [60, 10]
+
+
+def test_line_without_sentence_end_is_cut_at_the_duration_cap():
+    segments = segments_without_speakers(back_to_back([f"w{i}" for i in range(40)], step=1.0))
+    assert [(s.start, s.end) for s in segments] == [(0.0, 30.0), (30.0, 40.0)]
+
+
+def test_cap_cuts_at_the_last_sentence_end_in_the_line():
+    # a short sentence, then one that runs past the cap: the line ends after
+    # the short sentence instead of mid-way through the long one, which is
+    # cut at the cap only because it has no sentence end of its own
+    texts = sentences(1, 10) + [f"lång{i}" for i in range(70)]
+    segments = segments_without_speakers(back_to_back(texts, step=0.25))
+    assert [len(s.words) for s in segments] == [10, 60, 10]
+    assert segments[0].text.endswith(".")
+
+
+def test_line_bounds_follow_the_tuning():
+    tuning = AttributionTuning(line_max_words=4)
+    segments = segments_without_speakers(back_to_back([f"w{i}" for i in range(10)]), tuning=tuning)
+    assert [len(s.words) for s in segments] == [4, 4, 2]
 
 
 def plain_segment(start: float, end: float, text: str) -> Segment:

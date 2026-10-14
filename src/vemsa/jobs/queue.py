@@ -468,6 +468,15 @@ class JobQueue:
                     model=job.request.model or EXTERNAL_MODEL,
                     on_stage=_report_stage,
                 )
+            elif job.request.task == "timestamp":
+                result = await asyncio.to_thread(
+                    self._engine.timestamp_transcript,
+                    audio_path,
+                    segments=job.request.segments or [],
+                    language=job.request.language,
+                    model=job.request.model or EXTERNAL_MODEL,
+                    on_stage=_report_stage,
+                )
             else:
                 result = await asyncio.to_thread(
                     self._engine.transcribe,
