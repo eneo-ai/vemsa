@@ -231,6 +231,21 @@ def test_empty_response_raises(whisper_settings: Settings, audio_file: Path):
         engine.transcribe(audio_file, language="sv", model="kb-whisper", diarize=True)
 
 
+SILENT_PAYLOAD = {"text": "", "language": "sv", "duration": 0.74, "segments": [], "words": []}
+
+
+@respx.mock
+def test_silent_audio_returns_empty_transcript(whisper_settings: Settings, audio_file: Path):
+    respx.post(ENDPOINT).mock(return_value=Response(200, json=SILENT_PAYLOAD))
+    engine = OpenAIWhisperEngine(whisper_settings, diarizer=FakeDiarizer())
+
+    result = engine.transcribe(audio_file, language="sv", model="kb-whisper", diarize=True)
+
+    assert result.text == ""
+    assert result.segments == []
+    assert result.duration_seconds == 0.74
+
+
 def test_parse_verbose_json_nests_words_by_midpoint():
     words, segments = parse_verbose_json(WORD_PAYLOAD)
     assert len(words) == 6

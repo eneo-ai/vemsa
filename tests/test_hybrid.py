@@ -118,3 +118,22 @@ def test_no_diarize_with_alignment_groups_aligned_words(
     assert diarizer.calls == []
     assert all(s.speaker is None for s in result.segments)
     assert result.segments[0].words[0].start == 0.05
+
+
+@respx.mock
+def test_silent_audio_returns_empty_transcript_without_aligning(
+    hybrid_settings: Settings, audio_file: Path, monkeypatch
+):
+    payload = {"text": "", "language": "sv", "duration": 0.74, "segments": [], "words": []}
+    respx.post(ENDPOINT).mock(return_value=Response(200, json=payload))
+    engine = HybridEngine(hybrid_settings, diarizer=FakeDiarizer())
+
+    def no_align(*args, **kwargs):
+        raise AssertionError("silent audio must not be aligned")
+
+    monkeypatch.setattr(engine, "_force_align", no_align)
+
+    result = engine.transcribe(audio_file, language="sv", model="kb-whisper", diarize=True)
+
+    assert result.text == ""
+    assert result.segments == []

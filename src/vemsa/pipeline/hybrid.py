@@ -62,7 +62,8 @@ class HybridEngine:
         )
         provider_words, plain_segments = parse_verbose_json(payload)
         if not provider_words and not plain_segments:
-            raise RuntimeError("whisper API returned neither words nor segments")
+            # no speech in the audio: nothing to align or attribute
+            return build_result(payload, [], model=model, language=language)
 
         # provider words are never used as timestamps on this tier; they only
         # judge whether the provider's segment windows can anchor the alignment
