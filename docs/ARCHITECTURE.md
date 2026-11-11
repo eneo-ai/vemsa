@@ -164,12 +164,16 @@ is the other one: the caller wants no speakers, so it runs the aligner — on th
 windows, or on one whole-audio window when they are implausible — then the bounded
 grouping of words without speakers and the renderer (`pipeline/timestamp.py`).
 
-The aligner has one silent failure mode worth knowing: when a window's text cannot be
+The aligner has two silent failure modes worth knowing. When a window's text cannot be
 aligned (too long for its audio, or characters the CTC vocabulary lacks) easyaligner
-spreads the words evenly over the window with score 0.0 instead of raising. Vemsa keeps
-the rung at `forced` but surfaces it — words with `probability` 0.0, an
+spreads the words evenly over the window with score 0.0 instead of raising. When one word's
+audio lies outside its window (a window that cuts a sentence), the word also scores 0.0 and
+its characters land in the zero padding of the window's 30 s chunk: a start past the
+window's end and an end up to 30 s after the window's start. `align.py` keeps every word
+inside the window it was aligned in and ends a 0.0 word no later than the next word starts.
+Vemsa keeps the rung at `forced` but surfaces these words — `probability` 0.0, an
 `align.interpolated` log line per window, a counter, and the
-`VEMSA_ALIGN_MAX_INTERPOLATED_SHARE` floor that turns it into a loud failure.
+`VEMSA_ALIGN_MAX_INTERPOLATED_SHARE` floor that turns them into a loud failure.
 
 Every aligner call (`align.py`, the local engine's easytranscriber run) is handed the
 same text normalizer (`pipeline/normalize.py`): easyaligner's default plus digit runs

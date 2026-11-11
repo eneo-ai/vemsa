@@ -54,8 +54,8 @@ JOB_ALIGNMENT = Counter(
 )
 ALIGNMENT_INTERPOLATED_WORDS = Counter(
     "vemsa_alignment_interpolated_words_total",
-    "Words whose forced-alignment timestamps were linearly interpolated because the"
-    " window's text could not be aligned (reported with probability 0.0)",
+    "Words forced alignment did not place by the audio (reported with probability 0.0):"
+    " a window's text that could not be aligned, or a word its window does not hold",
     ("task",),
 )
 QUEUE_REJECTIONS = Counter(
