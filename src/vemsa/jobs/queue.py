@@ -669,8 +669,8 @@ class JobQueue:
         share = interpolated / len(words)
         if share > self._settings.align_max_interpolated_share:
             raise AlignmentBelowFloorError(
-                f"{interpolated} of {len(words)} words ({share:.0%}) got interpolated"
-                " timestamps because their text could not be aligned against the audio,"
+                f"{interpolated} of {len(words)} words ({share:.0%}) were not placed by"
+                " the audio (probability 0.0) in forced alignment,"
                 f" above the configured share of {self._settings.align_max_interpolated_share:.0%}"
                 " (VEMSA_ALIGN_MAX_INTERPOLATED_SHARE)"
             )
