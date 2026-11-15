@@ -35,11 +35,13 @@ container images `ghcr.io/eneo-ai/vemsa:X.Y.Z` and `:X.Y` (GPU) and `:X.Y.Z-cpu`
   unchanged, but zero-duration words are more common and the number of lines can change. An
   alignment segment whose speech id matches no window now fails the job.
   ([#9](https://github.com/eneo-ai/vemsa/pull/9))
-- Audio without speech, such as a short silent last chunk of a long recording, completes as
-  an empty transcript instead of failing the job; alignment and diarization are skipped for
-  it. Operations: `vemsa_job_alignment_total{alignment="none"}` now also counts these silent
-  chunks, which end `completed`, so a rise in `none` on `hybrid` can mean more silent
-  chunks, not worse quality. ([#8](https://github.com/eneo-ai/vemsa/pull/8))
+- On `hybrid` and `remote`, a provider answer with blank `text` and no words or segments,
+  such as for a short silent last chunk of a long recording, now completes as an empty
+  transcript (`text` `""`, no segments, `alignment` `null`) instead of failing the job, also
+  with `VEMSA_MIN_ALIGNMENT` set; alignment and diarization are skipped for it. Operations:
+  `vemsa_job_alignment_total{alignment="none"}` now also counts these silent chunks, which
+  end `completed`, so a rise in `none` on `hybrid` can mean more silent chunks, not worse
+  quality. ([#8](https://github.com/eneo-ai/vemsa/pull/8))
 
 ### Breaking
 
@@ -53,7 +55,7 @@ container images `ghcr.io/eneo-ai/vemsa:X.Y.Z` and `:X.Y` (GPU) and `:X.Y.Z-cpu`
 
 **Verified:** the CUDA change at build and source level only, not on a GPU: the lock file,
 an installation of the GPU image's dependencies in a linux/amd64 container, and a probe that
-NVRTC 12.9.86 compiles for sm_103 while 12.8.93 rejects it. The fixes are covered by the test
-suite.
+NVRTC 12.9.86 compiles for sm_103 while 12.8.93 rejects it. The fixes are covered by unit
+tests; the acceptance tests that need the real aligner and models are skipped in CI.
 
 [0.2.0]: https://github.com/eneo-ai/vemsa/releases/tag/v0.2.0
