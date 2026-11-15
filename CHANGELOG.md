@@ -6,7 +6,7 @@ All notable changes to vemsa are recorded here. The format follows
 container images `ghcr.io/eneo-ai/vemsa:X.Y.Z` and `:X.Y` (GPU) and `:X.Y.Z-cpu` and
 `:X.Y-cpu` (CPU), without the `v`.
 
-## [0.2.0] - YYYY-MM-DD
+## [0.2.0] - 2026-11-15
 
 ### Added
 
@@ -27,7 +27,19 @@ container images `ghcr.io/eneo-ai/vemsa:X.Y.Z` and `:X.Y` (GPU) and `:X.Y.Z-cpu`
 
 ### Fixed
 
-- _To be added: word timing bounds (#9) and silent audio (#8)._
+- A word cut off by an alignment window boundary no longer gets a span of up to 30 seconds
+  across later speech and past the end of the audio. Where vemsa knows the alignment
+  windows, each word stays inside the window it was aligned in; on the local engine's
+  `transcribe` task only the next-word bound below applies. A word not placed by the audio
+  (`probability: 0.0`) ends no later than the next word starts. The response shape is
+  unchanged, but zero-duration words are more common and the number of lines can change. An
+  alignment segment whose speech id matches no window now fails the job.
+  ([#9](https://github.com/eneo-ai/vemsa/pull/9))
+- Audio without speech, such as a short silent last chunk of a long recording, completes as
+  an empty transcript instead of failing the job; alignment and diarization are skipped for
+  it. Operations: `vemsa_job_alignment_total{alignment="none"}` now also counts these silent
+  chunks, which end `completed`, so a rise in `none` on `hybrid` can mean more silent
+  chunks, not worse quality. ([#8](https://github.com/eneo-ai/vemsa/pull/8))
 
 ### Breaking
 
@@ -36,11 +48,12 @@ container images `ghcr.io/eneo-ai/vemsa:X.Y.Z` and `:X.Y` (GPU) and `:X.Y.Z-cpu`
   CUDA features that require a newer driver, can fail on an older driver. Neither is shown
   to affect vemsa, and no run on a GPU has been made for this release.
 
-**Rolling back:** the previous image is `ghcr.io/eneo-ai/vemsa:sha-<…>` (and
-`sha-<…>-cpu`).
+**Rolling back:** the previous image is `ghcr.io/eneo-ai/vemsa:sha-c92e94f` (and
+`sha-c92e94f-cpu`).
 
-**Verified:** at build and source level only, not on a GPU: the lock file, an installation
-of the GPU image's dependencies in a linux/amd64 container, and a probe that NVRTC 12.9.86
-compiles for sm_103 while 12.8.93 rejects it.
+**Verified:** the CUDA change at build and source level only, not on a GPU: the lock file,
+an installation of the GPU image's dependencies in a linux/amd64 container, and a probe that
+NVRTC 12.9.86 compiles for sm_103 while 12.8.93 rejects it. The fixes are covered by the test
+suite.
 
 [0.2.0]: https://github.com/eneo-ai/vemsa/releases/tag/v0.2.0
