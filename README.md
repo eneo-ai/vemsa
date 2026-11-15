@@ -127,10 +127,13 @@ by the audio**. Either the aligner could not fit a window's text to its audio at
 much longer than the window, or characters the CTC vocabulary lacks) and spread the
 window's words evenly over it, or the word's audio lies outside its window (a window that
 cuts a sentence, with the word said just after it). Such a word, unless it is the last word,
-ends no later than the next word starts, so it can last no time at all, and so can a line made of such words alone. Where Vemsa knows the window a word was aligned
-in (every task except `transcribe` on the `local` engine, whose windows easytranscriber
-keeps to itself), every word also lies inside that window, and an unplaced word that the
-window's end cut off sits at that end. Consumers should flag such words for review.
+ends no later than the next word starts, so it can last no time at all, and so can a line
+made of such words alone. Where Vemsa knows the window a word was aligned in (every task
+except `transcribe` on the `local` engine, whose windows easytranscriber keeps to itself),
+every word also lies inside that window, and a word that the window's end cut off sits at
+that end. Such a word mostly scores `0.0`, but it can keep a score above `0.0`; then only
+the window bounds it, not the next word's start. Consumers should flag words at `0.0` for
+review.
 The worker logs every such window (`align.interpolated`), counts them in
 `vemsa_alignment_interpolated_words_total`, and `VEMSA_ALIGN_MAX_INTERPOLATED_SHARE`
 fails a job whose interpolated share exceeds it.

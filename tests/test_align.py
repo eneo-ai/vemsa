@@ -217,6 +217,47 @@ def test_windows_are_found_by_speech_id_not_position():
     ]
 
 
+def test_with_windows_a_segment_without_speech_id_fails_loudly():
+    # without the id the word's window is unknown; guessing one would misplace it
+    from vemsa.pipeline.align import words_from_alignments
+
+    segment = FakeAlignmentSegment([FakeAlignedWord("hej", 0.0, 1.0, 0.9)])
+    with pytest.raises(ValueError, match="no speech id"):
+        words_from_alignments([segment], [(0.0, 1.0)])
+
+
+def test_with_windows_a_speech_id_past_the_windows_fails_loudly():
+    from vemsa.pipeline.align import words_from_alignments
+
+    segment = FakeAlignmentSegment([FakeAlignedWord("hej", 0.0, 1.0, 0.9)], id="1-0")
+    with pytest.raises(ValueError, match="no window for speech id 1"):
+        words_from_alignments([segment], [(0.0, 1.0)])
+
+
+def test_the_next_word_rule_leaves_a_word_with_a_score_above_0():
+    """Only a word at exactly 0.0 ends by the next word's start: a placed word with a
+    low score that overlaps the next word keeps its end, as overlapping speech does."""
+    from vemsa.pipeline.align import words_from_alignments
+
+    segment = FakeAlignmentSegment(
+        [
+            FakeAlignedWord("kanske", 1.0, 3.0, 0.004),
+            FakeAlignedWord("inte", 2.0, 2.5, 0.9),
+            FakeAlignedWord("sen", 4.0, 9.0, 0.0),
+            FakeAlignedWord("då", 5.0, 5.5, 0.9),
+        ],
+        id="0-0",
+    )
+    words = words_from_alignments([segment], [(0.0, 10.0)])
+
+    assert _spans(words) == [
+        ("kanske", 1.0, 3.0, 0.004),
+        ("inte", 2.0, 2.5, 0.9),
+        ("sen", 4.0, 5.0, 0.0),
+        ("då", 5.0, 5.5, 0.9),
+    ]
+
+
 def test_a_word_placed_before_its_window_starts_at_the_window_start():
     from vemsa.pipeline.align import words_from_alignments
 
@@ -320,6 +361,8 @@ def test_force_align_keeps_each_word_in_the_window_it_was_aligned_in(monkeypatch
 
     assert [word.word for word in words][4:6] == ["år", "gammal"]
     assert _spans(words)[4] == ("år", 1.7, 1.7, 0.0)
+    # the second speech id is the third segment's window, so its words keep their times
+    assert _spans(words)[5] == ("gammal", 2.02307, 2.32594, 0.9515)
 
 
 def test_word_validates_without_probability():
