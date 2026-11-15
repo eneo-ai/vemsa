@@ -13,7 +13,15 @@ from typing import Any
 import httpx
 
 from vemsa.config import Settings
-from vemsa.jobs.models import Alignment, JobStage, Segment, SpeakerBounds, TranscriptionResult, Word
+from vemsa.jobs.models import (
+    Alignment,
+    JobStage,
+    Segment,
+    SpeakerBounds,
+    SpeakerReview,
+    TranscriptionResult,
+    Word,
+)
 from vemsa.pipeline.align import build_segment_aligner
 from vemsa.pipeline.base import StageReporter, report_stage
 from vemsa.pipeline.diarize import Diarizer, resolve_segments
@@ -123,7 +131,10 @@ def parse_verbose_json(payload: dict[str, Any]) -> tuple[list[Word], list[Segmen
     """Extract words and plain (speakerless) segments from a verbose_json response.
 
     Either list may be empty: some servers return only segments even when word
-    granularity was requested, and vice versa. At least one must contain a transcript."""
+    granularity was requested, and vice versa. Both empty with a blank string `text`
+    means the audio held no speech (e.g. a short silent tail chunk) and is a valid, empty
+    transcript; text without either list cannot be placed in time and is rejected, as is
+    a response that states no `text` at all when both words and segments are missing."""
     try:
         words = []
         for item in payload.get("words") or []:
@@ -154,7 +165,8 @@ def parse_verbose_json(payload: dict[str, Any]) -> tuple[list[Word], list[Segmen
         segments.sort(key=lambda segment: segment.start)
     except (AttributeError, KeyError, TypeError, ValueError) as exc:
         raise WhisperProviderError("whisper API returned an invalid transcript") from exc
-    if not words and not segments:
+    text = payload.get("text")
+    if not words and not segments and not (isinstance(text, str) and not text.strip()):
         raise WhisperProviderError("whisper API returned neither words nor segments")
     return words, segments
 
@@ -209,6 +221,11 @@ class OpenAIWhisperEngine:
             self._settings, audio_path, language=language, model=model, vocabulary=vocabulary
         )
         words, plain_segments = parse_verbose_json(payload)
+        if not words and not plain_segments:
+            return apply_speaker_review(
+                build_result(payload, [], model=model, language=language),
+                SpeakerReview(overlap_detection="unavailable") if include_speaker_review else None,
+            )
         if words and plain_segments and not words_plausible(words):
             logger.warning("provider word timestamps are implausible; merging speakers per segment")
             words = []

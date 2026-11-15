@@ -10,11 +10,20 @@ import respx
 from httpx import Response
 
 from conftest import FailingEngine, FakeEngine, GateEngine, wait_for_status
+from test_whisper_api import (
+    API_BASE,
+    ENDPOINT,
+    SEGMENT_ONLY_PAYLOAD,
+    SILENT_PAYLOAD,
+    FakeDiarizer,
+)
 from vemsa.config import Settings
 from vemsa.jobs.models import JobRequest, JobStatus, new_job
 from vemsa.jobs.postgres_store import PostgresJobStore
 from vemsa.jobs.queue import JobQueue
 from vemsa.jobs.store import JobStore
+from vemsa.pipeline.hybrid import HybridEngine
+from vemsa.pipeline.whisper_api import OpenAIWhisperEngine
 
 
 @contextlib.asynccontextmanager
@@ -154,6 +163,51 @@ async def test_alignment_floor_passes_a_forced_result(
     async with running_queue(store, ForcedEngine(), settings) as queue:
         queue.notify()
         await wait_for_status(store, job.id, JobStatus.COMPLETED)
+
+
+@respx.mock
+@pytest.mark.parametrize("engine_class", [HybridEngine, OpenAIWhisperEngine])
+@pytest.mark.parametrize("floor", [None, "forced"])
+async def test_silent_audio_completes_with_an_empty_transcript(
+    store: JobStore, settings: Settings, tmp_path: Path, engine_class, floor
+):
+    # a chunk without speech has no timestamps to grade, so no floor fails it
+    settings.whisper_api_base = API_BASE
+    settings.min_alignment = floor
+    respx.post(ENDPOINT).mock(return_value=Response(200, json=SILENT_PAYLOAD))
+    diarizer = FakeDiarizer()
+    job, audio = upload_job(tmp_path, language="sv", diarize=True)
+    await store.create(job)
+
+    async with running_queue(store, engine_class(settings, diarizer=diarizer), settings) as queue:
+        queue.notify()
+        await wait_for_status(store, job.id, JobStatus.COMPLETED)
+
+    result = await store.get_result(job.id)
+    assert result is not None
+    assert (result.text, result.segments, result.alignment) == ("", [], None)
+    assert (result.duration_seconds, result.language) == (0.74, "sv")
+    assert diarizer.calls == []
+    assert not audio.exists()
+
+
+@respx.mock
+async def test_alignment_floor_still_fails_segment_text_without_words(
+    store: JobStore, settings: Settings, tmp_path: Path
+):
+    settings.whisper_api_base = API_BASE
+    settings.min_alignment = "forced"
+    respx.post(ENDPOINT).mock(return_value=Response(200, json=SEGMENT_ONLY_PAYLOAD))
+    job, _ = upload_job(tmp_path, language="sv", diarize=True)
+    await store.create(job)
+
+    engine = OpenAIWhisperEngine(settings, diarizer=FakeDiarizer())
+    async with running_queue(store, engine, settings) as queue:
+        queue.notify()
+        failed = await wait_for_status(store, job.id, JobStatus.FAILED)
+
+    assert failed.error is not None
+    assert "segment_only" in failed.error and "VEMSA_MIN_ALIGNMENT" in failed.error
 
 
 def align_job(tmp_path: Path):

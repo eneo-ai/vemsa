@@ -13,7 +13,14 @@ from pathlib import Path
 from typing import Any
 
 from vemsa.config import Settings
-from vemsa.jobs.models import JobStage, Segment, SpeakerBounds, TranscriptionResult, Word
+from vemsa.jobs.models import (
+    JobStage,
+    Segment,
+    SpeakerBounds,
+    SpeakerReview,
+    TranscriptionResult,
+    Word,
+)
 from vemsa.pipeline.align import build_segment_aligner, force_align_segments
 from vemsa.pipeline.base import StageReporter, report_stage
 from vemsa.pipeline.diarize import Diarizer, resolve_segments
@@ -62,7 +69,11 @@ class HybridEngine:
         )
         provider_words, plain_segments = parse_verbose_json(payload)
         if not provider_words and not plain_segments:
-            raise RuntimeError("whisper API returned neither words nor segments")
+            # no speech in the audio: nothing to align or attribute
+            return apply_speaker_review(
+                build_result(payload, [], model=model, language=language),
+                SpeakerReview(overlap_detection="unavailable") if include_speaker_review else None,
+            )
 
         # provider words are never used as timestamps on this tier; they only
         # judge whether the provider's segment windows can anchor the alignment

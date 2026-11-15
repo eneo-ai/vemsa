@@ -644,7 +644,9 @@ class JobQueue:
 
     def _check_alignment_floor(self, result: TranscriptionResult) -> None:
         floor = self._settings.min_alignment
-        if floor is None:
+        # audio without speech has no timestamps to grade; a result with any
+        # segment text is still held to the floor
+        if floor is None or (result.text == "" and not result.segments):
             return
         achieved = ALIGNMENT_RANK.get(result.alignment, -1) if result.alignment else -1
         if achieved >= ALIGNMENT_RANK[floor]:
