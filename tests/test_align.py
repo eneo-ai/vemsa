@@ -234,6 +234,30 @@ def test_with_windows_a_speech_id_past_the_windows_fails_loudly():
         words_from_alignments([segment], [(0.0, 1.0)])
 
 
+_SECRET = "personnumret är tolv"
+
+
+@pytest.mark.parametrize(
+    ("word", "speech_id", "match"),
+    [
+        ({"text": _SECRET, "end": 1.0}, "0-0", "unrecognized alignment shape"),
+        ({"text": _SECRET, "start": 0.0, "end": 1.0}, None, "no speech id"),
+        ({"text": _SECRET, "start": 0.0, "end": 1.0}, "1-0", "no window for speech id 1"),
+    ],
+)
+def test_a_shape_error_does_not_carry_the_transcript(word, speech_id, match):
+    """The worker logs a failed job's exception; easyaligner's segments and words
+    print their text in their repr, so the message must not include them."""
+    from types import SimpleNamespace
+
+    from vemsa.pipeline.align import words_from_alignments
+
+    segment = SimpleNamespace(text=_SECRET, words=[SimpleNamespace(**word)], id=speech_id)
+    with pytest.raises(ValueError, match=match) as raised:
+        words_from_alignments([segment], [(0.0, 1.0)])
+    assert _SECRET not in str(raised.value)
+
+
 def test_the_next_word_rule_leaves_a_word_with_a_score_above_0():
     """Only a word at exactly 0.0 ends by the next word's start: a placed word with a
     low score that overlaps the next word keeps its end, as overlapping speech does."""

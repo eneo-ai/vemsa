@@ -236,7 +236,8 @@ def words_from_alignments(
 ) -> list[Word]:
     """Flatten easyaligner output (SpeechSegment -> AlignmentSegment -> WordSegment)
     into Words in time order. Without `windows` it tolerates flatter shapes from
-    older/newer versions; with them every AlignmentSegment must carry its speech id.
+    older/newer versions; with them `speeches` must be easyaligner's flat list of
+    AlignmentSegments, each carrying its speech id.
 
     `windows` are the (start, end) of the speech windows handed to the aligner, in
     speech-id order; every word is kept inside its window (words_by_speech). An
@@ -269,15 +270,15 @@ def words_by_speech(
     alignment (vemsa.pipeline.normalize).
 
     A word the window's audio does not hold (its text runs past the window, as when
-    a chunk boundary cuts a sentence) mostly scores 0.0, and its characters land in
-    the zero padding of the window's last internal 30 s chunk: it can start past the
-    window's end, and its end can lie past the window's end. Such a word can also
-    keep a score above 0. With `windows` given, each word is kept inside the window
-    it was aligned in, so such a word is cut at its window's end whatever its score
-    (the next-word rule in words_from_alignments only touches 0.0). The window is
-    found by the speech id easyaligner puts in each AlignmentSegment's id
-    ("<speech id>-<n>"); that format is easyaligner's own, checked against 0.3.x by
-    the real-audio test `test_a_word_said_after_its_window_stays_in_its_window`."""
+    a chunk boundary cuts a sentence) can score 0.0 or keep a score above 0, and its
+    characters land in the zero padding of the window's last internal 30 s chunk: it
+    can start past the window's end, and its end can lie past the window's end. With
+    `windows` given, each word is kept inside the window it was aligned in, so such
+    a word is cut at its window's end whatever its score (the next-word rule in
+    words_from_alignments only touches 0.0). The window is found by the speech id
+    easyaligner puts in each AlignmentSegment's id ("<speech id>-<n>"); that format
+    is easyaligner's own, checked against 0.3.x by the real-audio test
+    `test_a_word_said_after_its_window_stays_in_its_window`."""
     grouped: list[list[Word]] = []
     for speech in speeches:
         words: list[Word] = []
@@ -290,7 +291,8 @@ def words_by_speech(
                 end = getattr(item, "end", None)
                 score = getattr(item, "score", None)
                 if text is None or start is None or end is None:
-                    raise ValueError(f"unrecognized alignment shape: {item!r}")
+                    # never the repr: easyaligner's objects print their text
+                    raise ValueError(f"unrecognized alignment shape: {type(item).__name__}")
                 words.append(
                     Word(
                         word=str(text).strip(),
@@ -330,11 +332,11 @@ def _window(speech: Any, windows: list[tuple[float, float]]) -> tuple[float, flo
     is the index of its window in the speeches handed to the aligner."""
     speech_id, _, _ = str(getattr(speech, "id", "")).partition("-")
     if not speech_id.isdigit():
-        raise ValueError(f"unrecognized alignment shape: no speech id in {speech!r}")
+        raise ValueError(f"unrecognized alignment shape: no speech id in a {type(speech).__name__}")
     if int(speech_id) >= len(windows):
         raise ValueError(
             f"unrecognized alignment shape: no window for speech id {speech_id}"
-            f" among {len(windows)} in {speech!r}"
+            f" among {len(windows)}"
         )
     return windows[int(speech_id)]
 
