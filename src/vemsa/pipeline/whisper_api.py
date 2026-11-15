@@ -13,7 +13,15 @@ from typing import Any
 import httpx
 
 from vemsa.config import Settings
-from vemsa.jobs.models import Alignment, JobStage, Segment, SpeakerBounds, TranscriptionResult, Word
+from vemsa.jobs.models import (
+    Alignment,
+    JobStage,
+    Segment,
+    SpeakerBounds,
+    SpeakerReview,
+    TranscriptionResult,
+    Word,
+)
 from vemsa.pipeline.align import build_segment_aligner
 from vemsa.pipeline.base import StageReporter, report_stage
 from vemsa.pipeline.diarize import Diarizer, resolve_segments
@@ -126,7 +134,7 @@ def parse_verbose_json(payload: dict[str, Any]) -> tuple[list[Word], list[Segmen
     granularity was requested, and vice versa. Both empty with a blank string `text`
     means the audio held no speech (e.g. a short silent tail chunk) and is a valid, empty
     transcript; text without either list cannot be placed in time and is rejected, as is
-    a response that states no `text` at all."""
+    a response that states no `text` at all when both words and segments are missing."""
     try:
         words = []
         for item in payload.get("words") or []:
@@ -214,7 +222,10 @@ class OpenAIWhisperEngine:
         )
         words, plain_segments = parse_verbose_json(payload)
         if not words and not plain_segments:
-            return build_result(payload, [], model=model, language=language)
+            return apply_speaker_review(
+                build_result(payload, [], model=model, language=language),
+                SpeakerReview(overlap_detection="unavailable") if include_speaker_review else None,
+            )
         if words and plain_segments and not words_plausible(words):
             logger.warning("provider word timestamps are implausible; merging speakers per segment")
             words = []

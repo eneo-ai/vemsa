@@ -5,7 +5,9 @@ import respx
 from httpx import Response
 
 from vemsa.config import Settings
+from vemsa.jobs.models import SpeakerReview
 from vemsa.pipeline.diarize import Turn
+from vemsa.pipeline.hybrid import HybridEngine
 from vemsa.pipeline.whisper_api import (
     OpenAIWhisperEngine,
     WhisperProviderError,
@@ -255,6 +257,44 @@ def test_silent_audio_returns_empty_transcript(
     assert result.language == "sv"
     assert result.alignment is None
     assert diarizer.calls == []
+
+
+@respx.mock
+@pytest.mark.parametrize("engine_class", [OpenAIWhisperEngine, HybridEngine])
+def test_silent_audio_reports_unmeasured_overlap_when_review_is_requested(
+    whisper_settings: Settings, audio_file: Path, engine_class
+):
+    # null would claim the review was not requested; the audio was never
+    # diarized, so overlap was not measured
+    respx.post(ENDPOINT).mock(return_value=Response(200, json=SILENT_PAYLOAD))
+    diarizer = FakeDiarizer()
+    engine = engine_class(whisper_settings, diarizer=diarizer)
+
+    result = engine.transcribe(
+        audio_file,
+        language="sv",
+        model="kb-whisper",
+        diarize=True,
+        include_speaker_review=True,
+    )
+
+    assert result.speaker_review == SpeakerReview(overlap_detection="unavailable")
+    assert (result.text, result.segments) == ("", [])
+    assert diarizer.calls == []
+
+
+@respx.mock
+@pytest.mark.parametrize("engine_class", [OpenAIWhisperEngine, HybridEngine])
+def test_silent_audio_language_follows_the_response(
+    whisper_settings: Settings, audio_file: Path, engine_class
+):
+    respx.post(ENDPOINT).mock(return_value=Response(200, json={**SILENT_PAYLOAD, "language": "en"}))
+    engine = engine_class(whisper_settings, diarizer=FakeDiarizer())
+
+    result = engine.transcribe(audio_file, language="sv", model="kb-whisper", diarize=True)
+
+    assert result.language == "en"
+    assert (result.text, result.segments) == ("", [])
 
 
 @pytest.mark.parametrize(
