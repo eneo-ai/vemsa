@@ -644,7 +644,9 @@ class JobQueue:
 
     def _check_alignment_floor(self, result: TranscriptionResult) -> None:
         floor = self._settings.min_alignment
-        if floor is None:
+        # audio without speech has no timestamps to grade; a result with any
+        # segment text is still held to the floor
+        if floor is None or (result.text == "" and not result.segments):
             return
         achieved = ALIGNMENT_RANK.get(result.alignment, -1) if result.alignment else -1
         if achieved >= ALIGNMENT_RANK[floor]:
@@ -669,8 +671,8 @@ class JobQueue:
         share = interpolated / len(words)
         if share > self._settings.align_max_interpolated_share:
             raise AlignmentBelowFloorError(
-                f"{interpolated} of {len(words)} words ({share:.0%}) got interpolated"
-                " timestamps because their text could not be aligned against the audio,"
+                f"{interpolated} of {len(words)} words ({share:.0%}) were not placed by"
+                " the audio (probability 0.0) in forced alignment,"
                 f" above the configured share of {self._settings.align_max_interpolated_share:.0%}"
                 " (VEMSA_ALIGN_MAX_INTERPOLATED_SHARE)"
             )

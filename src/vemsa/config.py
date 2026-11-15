@@ -91,10 +91,11 @@ class Settings(BaseSettings):
     attr_align_merge_gap_s: float = 0.5
     attr_align_window_pad_s: float = 0.5
     attr_relabel_min_share: float = 0.5
-    # forced alignment falls back to linearly interpolated timestamps (word
-    # probability 0.0) for a window whose text cannot be aligned — too long for
-    # its audio, or characters the CTC vocabulary lacks. Fail a forced-rung job
-    # whose share of interpolated words exceeds this (1.0 = never fail, only log)
+    # forced alignment reports words it did not place by the audio with probability
+    # 0.0: a window whose text cannot be aligned (too long for its audio, or
+    # characters the CTC vocabulary lacks) spread evenly, or a word its window does
+    # not hold. Fail a forced-rung job whose share of such words exceeds this
+    # (1.0 = never fail, only log)
     align_max_interpolated_share: float = 1.0
 
     model_cache_dir: Path = Path("data/models")

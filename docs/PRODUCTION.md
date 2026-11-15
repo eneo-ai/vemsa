@@ -237,12 +237,13 @@ with `VEMSA_DIARIZE_PREFER_ALIGN=true`) fail a job loudly when forced alignment 
 run — there is no silent degradation to provider timestamps or a segment-level merge.
 `vemsa_job_alignment_total{alignment=...}` counts finished jobs by word-timestamp rung, and
 `job.completed` log lines carry the `alignment` field. On those tiers every completed job
-reports `forced`; lower rungs can appear only on deployments that deliberately trust an
-external timestamp source (`VEMSA_ENGINE=remote`, or `PREFER_ALIGN=false`) — there,
-alert on any sustained share of `segment_split`/`segment_only`, hold the provider to its
-timestamp-quality requirements, and consider `VEMSA_MIN_ALIGNMENT` as the enforcement
-floor (e.g. `provider_words`). Also alert on `align.language_fallback` warnings
-(a job language without a configured CTC model). Logs are JSON by
+reports `forced`, except a chunk without speech on `hybrid`, which completes with an empty
+transcript and `alignment: null` (counted as `none`); lower rungs can appear only on
+deployments that deliberately trust an external timestamp source (`VEMSA_ENGINE=remote`,
+or `PREFER_ALIGN=false`) — there, alert on any sustained share of `segment_split`/`segment_only`,
+hold the provider to its timestamp-quality requirements, and consider `VEMSA_MIN_ALIGNMENT`
+as the enforcement floor (e.g. `provider_words`). Also alert on `align.language_fallback`
+warnings (a job language without a configured CTC model). Logs are JSON by
 default and include `request_id`, `job_id`, `client_id`, engine, task, stage, attempt, status,
 and duration where applicable. They must never contain credentials, audio, transcripts,
 participant names, complete source URLs, or webhook payloads.

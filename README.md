@@ -45,6 +45,10 @@ timestamps, which is only acceptable when the deployment puts quality requiremen
 provider (and can enforce them with `VEMSA_MIN_ALIGNMENT`). CPU-only operation is intended
 for local testing with small files, expected to be slow.
 
+Audio without speech is not a failure. On `hybrid` and `remote`, when the provider answers
+with blank `text` and no words or segments, the job completes with an empty transcript
+(`text` `""`, no segments, `alignment` `null`), also with `VEMSA_MIN_ALIGNMENT` set.
+
 In every tier, pyannote diarization runs locally and speakers are merged onto the timestamps
 by maximal temporal overlap (word-level when words exist, whole-segment otherwise). The merge
 is jitter-tolerant: a turn covering less than a quarter of a word's duration is not trusted
@@ -122,10 +126,18 @@ decoder's posterior probability, passed through when the provider or caller repo
 reports none, and values are not comparable across rungs. The `segment_split` and
 `segment_only` rungs produce no words at all.
 
-On the `forced` rung, a `probability` of exactly `0.0` means the word's timestamps were
-**interpolated, not aligned**: the aligner could not fit a window's text to its audio
-(text much longer than the window, or characters the CTC vocabulary lacks) and spread
-the words evenly over the window instead. Consumers should flag such words for review.
+On the `forced` rung, a `probability` of exactly `0.0` means the word was **not placed
+by the audio**. Either the aligner could not fit a window's text to its audio at all (text
+much longer than the window, or characters the CTC vocabulary lacks) and spread the
+window's words evenly over it, or the word's audio lies outside its window (a window that
+cuts a sentence, with the word said just after it). Such a word, unless it is the last word,
+ends no later than the next word starts, so it can last no time at all, and so can a line
+made of such words alone. Where Vemsa knows the window a word was aligned in (every task
+except `transcribe` on the `local` engine, whose windows easytranscriber keeps to itself),
+every word also lies inside that window, and a word that the window's end cut off sits at
+that end. Such a word can score `0.0` or keep a score above 0; with a score above 0, only
+the window bounds it, not the next word's start. Consumers should flag words at `0.0` for
+review.
 The worker logs every such window (`align.interpolated`), counts them in
 `vemsa_alignment_interpolated_words_total`, and `VEMSA_ALIGN_MAX_INTERPOLATED_SHARE`
 fails a job whose interpolated share exceeds it.

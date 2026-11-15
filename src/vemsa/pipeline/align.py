@@ -227,21 +227,37 @@ def force_align_segments(
         if is_temp:
             decodable.unlink(missing_ok=True)
 
-    words = words_from_alignments(aligned[0])
-    words.sort(key=lambda word: word.start)
-    return words
+    windows = [(float(entry["start"]), float(entry["end"])) for entry in transcript]
+    return words_from_alignments(aligned[0], windows)
 
 
-def words_from_alignments(speeches: list[Any]) -> list[Word]:
+def words_from_alignments(
+    speeches: list[Any], windows: list[tuple[float, float]] | None = None
+) -> list[Word]:
     """Flatten easyaligner output (SpeechSegment -> AlignmentSegment -> WordSegment)
-    into Words, tolerating flatter shapes from older/newer versions.
+    into Words in time order. Without `windows` it tolerates flatter shapes from
+    older/newer versions; with them `speeches` must be easyaligner's flat list of
+    AlignmentSegments, each carrying its speech id.
+
+    `windows` are the (start, end) of the speech windows handed to the aligner, in
+    speech-id order; every word is kept inside its window (words_by_speech). An
+    unplaced word (probability 0.0) then ends no later than the next word starts.
 
     Shared with the local engine: easytranscriber's pipeline returns the same
-    easyaligner shapes."""
-    return [word for speech in words_by_speech(speeches) for word in speech]
+    easyaligner shapes, without its windows, so there only the second bound holds."""
+    words = [word for speech in words_by_speech(speeches, windows) for word in speech]
+    words.sort(key=lambda word: word.start)
+    return [
+        word.model_copy(update={"end": following.start})
+        if word.probability == 0.0 and word.end > following.start
+        else word
+        for word, following in zip(words, words[1:], strict=False)
+    ] + words[-1:]
 
 
-def words_by_speech(speeches: list[Any]) -> list[list[Word]]:
+def words_by_speech(
+    speeches: list[Any], windows: list[tuple[float, float]] | None = None
+) -> list[list[Word]]:
     """easyaligner output as one word list per input speech window, in order.
 
     Also the place where easyaligner's silent degradation is made visible: when a
@@ -251,7 +267,18 @@ def words_by_speech(speeches: list[Any]) -> list[list[Word]]:
     (`align.interpolated`); the job-level floor lives in the worker. A word whose
     characters the model never hears (a numeral left as digits) also lands on
     exactly 0.0 after rounding, which is why numerals are spelled out before
-    alignment (vemsa.pipeline.normalize)."""
+    alignment (vemsa.pipeline.normalize).
+
+    A word the window's audio does not hold (its text runs past the window, as when
+    a chunk boundary cuts a sentence) can score 0.0 or keep a score above 0, and its
+    characters land in the zero padding of the window's last internal 30 s chunk: it
+    can start past the window's end, and its end can lie past the window's end. With
+    `windows` given, each word is kept inside the window it was aligned in, so such
+    a word is cut at its window's end whatever its score (the next-word rule in
+    words_from_alignments only touches 0.0). The window is found by the speech id
+    easyaligner puts in each AlignmentSegment's id ("<speech id>-<n>"); that format
+    is easyaligner's own, checked against 0.3.x by the real-audio test
+    `test_a_word_said_after_its_window_stays_in_its_window`."""
     grouped: list[list[Word]] = []
     for speech in speeches:
         words: list[Word] = []
@@ -264,7 +291,8 @@ def words_by_speech(speeches: list[Any]) -> list[list[Word]]:
                 end = getattr(item, "end", None)
                 score = getattr(item, "score", None)
                 if text is None or start is None or end is None:
-                    raise ValueError(f"unrecognized alignment shape: {item!r}")
+                    # never the repr: easyaligner's objects print their text
+                    raise ValueError(f"unrecognized alignment shape: {type(item).__name__}")
                 words.append(
                     Word(
                         word=str(text).strip(),
@@ -273,28 +301,55 @@ def words_by_speech(speeches: list[Any]) -> list[list[Word]]:
                         probability=float(score) if score is not None else None,
                     )
                 )
+        window_start = getattr(speech, "start", None)
+        window_end = getattr(speech, "end", None)
+        if windows is not None:
+            window_start, window_end = _window(speech, windows)
+            words = [_inside(word, window_start, window_end) for word in words]
         interpolated = interpolated_words(words)
         if interpolated:
             logger.warning(
-                "forced alignment interpolated %d of %d words in window %s-%s:"
-                " the text could not be aligned against the audio",
+                "forced alignment left %d of %d words in window %s-%s unplaced"
+                " (probability 0.0): the audio does not hold them",
                 interpolated,
                 len(words),
-                getattr(speech, "start", None),
-                getattr(speech, "end", None),
+                window_start,
+                window_end,
                 extra={
                     "event": "align.interpolated",
                     "interpolated_words": interpolated,
                     "window_words": len(words),
-                    "window_start": getattr(speech, "start", None),
-                    "window_end": getattr(speech, "end", None),
+                    "window_start": window_start,
+                    "window_end": window_end,
                 },
             )
         grouped.append(words)
     return grouped
 
 
+def _window(speech: Any, windows: list[tuple[float, float]]) -> tuple[float, float]:
+    """The window an AlignmentSegment was aligned in. Its speech id ("<speech id>-<n>")
+    is the index of its window in the speeches handed to the aligner."""
+    speech_id, _, _ = str(getattr(speech, "id", "")).partition("-")
+    if not speech_id.isdigit():
+        raise ValueError(f"unrecognized alignment shape: no speech id in a {type(speech).__name__}")
+    if int(speech_id) >= len(windows):
+        raise ValueError(
+            f"unrecognized alignment shape: no window for speech id {speech_id}"
+            f" among {len(windows)}"
+        )
+    return windows[int(speech_id)]
+
+
+def _inside(word: Word, window_start: float, window_end: float) -> Word:
+    start = min(max(word.start, window_start), window_end)
+    end = min(max(word.end, start), window_end)
+    if (start, end) == (word.start, word.end):
+        return word
+    return word.model_copy(update={"start": start, "end": end})
+
+
 def interpolated_words(words: list[Word]) -> int:
-    """How many words carry easyaligner's fallback score (exactly 0.0): their
-    timestamps were linearly interpolated, not derived from the audio."""
+    """How many words carry score exactly 0.0: the aligner did not place them by the
+    audio (a window spread evenly, or a word its window's audio does not hold)."""
     return sum(1 for word in words if word.probability == 0.0)
