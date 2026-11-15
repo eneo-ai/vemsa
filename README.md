@@ -45,6 +45,10 @@ timestamps, which is only acceptable when the deployment puts quality requiremen
 provider (and can enforce them with `VEMSA_MIN_ALIGNMENT`). CPU-only operation is intended
 for local testing with small files, expected to be slow.
 
+Audio without speech is not a failure: when the provider answers `hybrid` or `remote` with
+blank `text` and no words or segments, the job completes with an empty transcript (`text`
+`""`, no segments, `alignment` `null`), also with `VEMSA_MIN_ALIGNMENT` set.
+
 In every tier, pyannote diarization runs locally and speakers are merged onto the timestamps
 by maximal temporal overlap (word-level when words exist, whole-segment otherwise). The merge
 is jitter-tolerant: a turn covering less than a quarter of a word's duration is not trusted
