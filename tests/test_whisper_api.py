@@ -6,7 +6,11 @@ from httpx import Response
 
 from vemsa.config import Settings
 from vemsa.pipeline.diarize import Turn
-from vemsa.pipeline.whisper_api import OpenAIWhisperEngine, parse_verbose_json
+from vemsa.pipeline.whisper_api import (
+    OpenAIWhisperEngine,
+    WhisperProviderError,
+    parse_verbose_json,
+)
 
 API_BASE = "http://whisper.local/v1"
 ENDPOINT = f"{API_BASE}/audio/transcriptions"
@@ -235,15 +239,68 @@ SILENT_PAYLOAD = {"text": "", "language": "sv", "duration": 0.74, "segments": []
 
 
 @respx.mock
-def test_silent_audio_returns_empty_transcript(whisper_settings: Settings, audio_file: Path):
+@pytest.mark.parametrize("diarize", [True, False])
+def test_silent_audio_returns_empty_transcript(
+    whisper_settings: Settings, audio_file: Path, diarize: bool
+):
     respx.post(ENDPOINT).mock(return_value=Response(200, json=SILENT_PAYLOAD))
-    engine = OpenAIWhisperEngine(whisper_settings, diarizer=FakeDiarizer())
+    diarizer = FakeDiarizer()
+    engine = OpenAIWhisperEngine(whisper_settings, diarizer=diarizer)
 
-    result = engine.transcribe(audio_file, language="sv", model="kb-whisper", diarize=True)
+    result = engine.transcribe(audio_file, language="sv", model="kb-whisper", diarize=diarize)
 
     assert result.text == ""
     assert result.segments == []
     assert result.duration_seconds == 0.74
+    assert result.language == "sv"
+    assert result.alignment is None
+    assert diarizer.calls == []
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"text": "", "segments": [], "words": []},
+        {"text": "  \n", "segments": [], "words": []},
+        {"text": "", "segments": None, "words": None},
+        {"text": ""},
+    ],
+)
+def test_parse_verbose_json_accepts_blank_text_as_silence(payload):
+    assert parse_verbose_json(payload) == ([], [])
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"segments": [], "words": [], "duration": 0.74},
+        {"text": None, "segments": [], "words": []},
+        {"text": 0},
+        {"text": False},
+        {"text": []},
+        {"text": 5},
+        {"text": "hej", "segments": [], "words": []},
+    ],
+)
+def test_parse_verbose_json_rejects_a_transcript_without_times_or_blank_text(payload):
+    # silence must be stated as blank text; anything else without words or
+    # segments is a transcript that cannot be placed in time
+    with pytest.raises(WhisperProviderError, match="neither words nor segments"):
+        parse_verbose_json(payload)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        SEGMENT_ONLY_PAYLOAD,
+        {**SEGMENT_ONLY_PAYLOAD, "text": None},
+        {"words": WORD_PAYLOAD["words"], "text": None},
+    ],
+)
+def test_parse_verbose_json_needs_no_text_when_times_are_present(payload):
+    words, segments = parse_verbose_json(payload)
+    assert words or segments
 
 
 def test_parse_verbose_json_nests_words_by_midpoint():

@@ -126,7 +126,8 @@ def test_silent_audio_returns_empty_transcript_without_aligning(
 ):
     payload = {"text": "", "language": "sv", "duration": 0.74, "segments": [], "words": []}
     respx.post(ENDPOINT).mock(return_value=Response(200, json=payload))
-    engine = HybridEngine(hybrid_settings, diarizer=FakeDiarizer())
+    diarizer = FakeDiarizer()
+    engine = HybridEngine(hybrid_settings, diarizer=diarizer)
 
     def no_align(*args, **kwargs):
         raise AssertionError("silent audio must not be aligned")
@@ -137,3 +138,7 @@ def test_silent_audio_returns_empty_transcript_without_aligning(
 
     assert result.text == ""
     assert result.segments == []
+    assert result.duration_seconds == 0.74
+    assert result.language == "sv"
+    assert result.alignment is None
+    assert diarizer.calls == []

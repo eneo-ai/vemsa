@@ -123,9 +123,10 @@ def parse_verbose_json(payload: dict[str, Any]) -> tuple[list[Word], list[Segmen
     """Extract words and plain (speakerless) segments from a verbose_json response.
 
     Either list may be empty: some servers return only segments even when word
-    granularity was requested, and vice versa. Both empty with empty text means the
-    audio held no speech (e.g. a short silent tail chunk) and is a valid, empty
-    transcript; text without either list cannot be placed in time and is rejected."""
+    granularity was requested, and vice versa. Both empty with a blank string `text`
+    means the audio held no speech (e.g. a short silent tail chunk) and is a valid, empty
+    transcript; text without either list cannot be placed in time and is rejected, as is
+    a response that states no `text` at all."""
     try:
         words = []
         for item in payload.get("words") or []:
@@ -156,7 +157,8 @@ def parse_verbose_json(payload: dict[str, Any]) -> tuple[list[Word], list[Segmen
         segments.sort(key=lambda segment: segment.start)
     except (AttributeError, KeyError, TypeError, ValueError) as exc:
         raise WhisperProviderError("whisper API returned an invalid transcript") from exc
-    if not words and not segments and str(payload.get("text") or "").strip():
+    text = payload.get("text")
+    if not words and not segments and not (isinstance(text, str) and not text.strip()):
         raise WhisperProviderError("whisper API returned neither words nor segments")
     return words, segments
 
