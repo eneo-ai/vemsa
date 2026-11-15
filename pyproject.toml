@@ -1,6 +1,6 @@
 [project]
 name = "vemsa"
-version = "0.1.0"
+version = "0.2.0"
 description = "Transcription and speaker-diarization service: OpenAI-compatible whisper provider + local pyannote diarization"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -77,18 +77,18 @@ url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [[tool.uv.index]]
-name = "pytorch-cu128"
-url = "https://download.pytorch.org/whl/cu128"
+name = "pytorch-cu129"
+url = "https://download.pytorch.org/whl/cu129"
 explicit = true
 
 [tool.uv.sources]
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
-    { index = "pytorch-cu128", extra = "gpu" },
+    { index = "pytorch-cu129", extra = "gpu" },
 ]
 torchaudio = [
     { index = "pytorch-cpu", extra = "cpu" },
-    { index = "pytorch-cu128", extra = "gpu" },
+    { index = "pytorch-cu129", extra = "gpu" },
 ]
 
 [tool.pytest.ini_options]

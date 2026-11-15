@@ -443,7 +443,7 @@ uv run ruff format --check . && uv run ruff check .
 # ML extras (each tier's needs are listed under Engine tiers):
 #   diarize = pyannote, align = easyaligner, local = easytranscriber
 uv sync --group dev --extra diarize --extra align --extra local --extra cpu   # everything, CPU
-uv sync --frozen --no-dev --extra diarize --extra align --extra gpu           # hybrid prod, CUDA 12.8
+uv sync --frozen --no-dev --extra diarize --extra align --extra gpu           # hybrid prod, CUDA 12.9
 ```
 
 Always pair ML extras with exactly one of `--extra cpu` / `--extra gpu` — those route torch to
@@ -471,8 +471,10 @@ docker build --build-arg ML_EXTRAS="diarize align" -t vemsa .    # hybrid/remote
 ```
 
 Prebuilt images are published to GHCR on every `main` push and release tag — `latest` /
-`vX.Y.Z` with CUDA torch and a `-cpu` twin of every tag (both amd64-only; torchcodec has
-no linux/arm64 wheels, so Apple-silicon development runs natively via `uv sync`):
+`X.Y.Z` with CUDA torch and a `-cpu` twin of every tag (both amd64-only; torchcodec has
+no linux/arm64 wheels, so Apple-silicon development runs natively via `uv sync`). A git
+tag `vX.Y.Z` publishes the image tags `X.Y.Z` and `X.Y`, without the `v`. What each
+release adds, changes and fixes is in [`CHANGELOG.md`](CHANGELOG.md).
 
 ```bash
 docker pull ghcr.io/eneo-ai/vemsa:latest         # NVIDIA GPU hosts

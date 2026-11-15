@@ -3,6 +3,7 @@ import contextlib
 import json
 import threading
 import time
+import tomllib
 from pathlib import Path
 
 import httpx
@@ -24,6 +25,10 @@ from vemsa.main import create_app
 from vemsa.pipeline.base import StageReporter, report_stage
 
 AUTH = {"Authorization": "Bearer secret-token"}
+# the release version declared in pyproject.toml; readiness must report the same one
+PROJECT_VERSION = tomllib.loads(
+    (Path(__file__).parents[1] / "pyproject.toml").read_text(encoding="utf-8")
+)["project"]["version"]
 
 
 @contextlib.asynccontextmanager
@@ -460,7 +465,7 @@ async def test_authenticated_readiness_contract(settings: Settings):
         assert response.status_code == 200
         assert response.json() == {
             "status": "ready",
-            "service_version": "0.1.0",
+            "service_version": PROJECT_VERSION,
             "database_ready": True,
             "worker_ready": True,
             "queue_accepting_jobs": True,

@@ -20,11 +20,13 @@ before scheduling workers on multiple machines.
 
 CI publishes images to `ghcr.io/eneo-ai/vemsa` on every push to `main` and on `v*` release
 tags, but only after the test job of the same run has passed (`.github/workflows/ci.yaml`).
-One image serves both the `api` and `worker` services; two flavors are built:
+One image serves both the `api` and `worker` services; two flavors are built. A release
+tag `vX.Y.Z` publishes the image tags `X.Y.Z` and `X.Y` (no `v`); see `CHANGELOG.md` for
+what each release changes:
 
 | Flavor | Tags | Torch | Platforms | For |
 | --- | --- | --- | --- | --- |
-| GPU (default) | `latest`, `main`, `vX.Y.Z`, `X.Y`, `sha-<commit>` | CUDA 12.8 wheels | amd64 | hosts with an NVIDIA GPU (the `local`/`hybrid` engines, fast diarization) |
+| GPU (default) | `latest`, `main`, `X.Y.Z`, `X.Y`, `sha-<commit>` | CUDA 12.9 wheels | amd64 | hosts with an NVIDIA GPU (the `local`/`hybrid` engines, fast diarization) |
 | CPU | same tags with `-cpu` suffix (`latest-cpu`, …) | CPU wheels | amd64 | GPU-less hosts, `remote` engine deployments |
 
 There is no arm64 image: torchcodec (pyannote 4's audio decoder) publishes no linux/arm64
@@ -39,7 +41,9 @@ behavior at runtime. Slimmer builds (e.g. `ML_EXTRAS="diarize"` for remote-only)
 The GPU image only *uses* a GPU when the host provides one: it needs the NVIDIA driver and
 `nvidia-container-toolkit` on the host, plus the device reservation already present on the
 `worker` service in `compose.yaml`. Torch wheels bundle CUDA/cuDNN, so no CUDA base image or
-host CUDA install is required.
+host CUDA install is required. The bundled CUDA 12.9 runtime needs host driver `>=525.60.13`
+(NVIDIA's minimum for CUDA 12.x minor version compatibility); a newer GPU such as Blackwell
+B300 additionally needs a driver release that supports that GPU.
 
 For a CPU-only deployment, use the `-cpu` image and drop the GPU reservation with an
 override file:
@@ -71,7 +75,7 @@ keeping `build: .`, so the default `docker compose up --build` workflow still bu
 source. To run a published image instead:
 
 ```bash
-export VEMSA_IMAGE=ghcr.io/eneo-ai/vemsa:v0.1.0        # or @sha256:… (preferred, see below)
+export VEMSA_IMAGE=ghcr.io/eneo-ai/vemsa:0.2.0         # or @sha256:… (preferred, see below)
 docker compose pull api worker
 docker compose up --no-build
 ```
