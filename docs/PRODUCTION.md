@@ -209,7 +209,9 @@ networks.
 
 Completion and failure events are inserted transactionally with the terminal job update.
 Workers claim outbox rows, retry with exponential backoff, and retain exhausted events for
-operator inspection until the parent job's retention cleanup.
+operator inspection until the parent job's retention cleanup. A webhook can be delivered
+more than once, for example when its delivery cannot be confirmed; receivers recognise a
+duplicate by its `job_id` and `status`.
 
 When `VEMSA_WEBHOOK_SIGNING_SECRET` is set, requests include:
 

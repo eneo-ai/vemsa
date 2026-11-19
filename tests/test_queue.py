@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import json
+import logging
 import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -8,6 +9,7 @@ from pathlib import Path
 import pytest
 import respx
 from httpx import Response
+from prometheus_client import REGISTRY
 
 from conftest import FailingEngine, FakeEngine, GateEngine, wait_for_status
 from test_whisper_api import (
@@ -18,6 +20,7 @@ from test_whisper_api import (
     FakeDiarizer,
 )
 from vemsa.config import Settings
+from vemsa.jobs import queue as queue_module
 from vemsa.jobs.models import JobRequest, JobStatus, new_job
 from vemsa.jobs.postgres_store import PostgresJobStore
 from vemsa.jobs.queue import JobQueue
@@ -29,7 +32,6 @@ from vemsa.pipeline.whisper_api import OpenAIWhisperEngine
 @contextlib.asynccontextmanager
 async def running_queue(store: JobStore, engine, settings: Settings):
     queue = JobQueue(store, engine, settings)
-    queue.webhook_retry_delays = ()
     await queue.start()
     try:
         yield queue
@@ -350,9 +352,244 @@ async def test_webhook_failure_does_not_fail_job(
     async with running_queue(store, FakeEngine(), settings) as queue:
         queue.notify()
         completed = await wait_for_status(store, job.id, JobStatus.COMPLETED)
+        row = await wait_for_row(store, "SELECT * FROM webhook_outbox WHERE attempt = 1")
+        assert queue.healthy
 
     assert route.called
     assert completed.status == JobStatus.COMPLETED
+    assert row["last_error"] == "HTTP 500" and row["next_attempt_at"] is not None
+    assert row["lease_owner"] is None and row["lease_expires_at"] is None
+
+
+async def cancelled_with_webhook(store: JobStore, webhook_url: str) -> str:
+    """A cancelled job whose cancellation webhook is due now; returns the job id.
+
+    Created before the queue starts, so no worker claims the job itself."""
+    job = new_job(JobRequest(source_url="https://example.org/a.mp3"))
+    await store.create(job)
+    assert await store.cancel(job.id, client_id=job.client_id, webhook_url=webhook_url)
+    return job.id
+
+
+def webhook_records(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
+    return [record for record in caplog.records if record.name.startswith("vemsa")]
+
+
+# the text log format set up by vemsa.observability.configure_logging
+TEXT_LOG = logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+
+
+def store_failures(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
+    return [r for r in caplog.records if getattr(r, "event", None) == "webhook.store_failed"]
+
+
+def webhook_deliveries() -> dict[str, float | None]:
+    return {
+        outcome: REGISTRY.get_sample_value("vemsa_webhook_deliveries_total", {"outcome": outcome})
+        for outcome in ("success", "retry", "exhausted", "rejected", "lost")
+    }
+
+
+@respx.mock
+async def test_webhook_retries_an_unexpected_error_and_keeps_delivering(
+    store: JobStore, settings: Settings
+):
+    settings.webhook_max_attempts = 2
+    settings.webhook_poll_interval_s = 0.05
+    failing = respx.post("https://hooks.example.org/failing").mock(
+        side_effect=RuntimeError("unexpected")
+    )
+    working = respx.post("https://hooks.example.org/working").mock(return_value=Response(200))
+    failing_job = await cancelled_with_webhook(store, "https://hooks.example.org/failing")
+    await cancelled_with_webhook(store, "https://hooks.example.org/working")
+
+    async with running_queue(store, FakeEngine(), settings):
+        await wait_until(lambda: working.called)
+        exhausted = await wait_for_row(
+            store, "SELECT * FROM webhook_outbox WHERE next_attempt_at IS NULL"
+        )
+
+    assert failing.call_count == 2
+    assert exhausted["job_id"] == failing_job and exhausted["attempt"] == 2
+    assert exhausted["last_error"] == "RuntimeError"
+    remaining = await store.pool.fetch("SELECT job_id FROM webhook_outbox")
+    assert [row["job_id"] for row in remaining] == [failing_job]
+
+
+@respx.mock
+async def test_webhook_loop_survives_a_store_error(
+    store: JobStore, settings: Settings, monkeypatch, caplog
+):
+    caplog.set_level(logging.INFO)
+    settings.webhook_poll_interval_s = 0.05
+    settings.queue_poll_interval_s = 0.05
+    route = respx.post("https://hooks.example.org/done").mock(return_value=Response(200))
+    claim_webhook = PostgresJobStore.claim_webhook
+    failures = []
+
+    async def flaky_claim(self, *args, **kwargs):
+        if not failures:
+            failures.append(True)
+            raise OSError("connection lost storemark42")
+        return await claim_webhook(self, *args, **kwargs)
+
+    monkeypatch.setattr(PostgresJobStore, "claim_webhook", flaky_claim)
+    await cancelled_with_webhook(store, "https://hooks.example.org/done")
+
+    async with running_queue(store, FakeEngine(), settings) as queue:
+        await wait_until(lambda: route.called)
+        await wait_for_row(store, "SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM webhook_outbox)")
+        assert queue.healthy
+
+    assert failures
+    (failed,) = store_failures(caplog)
+    # no row was claimed, so there is no job id to name
+    assert failed.exc_info is None and failed.job_id is None
+    line = TEXT_LOG.format(failed)
+    assert "webhook store call failed: OSError" in line and "for job" not in line
+    for record in webhook_records(caplog):
+        assert "storemark42" not in json.dumps(record.__dict__, default=str)
+
+
+@respx.mock
+async def test_webhook_is_delivered_again_when_its_receipt_is_not_stored(
+    store: JobStore, settings: Settings, monkeypatch, caplog
+):
+    caplog.set_level(logging.INFO)
+    settings.job_lease_s = 0.5
+    settings.lease_heartbeat_s = 0.1
+    settings.webhook_poll_interval_s = 0.05
+    # were the lost receipt counted as an attempt, the row would end here
+    settings.webhook_max_attempts = 1
+    route = respx.post("https://hooks.example.org/done").mock(return_value=Response(200))
+    mark_delivered = PostgresJobStore.mark_webhook_delivered
+    receipt_failed = asyncio.Event()
+
+    async def flaky_mark(self, *args, **kwargs):
+        if not receipt_failed.is_set():
+            receipt_failed.set()
+            raise OSError("connection lost")
+        await mark_delivered(self, *args, **kwargs)
+
+    monkeypatch.setattr(PostgresJobStore, "mark_webhook_delivered", flaky_mark)
+    job_id = await cancelled_with_webhook(store, "https://hooks.example.org/done")
+
+    async with running_queue(store, FakeEngine(), settings):
+        await asyncio.wait_for(receipt_failed.wait(), timeout=5)
+        pending = await store.pool.fetchrow("SELECT * FROM webhook_outbox")
+        assert pending is not None
+        assert pending["attempt"] == 0 and pending["last_error"] is None
+        assert pending["lease_owner"] is not None
+        await wait_for_row(store, "SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM webhook_outbox)")
+
+    assert route.call_count == 2
+    (failed,) = store_failures(caplog)
+    assert failed.job_id == job_id
+    assert f"webhook store call failed for job {job_id}: OSError" in TEXT_LOG.format(failed)
+
+
+@respx.mock
+@pytest.mark.parametrize("wake_during_wait", [False, True])
+async def test_webhook_loop_waits_one_poll_interval_after_a_store_error(
+    store: JobStore, settings: Settings, monkeypatch, wake_during_wait: bool
+):
+    poll = 1.0
+    settings.webhook_poll_interval_s = poll
+    loop = asyncio.get_running_loop()
+    times: dict[str, float] = {}
+    reschedule = PostgresJobStore.reschedule_webhook
+
+    async def flaky_reschedule(self, *args, **kwargs):
+        if "failed" not in times:
+            times["failed"] = loop.time()
+            raise OSError("connection lost")
+        return await reschedule(self, *args, **kwargs)
+
+    def deliver(request):
+        times.setdefault("delivered", loop.time())
+        return Response(200)
+
+    monkeypatch.setattr(PostgresJobStore, "reschedule_webhook", flaky_reschedule)
+    respx.post("https://hooks.example.org/failing").mock(return_value=Response(500))
+    respx.post("https://hooks.example.org/working").mock(side_effect=deliver)
+    failing_job = await cancelled_with_webhook(store, "https://hooks.example.org/failing")
+    await cancelled_with_webhook(store, "https://hooks.example.org/working")
+
+    async with running_queue(store, FakeEngine(), settings) as queue:
+        await wait_until(lambda: "failed" in times)
+        if wake_during_wait:
+            # a wakeup while the store is failing does not cut the wait short
+            queue._webhook_wakeup.set()
+        await wait_until(lambda: "delivered" in times)
+        failing = await store.pool.fetchrow(
+            "SELECT * FROM webhook_outbox WHERE job_id = $1", failing_job
+        )
+
+    assert poll <= times["delivered"] - times["failed"] < 1.75 * poll
+    # the failed row keeps its lease and is claimed again once it lapses
+    assert failing["attempt"] == 0 and failing["last_error"] is None
+    assert failing["lease_owner"] is not None
+
+
+async def test_stop_is_prompt_while_the_webhook_store_keeps_failing(
+    store: JobStore, settings: Settings, monkeypatch, caplog
+):
+    caplog.set_level(logging.INFO)
+    settings.webhook_poll_interval_s = 10.0
+    settings.shutdown_grace_s = 2.0
+
+    async def broken_claim(self, *args, **kwargs):
+        raise OSError("connection lost")
+
+    monkeypatch.setattr(PostgresJobStore, "claim_webhook", broken_claim)
+    async with running_queue(store, FakeEngine(), settings) as queue:
+        await wait_until(lambda: bool(store_failures(caplog)))
+        assert queue.healthy
+
+    assert not any("graceful shutdown timeout" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.parametrize("failure", ["http_error", "rejected"])
+async def test_webhook_taken_over_during_its_attempt_is_left_alone(
+    store: JobStore, settings: Settings, monkeypatch, caplog, failure: str
+):
+    caplog.set_level(logging.INFO)
+    settings.webhook_poll_interval_s = 0.05
+
+    async def take_over() -> None:
+        await store.pool.execute("UPDATE webhook_outbox SET lease_owner = 'other-worker'")
+
+    async def failing_receiver(request):
+        await take_over()
+        return Response(500)
+
+    router = respx.mock(assert_all_called=False)
+    router.post("https://hooks.example.org/done").mock(side_effect=failing_receiver)
+    if failure == "rejected":
+        settings.webhook_allowed_hosts = ["elsewhere.example.org"]
+        validate = queue_module.validate_outbound_url
+
+        async def validate_after_take_over(*args, **kwargs):
+            await take_over()
+            await validate(*args, **kwargs)
+
+        monkeypatch.setattr(queue_module, "validate_outbound_url", validate_after_take_over)
+    job_id = await cancelled_with_webhook(store, "https://hooks.example.org/done")
+    before = webhook_deliveries()
+
+    with router:
+        async with running_queue(store, FakeEngine(), settings):
+            await wait_until(
+                lambda: any("no longer leased" in r.getMessage() for r in caplog.records)
+            )
+
+    assert webhook_deliveries() == before
+    messages = [r.getMessage() for r in webhook_records(caplog)]
+    assert f"webhook for job {job_id} is no longer leased by this worker" in messages
+    assert not any("was rejected" in m or "failed on attempt" in m for m in messages)
+    row = await store.pool.fetchrow("SELECT * FROM webhook_outbox")
+    assert row["lease_owner"] == "other-worker" and row["attempt"] == 0
+    assert row["last_error"] is None
 
 
 async def test_expired_worker_lease_is_reclaimed(

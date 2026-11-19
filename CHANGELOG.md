@@ -6,6 +6,20 @@ All notable changes to vemsa are recorded here. The format follows
 container images `ghcr.io/eneo-ai/vemsa:X.Y.Z` and `:X.Y` (GPU) and `:X.Y.Z-cpu` and
 `:X.Y-cpu` (CPU), without the `v`.
 
+## [Unreleased]
+
+### Fixed
+
+- A failed webhook delivery is planned again after its backoff, as documented. Before, the
+  retry was never scheduled, and the worker delivered no more webhooks until it was
+  restarted. A delivery attempt that fails in any other way also counts as a failed attempt,
+  so a webhook that keeps failing ends after `VEMSA_WEBHOOK_MAX_ATTEMPTS` recorded failed
+  attempts; a rejected destination ends at its first attempt. An error while reading or
+  updating the webhook outbox no longer stops delivery: the worker logs the error type, and
+  the job id when it is known, waits one poll interval and goes on. A webhook can be
+  delivered more than once, for example when its delivery cannot be confirmed; receivers
+  recognise a duplicate by its `job_id` and `status`.
+
 ## [0.2.0] - 2026-11-15
 
 ### Added

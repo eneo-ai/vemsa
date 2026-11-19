@@ -16,7 +16,7 @@ from vemsa.jobs.models import (
     WebhookOutboxEvent,
     WorkerSample,
 )
-from vemsa.jobs.store import IdempotencyConflictError, QueueCapacityError
+from vemsa.jobs.store import IdempotencyConflictError, QueueCapacityError, WebhookReschedule
 
 _MIGRATIONS = (
     """
@@ -736,17 +736,20 @@ class PostgresJobStore:
         error: str,
         delay_s: float,
         max_attempts: int,
-    ) -> bool:
+    ) -> WebhookReschedule:
         next_attempt = datetime.now(UTC) + timedelta(seconds=delay_s)
-        value = await self.pool.fetchval(
+        # The CASE gives $2 no column to infer a type from, so it is cast explicitly.
+        row = await self.pool.fetchrow(
             "UPDATE webhook_outbox SET attempt = attempt + 1,"
-            " next_attempt_at = CASE WHEN attempt + 1 >= $1 THEN NULL ELSE $2 END,"
+            " next_attempt_at = CASE WHEN attempt + 1 >= $1 THEN NULL ELSE $2::timestamptz END,"
             " lease_owner = NULL, lease_expires_at = NULL, last_error = $3"
-            " WHERE id = $4 AND lease_owner = $5 RETURNING next_attempt_at",
+            " WHERE id = $4 AND lease_owner = $5 RETURNING next_attempt_at IS NULL AS exhausted",
             max_attempts,
             next_attempt,
             error[:1000],
             event_id,
             worker_id,
         )
-        return value is None
+        if row is None:
+            return "lost"
+        return "exhausted" if row["exhausted"] else "retry"

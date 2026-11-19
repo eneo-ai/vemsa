@@ -109,6 +109,7 @@ class JobQueue:
         self._settings = settings
         self._wakeup = asyncio.Event()
         self._webhook_wakeup = asyncio.Event()
+        self._stop_requested = asyncio.Event()
         self._tasks: list[asyncio.Task[None]] = []
         self._worker_id = uuid4().hex
         self._stopping = False
@@ -139,6 +140,7 @@ class JobQueue:
 
     async def start(self) -> None:
         self._stopping = False
+        self._stop_requested.clear()
         # the torch import behind this can take a while; keep it off the loop
         self._device, self._gpu_name = await asyncio.to_thread(describe_device)
         await self._start_control_thread()
@@ -194,6 +196,7 @@ class JobQueue:
 
     async def stop(self) -> None:
         self._stopping = True
+        self._stop_requested.set()
         self.notify()
         self._webhook_wakeup.set()
         background_tasks = [
@@ -747,31 +750,98 @@ class JobQueue:
         await store.record_worker_sample(sample)
 
     async def _webhook_loop(self) -> None:
+        store_failed = False
         while True:
-            with contextlib.suppress(TimeoutError):
-                async with asyncio.timeout(self._settings.webhook_poll_interval_s):
-                    await self._webhook_wakeup.wait()
+            if store_failed:
+                # One poll interval before the store is tried again; a wakeup
+                # does not cut it short, a stop does.
+                with contextlib.suppress(TimeoutError):
+                    async with asyncio.timeout(self._settings.webhook_poll_interval_s):
+                        await self._stop_requested.wait()
+                if self._stopping:
+                    return
+            else:
+                with contextlib.suppress(TimeoutError):
+                    async with asyncio.timeout(self._settings.webhook_poll_interval_s):
+                        await self._webhook_wakeup.wait()
             self._webhook_wakeup.clear()
-            while event := await self._store.claim_webhook(
-                self._worker_id, self._settings.job_lease_s
-            ):
-                await self._deliver_webhook(event)
+            store_failed = not await self._drain_webhooks()
             if self._stopping:
                 return
 
+    async def _drain_webhooks(self) -> bool:
+        """Deliver every due webhook; False when a store call failed. The row can
+        then keep its lease: if the store call did not take effect, the row is
+        claimed again once its lease lapses, so the webhook can be delivered again.
+        A lost receipt after a 2xx is not a failed attempt."""
+        while True:
+            event: WebhookOutboxEvent | None = None
+            try:
+                event = await self._store.claim_webhook(self._worker_id, self._settings.job_lease_s)
+                if event is None:
+                    return True
+                await self._deliver_webhook(event)
+            except Exception as exc:
+                # The exception text can carry the destination; log its type only.
+                logger.error(
+                    "webhook store call failed%s: %s",
+                    f" for job {event.job_id}" if event is not None else "",
+                    type(exc).__name__,
+                    extra={
+                        "event": "webhook.store_failed",
+                        "job_id": event.job_id if event is not None else None,
+                        "error_type": type(exc).__name__,
+                    },
+                )
+                return False
+
     async def _deliver_webhook(self, event: WebhookOutboxEvent) -> None:
+        """One delivery attempt (destination check and request); store errors propagate."""
+        rejected = False
         try:
-            await validate_outbound_url(
-                event.url,
-                allow_private=self._settings.allow_private_urls,
-                allowed_hosts=self._settings.webhook_allowed_hosts,
-                require_https=not self._settings.allow_insecure_webhooks,
-            )
+            await self._send_webhook(event)
         except ForbiddenUrlError as exc:
-            await self._store.reschedule_webhook(event.id, self._worker_id, str(exc), 0, 1)
-            WEBHOOK_DELIVERIES.labels("rejected").inc()
-            logger.error("webhook destination for job %s was rejected: %s", event.job_id, exc)
+            rejected, error = True, str(exc)
+        except Exception as exc:
+            # Any other failure of the attempt is retried with backoff and counts
+            # against webhook_max_attempts, so a destination that always fails ends.
+            error = (
+                f"HTTP {exc.response.status_code}"
+                if isinstance(exc, httpx.HTTPStatusError)
+                else type(exc).__name__
+            )
+        else:
+            await self._store.mark_webhook_delivered(event.id, self._worker_id)
+            WEBHOOK_DELIVERIES.labels("success").inc()
             return
+        outcome = await self._store.reschedule_webhook(
+            event.id,
+            self._worker_id,
+            error,
+            0 if rejected else min(2 ** min(event.attempt, 12), 3600),
+            1 if rejected else self._settings.webhook_max_attempts,
+        )
+        if outcome == "lost":
+            logger.warning("webhook for job %s is no longer leased by this worker", event.job_id)
+        elif rejected:
+            WEBHOOK_DELIVERIES.labels("rejected").inc()
+            logger.error("webhook destination for job %s was rejected: %s", event.job_id, error)
+        else:
+            WEBHOOK_DELIVERIES.labels(outcome).inc()
+            logger.warning(
+                "webhook delivery for job %s failed on attempt %d: %s",
+                event.job_id,
+                event.attempt + 1,
+                error,
+            )
+
+    async def _send_webhook(self, event: WebhookOutboxEvent) -> None:
+        await validate_outbound_url(
+            event.url,
+            allow_private=self._settings.allow_private_urls,
+            allowed_hosts=self._settings.webhook_allowed_hosts,
+            require_https=not self._settings.allow_insecure_webhooks,
+        )
         body = json.dumps(event.payload, separators=(",", ":"), sort_keys=True).encode()
         headers = {"Content-Type": "application/json"}
         if secret := self._settings.webhook_signing_secret:
@@ -781,33 +851,9 @@ class JobQueue:
             ).hexdigest()
             headers["X-Vemsa-Timestamp"] = timestamp
             headers["X-Vemsa-Signature-256"] = f"sha256={signature}"
-        try:
-            async with httpx.AsyncClient(timeout=self._settings.webhook_timeout_s) as client:
-                response = await client.post(event.url, content=body, headers=headers)
-                response.raise_for_status()
-        except httpx.HTTPError as exc:
-            error_summary = (
-                f"HTTP {exc.response.status_code}"
-                if isinstance(exc, httpx.HTTPStatusError)
-                else type(exc).__name__
-            )
-            terminal = await self._store.reschedule_webhook(
-                event.id,
-                self._worker_id,
-                error_summary,
-                min(2 ** min(event.attempt, 12), 3600),
-                self._settings.webhook_max_attempts,
-            )
-            WEBHOOK_DELIVERIES.labels("exhausted" if terminal else "retry").inc()
-            logger.warning(
-                "webhook delivery for job %s failed on attempt %d: %s",
-                event.job_id,
-                event.attempt + 1,
-                error_summary,
-            )
-            return
-        await self._store.mark_webhook_delivered(event.id, self._worker_id)
-        WEBHOOK_DELIVERIES.labels("success").inc()
+        async with httpx.AsyncClient(timeout=self._settings.webhook_timeout_s) as client:
+            response = await client.post(event.url, content=body, headers=headers)
+            response.raise_for_status()
 
     async def _purge_loop(self) -> None:
         while True:

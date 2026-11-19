@@ -27,6 +27,12 @@ class IdempotencyConflictError(RuntimeError):
     pass
 
 
+# What a failed webhook delivery became: planned again, out of attempts, or
+# untouched because no row matched this worker's lease (it has passed to another
+# worker, or the row is gone).
+WebhookReschedule = Literal["retry", "exhausted", "lost"]
+
+
 class JobStore(Protocol):
     async def open(self) -> None: ...
     async def close(self) -> None: ...
@@ -102,4 +108,4 @@ class JobStore(Protocol):
         error: str,
         delay_s: float,
         max_attempts: int,
-    ) -> bool: ...
+    ) -> WebhookReschedule: ...

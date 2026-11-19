@@ -302,3 +302,61 @@ async def test_purge_stats_older_than_keeps_recent_rows(postgres_store: Postgres
     assert await postgres_store.pool.fetchval("SELECT worker_id FROM worker_heartbeats") == (
         "live-worker"
     )
+
+
+async def _cancelled_with_webhook(postgres_store: PostgresJobStore) -> str:
+    """A cancelled job whose cancellation webhook is due now; returns the job id."""
+    job = new_job(JobRequest(source_url="https://example.org/a.mp3"), client_id="alpha")
+    await postgres_store.create(job)
+    await postgres_store.cancel(
+        job.id, client_id="alpha", webhook_url="https://hooks.example.org/done"
+    )
+    return job.id
+
+
+async def test_reschedule_webhook_follows_one_row_to_its_end(postgres_store: PostgresJobStore):
+    await _cancelled_with_webhook(postgres_store)
+
+    async def row():
+        return await postgres_store.pool.fetchrow("SELECT * FROM webhook_outbox")
+
+    # a failed attempt is planned again after its delay
+    first = await postgres_store.claim_webhook("worker-a", 60)
+    assert first is not None
+    before = datetime.now(UTC)
+    assert await postgres_store.reschedule_webhook(first.id, "worker-a", "HTTP 500", 1.0, 2) == (
+        "retry"
+    )
+    after = datetime.now(UTC)
+    planned = await row()
+    assert planned["id"] == first.id and planned["attempt"] == 1
+    delay = timedelta(seconds=1.0)
+    assert before + delay <= planned["next_attempt_at"] <= after + delay
+    assert planned["lease_owner"] is None and planned["lease_expires_at"] is None
+    assert planned["last_error"] == "HTTP 500"
+    assert await postgres_store.claim_webhook("worker-a", 60) is None
+    await asyncio.sleep(1.05)
+
+    # the next claim's lease lapses, and another worker takes the row over
+    stale = await postgres_store.claim_webhook("worker-a", 0.05)
+    assert stale is not None and stale.id == first.id and stale.attempt == 1
+    await asyncio.sleep(0.1)
+    current = await postgres_store.claim_webhook("worker-b", 60)
+    assert current is not None and current.id == first.id
+
+    # the former owner can no longer change the row
+    assert await postgres_store.reschedule_webhook(stale.id, "worker-a", "HTTP 502", 0, 2) == (
+        "lost"
+    )
+    taken = await row()
+    assert taken["attempt"] == 1 and taken["lease_owner"] == "worker-b"
+    assert taken["last_error"] == "HTTP 500"
+
+    # the last allowed attempt ends the row, and it is not claimed again
+    assert await postgres_store.reschedule_webhook(current.id, "worker-b", "HTTP 503", 0, 2) == (
+        "exhausted"
+    )
+    ended = await row()
+    assert ended["attempt"] == 2 and ended["next_attempt_at"] is None
+    assert ended["lease_owner"] is None and ended["last_error"] == "HTTP 503"
+    assert await postgres_store.claim_webhook("worker-c", 60) is None
