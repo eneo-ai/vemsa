@@ -800,8 +800,9 @@ class JobQueue:
         rejected = False
         try:
             await self._send_webhook(event)
-        except ForbiddenUrlError as exc:
-            rejected, error = True, str(exc)
+        except ForbiddenUrlError:
+            # The validation message names the host; store and log a fixed text.
+            rejected, error = True, "destination rejected"
         except Exception as exc:
             # Any other failure of the attempt is retried with backoff and counts
             # against webhook_max_attempts, so a destination that always fails ends.
@@ -825,7 +826,7 @@ class JobQueue:
             logger.warning("webhook for job %s is no longer leased by this worker", event.job_id)
         elif rejected:
             WEBHOOK_DELIVERIES.labels("rejected").inc()
-            logger.error("webhook destination for job %s was rejected: %s", event.job_id, error)
+            logger.error("webhook destination for job %s was rejected", event.job_id)
         else:
             WEBHOOK_DELIVERIES.labels(outcome).inc()
             logger.warning(

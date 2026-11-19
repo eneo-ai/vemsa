@@ -592,6 +592,34 @@ async def test_webhook_taken_over_during_its_attempt_is_left_alone(
     assert row["last_error"] is None
 
 
+async def test_rejected_webhook_destination_is_stored_without_its_host(
+    store: JobStore, settings: Settings, caplog
+):
+    caplog.set_level(logging.DEBUG)
+    settings.webhook_allowed_hosts = ["hooks.example.org"]
+    settings.webhook_poll_interval_s = 0.05
+    router = respx.mock(assert_all_called=False)
+    rejected = router.post("https://hostmark91.example.net/done").mock(return_value=Response(200))
+    accepted = router.post("https://hooks.example.org/done").mock(return_value=Response(200))
+    rejected_job = await cancelled_with_webhook(store, "https://hostmark91.example.net/done")
+    await cancelled_with_webhook(store, "https://hooks.example.org/done")
+
+    with router:
+        async with running_queue(store, FakeEngine(), settings):
+            await wait_until(lambda: accepted.called)
+            row = await wait_for_row(store, "SELECT * FROM webhook_outbox WHERE attempt = 1")
+        # inside the block: the router clears its recorded calls when it exits
+        assert rejected.call_count == 0
+
+    assert row["job_id"] == rejected_job and row["next_attempt_at"] is None
+    assert row["last_error"] == "destination rejected"
+    lines = [TEXT_LOG.format(record) for record in webhook_records(caplog)]
+    assert f"webhook destination for job {rejected_job} was rejected" in "\n".join(lines)
+    for record in webhook_records(caplog):
+        assert "hostmark91" not in record.getMessage()
+        assert "hostmark91" not in json.dumps(record.__dict__, default=str)
+
+
 async def test_expired_worker_lease_is_reclaimed(
     store: JobStore, settings: Settings, tmp_path: Path
 ):

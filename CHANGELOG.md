@@ -19,6 +19,9 @@ container images `ghcr.io/eneo-ai/vemsa:X.Y.Z` and `:X.Y` (GPU) and `:X.Y.Z-cpu`
   the job id when it is known, waits one poll interval and goes on. A webhook can be
   delivered more than once, for example when its delivery cannot be confirmed; receivers
   recognise a duplicate by its `job_id` and `status`.
+- A webhook whose destination is rejected now ends with the stored error
+  `destination rejected`, and the worker's log line says only that the destination for the
+  job was rejected, instead of repeating the validation message.
 
 ## [0.2.0] - 2026-11-15
 
