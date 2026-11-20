@@ -19,16 +19,18 @@ container images `ghcr.io/eneo-ai/vemsa:X.Y.Z` and `:X.Y` (GPU) and `:X.Y.Z-cpu`
   error type, and the job id when it is known, waits one poll interval and goes on. A
   webhook can be delivered more than once, for example when its delivery cannot be
   confirmed; receivers recognise a duplicate by its `job_id` and `status`.
-- A webhook whose destination is rejected now ends with the stored error
-  `destination rejected`, and the worker's log line says only that the destination for the
-  job was rejected, instead of repeating the validation message.
-- A webhook host name that cannot be looked up, which can be a temporary DNS failure, is a
-  failed attempt: it is retried with backoff, the destination is checked again on each
-  attempt, and a host that never resolves uses up its attempts and ends as `exhausted`
-  (stored error `UnresolvableHostError`, counted as `retry` and finally `exhausted` in
-  `vemsa_webhook_deliveries_total`). A destination that breaks a rule, such as the scheme,
-  the allowlist or a non-public address, ends the webhook at the attempt that finds it.
-  Fetching source audio treats a host that cannot be looked up as before: the job fails with
+- A webhook whose destination is rejected ends with the stored error `destination rejected`,
+  and the worker's log line says only that the destination for the job was rejected.
+- A webhook host name that the destination check cannot look up, which can be a temporary
+  DNS failure, is a failed attempt: it is retried with backoff, the destination is checked
+  again on each attempt, and a host that never resolves uses up its attempts and ends as
+  `exhausted`. The stored error is `UnresolvableHostError`; in
+  `vemsa_webhook_deliveries_total` each planned retry counts as `retry` and the last attempt
+  as `exhausted`. With `VEMSA_ALLOW_PRIVATE_URLS=true` the check does not look up the host,
+  and a lookup that fails while connecting is a failed attempt like any other. A destination
+  that breaks a rule, such as the scheme, the allowlist or a non-public address, ends the
+  webhook at the attempt that finds it. Fetching source audio is unchanged: when its
+  destination check cannot look up the host, the job fails with
   `ForbiddenUrlError: processing failed`.
 
 ## [0.2.0] - 2026-11-15
