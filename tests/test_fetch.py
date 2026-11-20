@@ -1,4 +1,6 @@
+import asyncio
 import io
+import socket
 from pathlib import Path
 
 import pytest
@@ -59,6 +61,19 @@ async def test_fetch_rejects_private_host(tmp_path: Path):
     for url in ("http://127.0.0.1/a.mp3", "http://192.168.1.10/a.mp3", "http://localhost/a.mp3"):
         with pytest.raises(ForbiddenUrlError):
             await fetch_url(url, dest_dir=tmp_path, max_bytes=10, timeout_s=5)
+
+
+async def test_fetch_rejects_a_host_that_does_not_resolve(tmp_path: Path, monkeypatch):
+    async def no_such_host(*args, **kwargs):
+        raise socket.gaierror(socket.EAI_NONAME, "name or service not known")
+
+    monkeypatch.setattr(asyncio.get_running_loop(), "getaddrinfo", no_such_host)
+    with pytest.raises(ForbiddenUrlError, match="cannot resolve host") as caught:
+        await fetch_url(
+            "https://missing.example.org/a.mp3", dest_dir=tmp_path, max_bytes=10, timeout_s=5
+        )
+    # the job's stored error names the class, so it stays the one for a rejected source
+    assert type(caught.value) is ForbiddenUrlError
 
 
 @respx.mock

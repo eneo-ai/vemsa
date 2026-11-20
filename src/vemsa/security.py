@@ -9,6 +9,11 @@ class ForbiddenUrlError(ValueError):
     pass
 
 
+class UnresolvableHostError(ForbiddenUrlError):
+    """The host name could not be looked up, which can be temporary; every other
+    ForbiddenUrlError is a rule the URL breaks."""
+
+
 async def validate_outbound_url(
     url: str,
     *,
@@ -40,7 +45,7 @@ async def validate_outbound_url(
     try:
         infos = await loop.getaddrinfo(host, None, type=socket.SOCK_STREAM)
     except socket.gaierror as exc:
-        raise ForbiddenUrlError(f"cannot resolve host {host!r}") from exc
+        raise UnresolvableHostError(f"cannot resolve host {host!r}") from exc
     for info in infos:
         address = ipaddress.ip_address(info[4][0])
         if not address.is_global:

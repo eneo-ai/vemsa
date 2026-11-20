@@ -5,7 +5,7 @@ from uuid import uuid4
 import httpx
 from starlette.datastructures import UploadFile
 
-from vemsa.security import ForbiddenUrlError, validate_outbound_url
+from vemsa.security import ForbiddenUrlError, UnresolvableHostError, validate_outbound_url
 
 _CHUNK_SIZE = 1024 * 1024
 _MAX_REDIRECTS = 5
@@ -53,11 +53,16 @@ async def fetch_url(
     """
     async with httpx.AsyncClient(follow_redirects=False, timeout=timeout_s) as client:
         for _ in range(_MAX_REDIRECTS + 1):
-            await validate_outbound_url(
-                url,
-                allow_private=allow_private,
-                allowed_hosts=allowed_hosts,
-            )
+            try:
+                await validate_outbound_url(
+                    url,
+                    allow_private=allow_private,
+                    allowed_hosts=allowed_hosts,
+                )
+            except UnresolvableHostError as exc:
+                # The job's error names the exception class: a source that cannot be
+                # looked up fails like any other rejected source.
+                raise ForbiddenUrlError(str(exc)) from exc
             parsed = urlparse(url)
 
             request = client.build_request("GET", url)
