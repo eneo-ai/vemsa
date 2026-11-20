@@ -47,7 +47,7 @@ from vemsa.pipeline.diarize import AudioDecodeError
 from vemsa.pipeline.fetch import AudioTooLargeError, fetch_url
 from vemsa.pipeline.gpu import describe_device, is_out_of_memory, release_cached_memory
 from vemsa.pipeline.whisper_api import WhisperProviderError
-from vemsa.security import ForbiddenUrlError, validate_outbound_url
+from vemsa.security import ForbiddenUrlError, UnresolvableHostError, validate_outbound_url
 
 logger = logging.getLogger(__name__)
 
@@ -800,6 +800,9 @@ class JobQueue:
         rejected = False
         try:
             await self._send_webhook(event)
+        except UnresolvableHostError as exc:
+            # a failed lookup can be temporary: retried, and checked again next time
+            error = type(exc).__name__
         except ForbiddenUrlError:
             # The validation message names the host; store and log a fixed text.
             rejected, error = True, "destination rejected"

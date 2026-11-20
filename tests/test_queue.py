@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import socket
 import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -390,6 +391,10 @@ def webhook_deliveries() -> dict[str, float | None]:
     }
 
 
+def webhook_deliveries_since(before: dict[str, float | None]) -> dict[str, float]:
+    return {k: (v or 0) - (before[k] or 0) for k, v in webhook_deliveries().items()}
+
+
 @respx.mock
 async def test_webhook_retries_an_unexpected_error_and_keeps_delivering(
     store: JobStore, settings: Settings
@@ -618,6 +623,127 @@ async def test_rejected_webhook_destination_is_stored_without_its_host(
     for record in webhook_records(caplog):
         assert "hostmark91" not in record.getMessage()
         assert "hostmark91" not in json.dumps(record.__dict__, default=str)
+
+
+async def test_webhook_host_that_does_not_resolve_is_retried(
+    store: JobStore, settings: Settings, monkeypatch
+):
+    settings.allow_private_urls = False
+    settings.webhook_poll_interval_s = 0.05
+    loop = asyncio.get_running_loop()
+    getaddrinfo = loop.getaddrinfo
+    lookups: list[str] = []
+
+    async def fake_getaddrinfo(host, *args, **kwargs):
+        if host not in {"dnsmark.example.org", "private.example.org"}:
+            return await getaddrinfo(host, *args, **kwargs)
+        lookups.append(host)
+        if host == "private.example.org":
+            address = "10.0.0.1"
+        elif lookups.count(host) == 1:
+            raise socket.gaierror(socket.EAI_AGAIN, "temporary failure in name resolution")
+        else:
+            address = "93.184.216.34"
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, 0))]
+
+    monkeypatch.setattr(loop, "getaddrinfo", fake_getaddrinfo)
+    router = respx.mock(assert_all_called=False)
+    route = router.post("https://dnsmark.example.org/done").mock(return_value=Response(200))
+    private = router.post("https://private.example.org/done").mock(return_value=Response(200))
+    unresolved_job = await cancelled_with_webhook(store, "https://dnsmark.example.org/done")
+    private_job = await cancelled_with_webhook(store, "https://private.example.org/done")
+
+    with router:
+        async with running_queue(store, FakeEngine(), settings):
+            retried = await wait_for_row(
+                store,
+                "SELECT * FROM webhook_outbox WHERE attempt = 1 AND next_attempt_at IS NOT NULL",
+            )
+            await wait_until(lambda: route.called)
+            await wait_for_row(store, "SELECT 1 WHERE (SELECT count(*) FROM webhook_outbox) = 1")
+        # inside the block: the router clears its recorded calls when it exits
+        assert route.call_count == 1
+        assert private.call_count == 0
+
+    assert retried["job_id"] == unresolved_job and retried["lease_owner"] is None
+    assert retried["last_error"] == "UnresolvableHostError"
+    assert lookups.count("dnsmark.example.org") == 2
+    # a destination that resolves to a non-public address stays rejected
+    rejected = await store.pool.fetchrow("SELECT * FROM webhook_outbox")
+    assert rejected["job_id"] == private_job and rejected["attempt"] == 1
+    assert rejected["next_attempt_at"] is None
+    assert rejected["last_error"] == "destination rejected"
+
+
+async def test_webhook_host_that_never_resolves_ends_after_its_attempts(
+    store: JobStore, settings: Settings, monkeypatch
+):
+    settings.allow_private_urls = False
+    settings.webhook_poll_interval_s = 0.05
+    settings.webhook_max_attempts = 2
+    loop = asyncio.get_running_loop()
+    getaddrinfo = loop.getaddrinfo
+
+    async def no_such_host(host, *args, **kwargs):
+        if host != "nohost.example.org":
+            return await getaddrinfo(host, *args, **kwargs)
+        raise socket.gaierror(socket.EAI_NONAME, "name or service not known")
+
+    monkeypatch.setattr(loop, "getaddrinfo", no_such_host)
+    router = respx.mock(assert_all_called=False)
+    route = router.post("https://nohost.example.org/done").mock(return_value=Response(200))
+    job_id = await cancelled_with_webhook(store, "https://nohost.example.org/done")
+    before = webhook_deliveries()
+
+    with router:
+        async with running_queue(store, FakeEngine(), settings):
+            ended = await wait_for_row(
+                store, "SELECT * FROM webhook_outbox WHERE next_attempt_at IS NULL"
+            )
+        # inside the block: the router clears its recorded calls when it exits
+        assert route.call_count == 0
+
+    assert ended["job_id"] == job_id and ended["attempt"] == 2
+    assert ended["last_error"] == "UnresolvableHostError"
+    assert webhook_deliveries_since(before) == {
+        "success": 0,
+        "retry": 1,
+        "exhausted": 1,
+        "rejected": 0,
+        "lost": 0,
+    }
+
+
+@pytest.mark.parametrize("address", [None, "10.0.0.1"], ids=["not_resolved", "private"])
+async def test_rejected_source_fails_the_job_the_same_way(
+    store: JobStore, settings: Settings, monkeypatch, caplog, address: str | None
+):
+    caplog.set_level(logging.INFO)
+    settings.allow_private_urls = False
+    loop = asyncio.get_running_loop()
+    getaddrinfo = loop.getaddrinfo
+
+    async def fake_getaddrinfo(host, *args, **kwargs):
+        if host != "media.example.org":
+            return await getaddrinfo(host, *args, **kwargs)
+        if address is None:
+            raise socket.gaierror(socket.EAI_NONAME, "name or service not known")
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, 0))]
+
+    monkeypatch.setattr(loop, "getaddrinfo", fake_getaddrinfo)
+    job = new_job(JobRequest(source_url="https://media.example.org/a.mp3"))
+    await store.create(job)
+
+    async with running_queue(store, FakeEngine(), settings) as queue:
+        queue.notify()
+        failed = await wait_for_status(store, job.id, JobStatus.FAILED)
+
+    assert failed.error == "ForbiddenUrlError: processing failed"
+    assert failed.failure_kind == "input"
+    stats = await store.pool.fetchrow("SELECT * FROM job_stats WHERE job_id = $1", job.id)
+    assert stats["error_class"] == "ForbiddenUrlError"
+    (logged,) = [r for r in caplog.records if getattr(r, "event", None) == "job.failed"]
+    assert logged.error_type == "ForbiddenUrlError"
 
 
 async def test_expired_worker_lease_is_reclaimed(
