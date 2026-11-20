@@ -407,6 +407,7 @@ async def test_webhook_retries_an_unexpected_error_and_keeps_delivering(
     working = respx.post("https://hooks.example.org/working").mock(return_value=Response(200))
     failing_job = await cancelled_with_webhook(store, "https://hooks.example.org/failing")
     await cancelled_with_webhook(store, "https://hooks.example.org/working")
+    before = webhook_deliveries()
 
     async with running_queue(store, FakeEngine(), settings):
         await wait_until(lambda: working.called)
@@ -414,6 +415,13 @@ async def test_webhook_retries_an_unexpected_error_and_keeps_delivering(
             store, "SELECT * FROM webhook_outbox WHERE next_attempt_at IS NULL"
         )
 
+    assert webhook_deliveries_since(before) == {
+        "success": 1,
+        "retry": 1,
+        "exhausted": 1,
+        "rejected": 0,
+        "lost": 0,
+    }
     assert failing.call_count == 2
     assert exhausted["job_id"] == failing_job and exhausted["attempt"] == 2
     assert exhausted["last_error"] == "RuntimeError"
@@ -608,6 +616,7 @@ async def test_rejected_webhook_destination_is_stored_without_its_host(
     accepted = router.post("https://hooks.example.org/done").mock(return_value=Response(200))
     rejected_job = await cancelled_with_webhook(store, "https://hostmark91.example.net/done")
     await cancelled_with_webhook(store, "https://hooks.example.org/done")
+    before = webhook_deliveries()
 
     with router:
         async with running_queue(store, FakeEngine(), settings):
@@ -616,6 +625,13 @@ async def test_rejected_webhook_destination_is_stored_without_its_host(
         # inside the block: the router clears its recorded calls when it exits
         assert rejected.call_count == 0
 
+    assert webhook_deliveries_since(before) == {
+        "success": 1,
+        "retry": 0,
+        "exhausted": 0,
+        "rejected": 1,
+        "lost": 0,
+    }
     assert row["job_id"] == rejected_job and row["next_attempt_at"] is None
     assert row["last_error"] == "destination rejected"
     lines = [TEXT_LOG.format(record) for record in webhook_records(caplog)]
