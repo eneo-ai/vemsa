@@ -75,7 +75,7 @@ keeping `build: .`, so the default `docker compose up --build` workflow still bu
 source. To run a published image instead:
 
 ```bash
-export VEMSA_IMAGE=ghcr.io/eneo-ai/vemsa:0.2.0         # or @sha256:… (preferred, see below)
+export VEMSA_IMAGE=ghcr.io/eneo-ai/vemsa:0.2.1         # or @sha256:… (preferred, see below)
 docker compose pull api worker
 docker compose up --no-build
 ```
