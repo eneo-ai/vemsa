@@ -6,7 +6,7 @@ All notable changes to vemsa are recorded here. The format follows
 container images `ghcr.io/eneo-ai/vemsa:X.Y.Z` and `:X.Y` (GPU) and `:X.Y.Z-cpu` and
 `:X.Y-cpu` (CPU), without the `v`.
 
-## [Unreleased]
+## [0.2.1] - 2026-11-21
 
 ### Fixed
 
@@ -32,6 +32,18 @@ container images `ghcr.io/eneo-ai/vemsa:X.Y.Z` and `:X.Y` (GPU) and `:X.Y.Z-cpu`
   webhook at the attempt that finds it. Fetching source audio is unchanged: when its
   destination check cannot look up the host, the job fails with
   `ForbiddenUrlError: processing failed`.
+
+### Breaking
+
+- No breaking changes identified.
+
+**Rolling back:** the previous release is `ghcr.io/eneo-ai/vemsa:0.2.0` (and `0.2.0-cpu`).
+
+**Verified:** the fixes are covered by unit tests against PostgreSQL. A run of the API with an
+in-process worker and a local receiver, with the webhook timeout lowered to one second,
+showed a failed delivery retried and delivered, a rejected destination ended, the other
+webhooks delivered and a slow delivery retried. No run against a real DNS failure has been
+made.
 
 ## [0.2.0] - 2026-11-15
 
@@ -85,4 +97,5 @@ an installation of the GPU image's dependencies in a linux/amd64 container, and 
 NVRTC 12.9.86 compiles for sm_103 while 12.8.93 rejects it. The fixes are covered by unit
 tests; the acceptance tests that need the real aligner and models are skipped in CI.
 
+[0.2.1]: https://github.com/eneo-ai/vemsa/releases/tag/v0.2.1
 [0.2.0]: https://github.com/eneo-ai/vemsa/releases/tag/v0.2.0

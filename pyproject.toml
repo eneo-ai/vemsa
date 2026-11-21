@@ -1,6 +1,6 @@
 [project]
 name = "vemsa"
-version = "0.2.0"
+version = "0.2.1"
 description = "Transcription and speaker-diarization service: OpenAI-compatible whisper provider + local pyannote diarization"
 readme = "README.md"
 requires-python = ">=3.11"
